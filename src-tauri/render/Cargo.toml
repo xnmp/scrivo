@@ -1,0 +1,15 @@
+[package]
+name = "scrivo-render"
+version = "0.1.0"
+description = "Markdown to safe HTML (with MathML) for Scrivo's reading view"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false, features = ["simd"] }
+math-core = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+proptest = "1"
