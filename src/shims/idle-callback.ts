@@ -3,7 +3,7 @@
 // CodeMirror parses large documents in the background. Without requestIdleCallback it
 // works in 100 ms slices, long enough to swallow keystrokes; with it, each slice is
 // bounded by the idle deadline (25 ms at least). @codemirror/language checks for the API
-// once when it loads, so this module must be evaluated first (see main.ts).
+// once when it loads, so this module must be evaluated first (see boot.ts).
 
 /** Idle time granted per callback: what's left of a 60 Hz frame after rendering. */
 export const IDLE_BUDGET_MS = 12;

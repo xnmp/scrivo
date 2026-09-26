@@ -10,8 +10,13 @@ codebase consistent.
 - `src/editor/` may import `domain`. Decoration builders in `editor/live-preview/build.ts`
   are pure functions of `EditorState`; widgets do DOM work only in `toDOM`.
 - `src/app/` holds use-cases and the ports (`app/ports.ts`). It never imports adapters.
-- `src/platform/tauri.ts` is the only module that imports `@tauri-apps/*`.
-- `src/main.ts` is the composition root; it is the only place that picks adapters.
+- `src/platform/tauri.ts` is the only module that imports `@tauri-apps/*`; it loads
+  plugin and window APIs lazily so they stay out of the startup chunk.
+- `src/boot.ts` is the entry point and composition root; it is the only place that
+  picks adapters. Everything it imports statically is on the startup path: the editor,
+  CodeMirror, the controller and the dev platform are dynamic imports.
+- The reading view inserts HTML only from the backend renderer (`scrivo-render`).
+  Never insert document-derived markup built in TypeScript.
 - `src/shims/` patches missing browser APIs. Shims go in their own chunk that the entry
   imports first (`vite.config.ts`, verified by `scripts/check-bundle.mjs`), because
   libraries read globals when they load.
@@ -22,8 +27,9 @@ codebase consistent.
   a framework requires them (CodeMirror widgets, view plugins).
 - Match the surrounding code: 2-space indent, single quotes, semicolons, trailing commas.
 - Comments explain *why*; don't narrate what the code says.
-- Anything not needed for the first paint is a dynamic `import()` (see search, KaTeX,
-  dialogs, code grammars). A failed lazy import must degrade, never wedge the UI.
+- Anything not needed for the first paint is a dynamic `import()` (the editor, search,
+  KaTeX, dialogs, code grammars). A failed lazy import must degrade, never wedge the UI.
+  `scripts/check-bundle.mjs` enforces a 40 KiB startup budget (JS + CSS).
 
 ## Editing semantics
 
@@ -38,8 +44,11 @@ codebase consistent.
   document text, what a user would see), not internal structure. Cover edge cases: empty
   input, malformed markdown, very large documents, multiple cursors.
 - `EditorState` works headlessly in Node: test commands and decoration builders there.
-- Browser E2E: Playwright (`e2e/`), against the Vite dev server with the in-memory
-  platform (`window.__scrivo` exposes `editor`, `controller`, `platform`).
+- Browser E2E: Playwright (`e2e/`), against the Vite dev server with the dev platform:
+  in-memory files, and the real renderer through the `scrivo-render` CLI
+  (`scripts/vite-render-plugin.ts`). `window.__scrivo` exposes `workspace`, `viewer`,
+  `platform`, `editor`, `controller`. `openApp(page, { mode: 'view' })` starts in the
+  reading view; specs default to the editor.
 - Native E2E: tauri-driver (`e2e-native/`), headless only.
 - Rust: `cargo test` in `src-tauri`.
 
@@ -53,6 +62,16 @@ codebase consistent.
 | Dev (browser, in-memory files) | `bun run dev` → http://localhost:1420 |
 | Release build | `bunx tauri build --no-bundle` (runs the bundle check) |
 | Startup benchmark | `node bench/bench.mjs scrivo bench/fixtures/medium.md` |
+| Compare builds | `node bench/ab.mjs bench/fixtures/medium.md 12 old-binary new-binary` |
+| Startup trace | `SCRIVO_TRACE=1 scrivo file.md` (prints phase marks) |
+
+## Performance changes
+
+- Measure before and after on the release build, interleaved: `bench/ab.mjs` runs one
+  launch of each build per round and reports the paired median. Separate runs mostly
+  measure load drift on a shared machine.
+- Record the result (adopted or rejected) in ARCHITECTURE.md "Performance decisions",
+  so rejected ideas aren't retried blind.
 
 ## Never on a developer's live desktop
 
