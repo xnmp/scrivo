@@ -137,11 +137,13 @@ body:not([data-mode='edit']) #editor {
 }
 
 /* Most systems have no OpenType MATH font; without one, MathML lays out glyph by glyph
-   through system fallback, which is slow and looks poor. The font only downloads when
-   a document contains math. Libertinus Math, SIL OFL 1.1 (assets/fonts). */
+   through system fallback, which is slow and looks poor. The font only loads when a
+   document contains math. Uncompressed on purpose: it's a local file, and decoding
+   WOFF2 (Brotli + glyf reconstruction) measured ~25 ms slower to first paint.
+   Libertinus Math, SIL OFL 1.1 (assets/fonts). */
 @font-face {
   font-family: 'Scrivo Math';
-  src: url('../assets/fonts/libertinus-math.woff2') format('woff2');
+  src: url('../assets/fonts/libertinus-math.ttf') format('truetype');
   font-display: block;
 }
 .markdown-body math { font-family: 'Scrivo Math', math; }
