@@ -1,5 +1,7 @@
 mod commands;
 mod document_io;
+#[cfg(target_os = "linux")]
+mod prewarm;
 mod startup;
 mod trace;
 mod view;
@@ -35,6 +37,8 @@ pub fn run() {
     configure_webkit_env();
     trace::init();
     trace::mark("process start");
+    #[cfg(target_os = "linux")]
+    prewarm::start();
 
     let startup = startup::Startup::prefetch(startup::parse_args(std::env::args_os()));
     let title = initial_title(startup.args.path.as_deref());

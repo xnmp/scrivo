@@ -24,6 +24,12 @@ thiserror = "2"
 scrivo-render = { path = "render" }
 tauri-plugin-opener = "2"
 
+# prewarm.rs: the same GLib stack Tauri already links on Linux (versions match tauri's).
+[target.'cfg(target_os = "linux")'.dependencies]
+gdk-pixbuf = "0.18"
+gio = "0.18"
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
