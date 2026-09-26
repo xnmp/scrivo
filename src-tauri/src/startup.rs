@@ -1,7 +1,9 @@
-//! Launch arguments and the startup document. The file is read on a worker thread
-//! while Tauri builds the window and WebKit boots, so it's ready when the page asks.
+//! Launch arguments and the startup document. The file is read (and rendered for the
+//! reading view) on a worker thread while Tauri builds the window and WebKit boots, so
+//! it's ready when the page asks.
 
 use crate::document_io::{self, DocError, ReadDocument};
+use crate::view::{self, ViewDocument};
 use serde::Serialize;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -18,20 +20,58 @@ pub enum StartupDocument {
     Error { path: String, code: &'static str, message: String },
 }
 
-/// First positional argument. Flags are ignored (Chromium-style flags from launchers,
-/// `--help` etc.); `--` ends flag parsing so files starting with '-' can be opened.
-pub fn parse_args<I: IntoIterator<Item = OsString>>(args: I) -> Option<PathBuf> {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchArgs {
+    pub path: Option<PathBuf>,
+    /// `--edit` / `-e`: open in the editor instead of the reading view.
+    pub edit: bool,
+}
+
+/// The first positional argument is the document. Unknown flags are ignored (launchers
+/// pass Chromium-style flags); `--` ends flag parsing so files starting with '-' open.
+pub fn parse_args<I: IntoIterator<Item = OsString>>(args: I) -> LaunchArgs {
+    let mut parsed = LaunchArgs::default();
     let mut rest = args.into_iter().skip(1);
     while let Some(arg) = rest.next() {
         if arg == "--" {
-            return rest.next().map(PathBuf::from);
+            if parsed.path.is_none() {
+                parsed.path = rest.next().map(PathBuf::from);
+            }
+            break;
         }
-        if arg.to_string_lossy().starts_with('-') {
+        if arg == "--edit" || arg == "-e" {
+            parsed.edit = true;
+        } else if arg.to_string_lossy().starts_with('-') {
             continue;
+        } else if parsed.path.is_none() {
+            parsed.path = Some(PathBuf::from(arg));
         }
-        return Some(PathBuf::from(arg));
     }
-    None
+    parsed
+}
+
+/// What the page shows first.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StartupView {
+    /// An existing document, rendered for the reading view.
+    View { document: ViewDocument },
+    /// Start in the editor: no document, a new file, an unreadable one, or `--edit`.
+    Edit,
+}
+
+struct Prefetched {
+    document: StartupDocument,
+    view: StartupView,
+}
+
+fn prefetch(args: &LaunchArgs) -> Prefetched {
+    let document = load(args.path.as_deref());
+    let view = match &document {
+        StartupDocument::File { file } if !args.edit => StartupView::View { document: view::render_document(file) },
+        _ => StartupView::Edit,
+    };
+    Prefetched { document, view }
 }
 
 pub fn load(path: Option<&Path>) -> StartupDocument {
@@ -51,32 +91,38 @@ pub fn load(path: Option<&Path>) -> StartupDocument {
 
 /// Holds the in-flight prefetch; the result is cached so a page reload gets it again.
 pub struct Startup {
-    pub path: Option<PathBuf>,
-    pending: Mutex<Option<JoinHandle<StartupDocument>>>,
-    result: OnceLock<StartupDocument>,
+    pub args: LaunchArgs,
+    pending: Mutex<Option<JoinHandle<Prefetched>>>,
+    result: OnceLock<Prefetched>,
 }
 
 impl Startup {
-    pub fn prefetch(path: Option<PathBuf>) -> Self {
-        let for_thread = path.clone();
+    pub fn prefetch(args: LaunchArgs) -> Self {
+        let for_thread = args.clone();
         let handle = std::thread::Builder::new()
             .name("startup-read".into())
-            .spawn(move || load(for_thread.as_deref()))
+            .spawn(move || prefetch(&for_thread))
             .ok();
-        Startup { path, pending: Mutex::new(handle), result: OnceLock::new() }
+        Startup { args, pending: Mutex::new(handle), result: OnceLock::new() }
     }
 
     /// Blocks until the prefetch finishes (it usually already has).
+    fn get(&self) -> &Prefetched {
+        self.result.get_or_init(|| {
+            let handle = self.pending.lock().ok().and_then(|mut h| h.take());
+            handle
+                .and_then(|h| h.join().ok())
+                // Thread spawn failed or panicked: do the work here instead.
+                .unwrap_or_else(|| prefetch(&self.args))
+        })
+    }
+
     pub fn document(&self) -> StartupDocument {
-        self.result
-            .get_or_init(|| {
-                let handle = self.pending.lock().ok().and_then(|mut h| h.take());
-                handle
-                    .and_then(|h| h.join().ok())
-                    // Thread spawn failed or panicked: read synchronously instead.
-                    .unwrap_or_else(|| load(self.path.as_deref()))
-            })
-            .clone()
+        self.get().document.clone()
+    }
+
+    pub fn view(&self) -> StartupView {
+        self.get().view.clone()
     }
 }
 
@@ -88,13 +134,39 @@ mod tests {
         list.iter().map(OsString::from).collect()
     }
 
+    fn path(p: &str) -> Option<PathBuf> {
+        Some(PathBuf::from(p))
+    }
+
     #[test]
     fn parses_the_first_positional_argument() {
-        assert_eq!(parse_args(args(&["scrivo"])), None);
-        assert_eq!(parse_args(args(&["scrivo", "a.md"])), Some("a.md".into()));
-        assert_eq!(parse_args(args(&["scrivo", "--flag", "a.md", "b.md"])), Some("a.md".into()));
-        assert_eq!(parse_args(args(&["scrivo", "--", "-weird.md"])), Some("-weird.md".into()));
-        assert_eq!(parse_args(args(&["scrivo", "--"])), None);
+        assert_eq!(parse_args(args(&["scrivo"])), LaunchArgs::default());
+        assert_eq!(parse_args(args(&["scrivo", "a.md"])).path, path("a.md"));
+        assert_eq!(parse_args(args(&["scrivo", "--flag", "a.md", "b.md"])).path, path("a.md"));
+        assert_eq!(parse_args(args(&["scrivo", "--", "-weird.md"])).path, path("-weird.md"));
+        assert_eq!(parse_args(args(&["scrivo", "--"])).path, None);
+    }
+
+    #[test]
+    fn parses_the_edit_flag_anywhere() {
+        assert_eq!(parse_args(args(&["scrivo", "--edit", "a.md"])), LaunchArgs { path: path("a.md"), edit: true });
+        assert_eq!(parse_args(args(&["scrivo", "a.md", "-e"])), LaunchArgs { path: path("a.md"), edit: true });
+        assert_eq!(parse_args(args(&["scrivo", "--", "--edit"])), LaunchArgs { path: path("--edit"), edit: false });
+    }
+
+    #[test]
+    fn existing_files_open_in_the_reading_view_unless_editing_was_asked_for() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("a.md");
+        std::fs::write(&p, "# Hello").unwrap();
+        let view = Startup::prefetch(LaunchArgs { path: Some(p.clone()), edit: false }).view();
+        assert!(matches!(&view, StartupView::View { document } if document.html.contains("Hello") && document.stamp.is_some()));
+        let edit = Startup::prefetch(LaunchArgs { path: Some(p), edit: true }).view();
+        assert!(matches!(edit, StartupView::Edit));
+        assert!(matches!(Startup::prefetch(LaunchArgs::default()).view(), StartupView::Edit));
+        let missing = Startup::prefetch(LaunchArgs { path: Some(d.path().join("new.md")), edit: false });
+        assert!(matches!(missing.view(), StartupView::Edit));
+        assert!(matches!(missing.document(), StartupDocument::New { .. }));
     }
 
     #[test]
@@ -116,7 +188,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("a.md");
         std::fs::write(&p, "x").unwrap();
-        let startup = Startup::prefetch(Some(p.clone()));
+        let startup = Startup::prefetch(LaunchArgs { path: Some(p.clone()), edit: false });
         let first = startup.document();
         std::fs::write(&p, "changed").unwrap();
         let second = startup.document();

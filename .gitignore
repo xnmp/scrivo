@@ -7,3 +7,4 @@ playwright-report/
 bench/results/*.local.txt
 e2e-native/logs/
 dist-bench/
+src-tauri/target-exp/

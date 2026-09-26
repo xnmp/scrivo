@@ -2,6 +2,7 @@ mod commands;
 mod document_io;
 mod startup;
 mod trace;
+mod view;
 
 use std::path::Path;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -36,16 +37,20 @@ pub fn run() {
     trace::mark("process start");
 
     let startup = startup::Startup::prefetch(startup::parse_args(std::env::args_os()));
-    let title = initial_title(startup.path.as_deref());
+    let title = initial_title(startup.args.path.as_deref());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(startup)
         .invoke_handler(tauri::generate_handler![
             commands::read_document,
             commands::write_document,
             commands::stat_document,
             commands::startup_document,
+            commands::startup_view,
+            commands::render_file,
+            commands::render_markdown,
             commands::trace_mark,
         ])
         .setup(move |app| {

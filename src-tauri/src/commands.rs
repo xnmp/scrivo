@@ -2,7 +2,8 @@
 //! so the main thread (and with it, window events) never waits on the disk.
 
 use crate::document_io::{self, DocError, FileStamp, ReadDocument};
-use crate::startup::{Startup, StartupDocument};
+use crate::startup::{Startup, StartupDocument, StartupView};
+use crate::view::{self, ViewDocument};
 use crate::trace;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -34,6 +35,14 @@ async fn blocking<T: Send + 'static>(
 fn allow_assets_near(app: &AppHandle, document: &str) {
     if let Some(dir) = Path::new(document).parent() {
         let _ = app.asset_protocol_scope().allow_directory(dir, true);
+    }
+}
+
+/// Let the webview load exactly the local images a rendered document shows.
+fn allow_images(app: &AppHandle, doc: &ViewDocument) {
+    let scope = app.asset_protocol_scope();
+    for image in &doc.local_images {
+        let _ = scope.allow_file(image);
     }
 }
 
@@ -71,6 +80,33 @@ pub async fn startup_document(app: AppHandle, startup: State<'_, Startup>) -> Re
         StartupDocument::New { path } => allow_assets_near(&app, path),
         _ => {}
     }
+    Ok(doc)
+}
+
+/// What to show first: the prefetched, rendered document or "start the editor".
+#[tauri::command]
+pub async fn startup_view(app: AppHandle, startup: State<'_, Startup>) -> Result<StartupView, CommandError> {
+    let view = startup.view();
+    trace::mark("startup view delivered");
+    if let StartupView::View { document } = &view {
+        allow_images(&app, document);
+    }
+    Ok(view)
+}
+
+/// Read and render a file for the reading view.
+#[tauri::command]
+pub async fn render_file(app: AppHandle, path: String) -> Result<ViewDocument, CommandError> {
+    let doc = blocking(move || document_io::read_document(Path::new(&path)).map(|file| view::render_document(&file))).await?;
+    allow_images(&app, &doc);
+    Ok(doc)
+}
+
+/// Render text (e.g. the editor's unsaved buffer) as if it were the file at `path`.
+#[tauri::command]
+pub async fn render_markdown(app: AppHandle, text: String, path: Option<String>) -> Result<ViewDocument, CommandError> {
+    let doc = blocking(move || Ok(view::render_text(&text, path.as_deref()))).await?;
+    allow_images(&app, &doc);
     Ok(doc)
 }
 
