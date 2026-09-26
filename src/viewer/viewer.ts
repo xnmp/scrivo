@@ -15,6 +15,12 @@ export interface Viewer extends ViewerPort {
   focus(): void;
   /** Resolves once the whole current document is in the page. */
   settled(): Promise<void>;
+  /** Insert every block still pending, now. */
+  loadAll(): void;
+  /** Changes whenever the page starts showing different content. */
+  version(): number;
+  /** Called after each show() has put its content in the page. */
+  onShown(listener: () => void): void;
 }
 
 /** Time budget per idle slice for appending blocks. */
@@ -61,6 +67,9 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
   let pending: DocumentFragment | null = null;
   /** Bumped by every show(), so an older document stops appending. */
   let generation = 0;
+  /** Bumped when content is actually replaced (after show()'s awaits). */
+  let contentVersion = 0;
+  const shownListeners: Array<() => void> = [];
   let settledWaiters: Array<() => void> = [];
 
   const appendBlocks = (count: number) => {
@@ -162,6 +171,7 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
       if (gen !== generation) return;
 
       pending = template.content;
+      contentVersion++;
       article.replaceChildren();
       scroller.scrollTop = 0;
       // The first screenful (and a bit) now; checking the height lays it out.
@@ -173,10 +183,14 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
       }
       if (pending) appendInBackground(gen);
       else appendBlocks(0); // resolves settled() waiters
+      shownListeners.forEach((listener) => listener());
     },
     topLine,
     scrollToAnchor,
     focus: () => scroller.focus({ preventScroll: true }),
     settled: () => (pending ? new Promise<void>((resolve) => settledWaiters.push(resolve)) : Promise.resolve()),
+    loadAll: () => appendUntil(() => false),
+    version: () => contentVersion,
+    onShown: (listener) => void shownListeners.push(listener),
   };
 }

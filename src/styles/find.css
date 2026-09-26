@@ -1,0 +1,49 @@
+/* Reading view find bar (ui/find-bar.ts) and match highlights (viewer/find.ts). */
+.find-bar {
+  position: fixed;
+  top: 10px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px 5px 10px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font: 13px/1.4 var(--font-body);
+}
+.find-bar[hidden] { display: none; }
+.find-bar input {
+  width: 16em;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 2px 0;
+}
+.find-count {
+  min-width: 5.5em;
+  padding: 0 4px;
+  text-align: right;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.find-bar.no-match .find-count { color: var(--danger); }
+.find-bar button {
+  width: 24px;
+  height: 24px;
+  font: inherit;
+  color: var(--fg-muted);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.find-bar button:hover { background: var(--code-bg); color: var(--fg); }
+
+::highlight(scrivo-find) { background-color: var(--find-match); }
+::highlight(scrivo-find-current) { background-color: var(--find-current); }

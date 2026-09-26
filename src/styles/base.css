@@ -19,6 +19,8 @@
   --overlay: rgba(27, 31, 36, 0.35);
   --surface: #ffffff;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+  --find-match: rgba(255, 213, 0, 0.45);
+  --find-current: rgba(255, 140, 0, 0.75);
 
   --tok-keyword: #cf222e;
   --tok-string: #0a3069;
@@ -60,6 +62,8 @@
   --overlay: rgba(0, 0, 0, 0.5);
   --surface: #26292f;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --find-match: rgba(187, 128, 9, 0.45);
+  --find-current: rgba(240, 136, 62, 0.8);
 
   --tok-keyword: #ff7b72;
   --tok-string: #a5d6ff;
@@ -93,6 +97,8 @@
     --overlay: rgba(0, 0, 0, 0.5);
     --surface: #26292f;
     --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --find-match: rgba(187, 128, 9, 0.45);
+  --find-current: rgba(240, 136, 62, 0.8);
 
     --tok-keyword: #ff7b72;
     --tok-string: #a5d6ff;

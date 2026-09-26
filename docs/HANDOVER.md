@@ -1,26 +1,22 @@
-# Handover (2026-09-26)
+# Handover (2026-09-26, evening)
 
-State: a working Tauri v2 editor. `bunx tsc --noEmit -p .` is clean, `bunx vitest run` passes (197 tests) and Playwright passes on chromium (32 tests). Nothing is committed (this directory isn't a git repo).
+State: view-first Scrivo is committed. tsc clean; vitest 270 passing; Playwright (chromium) 49 passing; cargo tests passing.
 
-## Done this session (after ARCHITECTURE/CONVENTIONS were written)
-- Formatting commands (`src/editor/commands.ts`, 56 tests). Multi-cursor is enabled in `setup.ts`.
-- Playwright E2E (`e2e/`, 15 specs). It runs on chromium only; Playwright's WebKit build needs ICU 74, and Arch ships 78.
-- Word count is a single char-code pass over `doc.iter()`, with no `toString`. That's about 4 ms on the 443 KB fixture instead of about 20 ms.
-- `src/shims/idle-callback.ts` provides `requestIdleCallback` for WebKit. Without it, CodeMirror's background parse blocks input in 100 ms slices; with it, slices are 25 ms (measured in WebKitGTK).
-  - `vite.config.ts` puts the shims in their own chunk so they evaluate before CodeMirror's chunk.
-  - `scripts/check-bundle.mjs` (run by `build:web`) enforces that ordering and a 480 KiB startup budget. Startup is 432 KiB today.
-- `joinPath` bug fixed: a document at the filesystem root resolved `img.png` to `//img.png`. Added `document.test.ts` and `external.test.ts`.
+## Done this session
+- View-first reading view (Rust renderer), with the editor lazy-loaded.
+- Startup work (all measured with `bench/ab.mjs`, recorded in ARCHITECTURE.md "Performance decisions"):
+  - `prewarm.rs`: −48 ms.
+  - Uncompressed math font: −26 ms.
+  - Prerendering into `index.html` was rejected (+58 ms). The experiment patch is in the session scratchpad.
+- Find in the reading view (Ctrl/⌘+F, Enter/Shift+Enter, F3, Esc) uses the CSS Custom Highlight API. The code is in `src/domain/find.ts`, `src/viewer/find.ts` and `src/ui/find-bar.ts`, with tests in `e2e/viewer-find.spec.ts`.
 
-## Not done / next
-1. **Native E2E (`e2e-native/`, wdio + tauri-driver) is unfinished.** Its agent was stopped mid-run; check whether the specs run under `xvfb-run`.
-2. **The adversarial data-safety review was stopped before it reported.** Re-run it unbiased over `controller.ts`, `document_io.rs`, `commands.rs`, `text-format.ts` and `tauri.ts`.
-3. Builder unit tests for `live-preview/build.ts` (the brief is in the transcript: test the rendered text a user sees, fast-check for no throw/overlap).
-4. Final benchmarks on an idle machine:
-   - Run `node bench/bench.mjs scrivo bench/fixtures/{medium,large}.md 8`, then the same for `typora`.
-   - Never pass `--desktop`; it runs on the live session.
-   - Earlier large-doc results were distorted by load (load avg ~10). Clean runs match the medium doc at about 505 ms, against Typora's 926 ms for medium and 1926 ms for large.
-5. Features: outline sidebar (pure line scan in `domain/outline.ts`, tested against lezer's parse), Ctrl+click links, drag-drop open, image paste, then a README with results.
+## In flight when the session ended (check first)
+1. **Native E2E update** (`e2e-native/`: view-first specs, free ports, safe xvfb script). A subagent was working on it and the work is uncommitted in the tree.
+   - Review the diff.
+   - Run it only via the package.json script, which must unset `WAYLAND_DISPLAY`/`HYPRLAND_INSTANCE_SIGNATURE` and force `GDK_BACKEND=x11` under xvfb-run.
+2. **Adversarial review** (renderer XSS, link policy, workspace data safety, prewarm FFI) was running in a subagent. Its report may be lost; re-run it unbiased if so.
 
-## Gotchas
-- `bunx tauri build` writes `dist/`. For side builds, pass `--config` to set `frontendDist: ../dist-bench` (`dist-bench/` is a scratch artifact).
-- Never run GUI apps on the live Hyprland desktop: use headless cage (the bench default), `xvfb-run` and Playwright headless.
+## Next
+- Final benchmark vs Typora on a quiet machine: `node bench/ab.mjs bench/fixtures/medium.md 12 typora src-tauri/target/release/scrivo`, then the same for large.md. Then write a README with the results.
+- Viewer features: code highlighting in the reading view (lezer, idle time), an outline sidebar (headings are already returned), a file watcher.
+- The editor uses KaTeX while the viewer uses MathML (math-core). Consider unifying them.
