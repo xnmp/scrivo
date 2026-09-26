@@ -6,6 +6,8 @@
 // (Typora blocks DevTools flags in production, so closed-source editors are measured
 // the same way as ours):
 //   window   – first frame where the app's window is on screen
+//   content  – first frame that is within 3% (by tile) of the final one: the document
+//              is up, small late changes (a status bar, a caret) aside
 //   complete – "visually complete": the first frame after which the screen stays
 //              identical (± caret blink) to the final settled frame
 //   pss      – summed PSS of the app's process tree, 1.5 s after visually complete
@@ -102,6 +104,7 @@ function diff(a, b, tol = 6) {
   return n / a.length;
 }
 const SAME = 0.003; // ≤0.3% of tiles may differ (caret blink)
+const CONTENT = 0.03;
 
 /**
  * Sample until the screen has been stable for `stableMs` after the window appeared.
@@ -126,13 +129,16 @@ async function sampleRun(env, geometry, isWindow, { stableMs = 1500, capMs = 200
     if (diff(f.sig, final) > SAME) lastDifferent = i;
   });
   const complete = frames[lastDifferent + 1].t;
-  if (dumpDir) dumpFrames(frames);
+  const content = frames.find((f) => f.t >= windowAt && diff(f.sig, final) <= CONTENT).t;
+  if (dumpDir) dumpFrames(frames, final);
   const intervals = frames.slice(1).map((f, i) => f.t - frames[i].t);
-  return { windowAt, complete, frames: frames.length, interval: intervals.reduce((a, b) => a + b, 0) / Math.max(1, intervals.length) };
+  return { windowAt, content, complete, frames: frames.length, interval: intervals.reduce((a, b) => a + b, 0) / Math.max(1, intervals.length) };
 }
 
-function dumpFrames(frames) {
+function dumpFrames(frames, final) {
   mkdirSync(dumpDir, { recursive: true });
+  const timeline = frames.map((f, i) => `${String(i).padStart(3, '0')} t=${(f.t - frames[0].t).toFixed(0)} diff=${diff(f.sig, final).toFixed(3)}`);
+  writeFileSync(path.join(dumpDir, 'timeline.txt'), timeline.join('\n') + '\n');
   frames.forEach((f, i) => writeFileSync(path.join(dumpDir, `${String(i).padStart(3, '0')}.ppm`), f.raw));
   writeFileSync(path.join(dumpDir, 'final.ppm'), frames.at(-1).raw);
 }
@@ -290,7 +296,7 @@ const stats = (xs) => {
 const fmt = (o) => Object.entries(o).map(([k, v]) => `${k}=${v.toFixed(0)}`).join(' ');
 
 const display = desktop ? await hyprlandBackend() : await cageBackend();
-const results = { window: [], complete: [], pss: [] };
+const results = { window: [], content: [], complete: [], pss: [] };
 try {
   for (let i = 0; i < runs; i++) {
     const t0 = performance.now();
@@ -300,10 +306,11 @@ try {
       await sleep(1500);
       const pss = treePssMiB(child.pid);
       results.window.push(r.windowAt - t0);
+      results.content.push(r.content - t0);
       results.complete.push(r.complete - t0);
       results.pss.push(pss);
       console.log(
-        `run ${i + 1}: window=${(r.windowAt - t0).toFixed(0)} complete=${(r.complete - t0).toFixed(0)} ms  ` +
+        `run ${i + 1}: window=${(r.windowAt - t0).toFixed(0)} content=${(r.content - t0).toFixed(0)} complete=${(r.complete - t0).toFixed(0)} ms  ` +
           `pss=${pss.toFixed(0)} MiB  (${r.frames} frames @ ${r.interval.toFixed(0)} ms)`,
       );
     } catch (e) {
@@ -318,6 +325,6 @@ try {
 }
 
 console.log(`\n${appName} ${path.basename(file)} runs=${runs} on ${display.name}`);
-for (const [k, unit] of [['window', 'ms'], ['complete', 'ms'], ['pss', 'MiB']]) {
+for (const [k, unit] of [['window', 'ms'], ['content', 'ms'], ['complete', 'ms'], ['pss', 'MiB']]) {
   if (results[k].length) console.log(`  ${k.padEnd(8)} ${unit.padEnd(3)} : ${fmt(stats(results[k]))}`);
 }
