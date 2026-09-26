@@ -7,6 +7,8 @@ export interface OpenOptions {
   readonly text?: string;
   /** `?doc=none` starts untitled; omit for the default welcome sample. */
   readonly doc?: string;
+  /** Which surface to start on. The app opens files in the reading view; most specs edit. */
+  readonly mode?: 'edit' | 'view';
 }
 
 /** Navigate to the dev server and wait for the editor + `window.__scrivo` to be ready. */
@@ -14,10 +16,12 @@ export async function openApp(page: Page, opts: OpenOptions = {}): Promise<void>
   const params = new URLSearchParams();
   if (opts.text !== undefined) params.set('text', opts.text);
   if (opts.doc !== undefined) params.set('doc', opts.doc);
+  const mode = opts.mode ?? 'edit';
+  if (mode === 'edit') params.set('mode', 'edit');
   const qs = params.toString();
   await page.goto(qs ? `/?${qs}` : '/');
   await page.waitForFunction(() => Boolean((window as any).__scrivo));
-  await page.waitForSelector('.cm-content');
+  await page.waitForSelector(mode === 'edit' ? '.cm-content' : '#document > *');
 }
 
 /** Full document text, straight from the CodeMirror state. */

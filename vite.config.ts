@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
+import { scrivoRenderDev } from './scripts/vite-render-plugin';
 
 export default defineConfig({
   clearScreen: false,
+  plugins: [scrivoRenderDev()],
   server: { port: 1420, strictPort: true },
   build: {
     target: 'safari16',

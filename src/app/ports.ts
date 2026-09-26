@@ -62,10 +62,62 @@ export type StartupDocument =
   | { readonly kind: 'new'; readonly path: string }
   | { readonly kind: 'error'; readonly error: FileError };
 
+export interface Heading {
+  readonly level: number;
+  /** Plain text, markup removed. */
+  readonly text: string;
+  /** Anchor id in the rendered HTML. */
+  readonly id: string;
+  /** 1-based source line. */
+  readonly line: number;
+}
+
+/**
+ * A document rendered for the reading view. The HTML is safe to insert as-is: the
+ * renderer never passes markup through from the document (see scrivo-render).
+ * Block elements carry `data-line` with their 1-based source line.
+ */
+export interface ViewDocument {
+  /** null when rendering an unsaved buffer. */
+  readonly path: string | null;
+  /** Disk stamp when rendered from a file. */
+  readonly stamp: FileStamp | null;
+  readonly html: string;
+  readonly headings: readonly Heading[];
+}
+
+/** What the window shows first. */
+export type StartupView =
+  | { readonly kind: 'view'; readonly document: ViewDocument }
+  /** No document, a new or unreadable file, or the editor was asked for. */
+  | { readonly kind: 'edit' };
+
+export interface Renderer {
+  /** The prefetched startup document, rendered, or "start the editor". */
+  startupView(): Promise<StartupView>;
+  /** Read and render a file. Rejects with FileError. */
+  renderFile(path: string): Promise<ViewDocument>;
+  /** Render text as if it were the file at `path` (relative images resolve there). */
+  renderText(text: string, path: string | null): Promise<ViewDocument>;
+}
+
+/** Hand things to the operating system. */
+export interface Shell {
+  /** Open a web or mail URL (http, https, mailto, tel) in the default application. */
+  openUrl(url: string): Promise<void>;
+  /**
+   * Show a file in the system file manager. Local files are never opened directly:
+   * a link in a document must not be able to launch a program.
+   */
+  revealFile(path: string): Promise<void>;
+}
+
 export interface Platform {
   readonly fs: FileSystem;
   readonly dialogs: Dialogs;
   readonly window: WindowPort;
+  readonly render: Renderer;
+  readonly shell: Shell;
   startupDocument(): Promise<StartupDocument>;
 }
 

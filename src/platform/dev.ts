@@ -1,6 +1,22 @@
 // Browser (non-Tauri) platform for `bun run dev` and the Playwright suite: an
-// in-memory disk seeded from the URL (`?doc=<name>` picks a sample document).
-import { createMemoryPlatform, type MemoryPlatform } from './memory';
+// in-memory disk seeded from the URL, rendered by the real backend renderer through
+// the dev server (scripts/vite-render-plugin.ts).
+//
+//   ?text=<markdown>  start with this document (at /sample/inline.md)
+//   ?doc=none         start untitled
+//   ?mode=edit        start in the editor (the app's --edit flag)
+import { FileError } from '../app/ports';
+import { createMemoryPlatform, type MemoryPlatform, type RenderFn } from './memory';
+
+const devRender: RenderFn = async (text, path) => {
+  const response = await fetch('/__scrivo/render', {
+    method: 'POST',
+    headers: { 'x-scrivo-path': encodeURIComponent(path ?? '') },
+    body: text,
+  });
+  if (!response.ok) throw new FileError('io', path ?? '', await response.text());
+  return response.json();
+};
 
 const SAMPLE = `# Welcome to Scrivo
 
@@ -36,7 +52,12 @@ export function createDevPlatform(): MemoryPlatform {
   const inline = params.get('text');
   if (inline !== null) files['/sample/inline.md'] = inline;
   const startupPath = inline !== null ? '/sample/inline.md' : docParam === 'none' ? undefined : '/sample/welcome.md';
-  const platform = createMemoryPlatform({ files, ...(startupPath ? { startupPath } : {}) });
+  const platform = createMemoryPlatform({
+    files,
+    ...(startupPath ? { startupPath } : {}),
+    startInEditor: params.get('mode') === 'edit',
+    render: devRender,
+  });
   // Mirror titles into the tab so they are visible during development.
   const setTitle = platform.window.setTitle;
   platform.window.setTitle = (title) => {

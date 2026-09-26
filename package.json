@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT OR Apache-2.0",
   "scripts": {
-    "dev": "vite",
+    "dev": "bun run build:render && vite",
     "build:web": "vite build && bun scripts/check-bundle.mjs dist",
     "build": "tauri build",
     "tauri": "tauri",
@@ -15,7 +15,8 @@
     "test:e2e": "playwright test",
     "build:native-test": "tauri build --debug --no-bundle",
     "test:e2e:native": "wdio run e2e-native/wdio.conf.ts",
-    "bench": "node bench/bench.mjs"
+    "bench": "node bench/bench.mjs",
+    "build:render": "cargo build -q --release -p scrivo-render --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -45,6 +46,7 @@
     "@lezer/markdown": "^1.7.2",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-opener": "^2",
     "katex": "^0.18.9"
   },
   "devDependencies": {

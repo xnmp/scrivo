@@ -1,0 +1,210 @@
+/* Design tokens. Themes override these; nothing below hard-codes colours. */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --fg: #24292f;
+  --fg-muted: #6a737d;
+  --heading: #1f2328;
+  --accent: #0969da;
+  --link: #0969da;
+  --border: #d8dee4;
+  --code-bg: #f6f8fa;
+  --inline-code-bg: rgba(175, 184, 193, 0.2);
+  --selection: #cfe3ff;
+  --caret: #24292f;
+  --quote-bar: #d0d7de;
+  --table-stripe: #f6f8fa;
+  --mark-muted: #8c959f;
+  --danger: #cf222e;
+  --overlay: rgba(27, 31, 36, 0.35);
+  --surface: #ffffff;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+
+  --tok-keyword: #cf222e;
+  --tok-string: #0a3069;
+  --tok-number: #0550ae;
+  --tok-comment: #6e7781;
+  --tok-function: #8250df;
+  --tok-type: #953800;
+  --tok-property: #0550ae;
+  --tok-operator: #24292f;
+  --tok-meta: #6e7781;
+
+  /* system-ui first: it resolves in one lookup everywhere (SF, Segoe UI, the desktop's
+     UI font on Linux); each unavailable family before it costs a fontconfig match on
+     Linux (measured ~20 ms on first layout). */
+  --font-body: system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-size: 16px;
+  --line-height: 1.65;
+  --content-width: 860px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1d1f23;
+  --fg: #d4d7dd;
+  --fg-muted: #8b929c;
+  --heading: #eceef1;
+  --accent: #6cb6ff;
+  --link: #6cb6ff;
+  --border: #3a3f47;
+  --code-bg: #25282e;
+  --inline-code-bg: rgba(110, 118, 129, 0.3);
+  --selection: #2f4a6d;
+  --caret: #eceef1;
+  --quote-bar: #464c55;
+  --table-stripe: #22252a;
+  --mark-muted: #6b727c;
+  --danger: #ff7b72;
+  --overlay: rgba(0, 0, 0, 0.5);
+  --surface: #26292f;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+
+  --tok-keyword: #ff7b72;
+  --tok-string: #a5d6ff;
+  --tok-number: #79c0ff;
+  --tok-comment: #8b949e;
+  --tok-function: #d2a8ff;
+  --tok-type: #ffa657;
+  --tok-property: #79c0ff;
+  --tok-operator: #d4d7dd;
+  --tok-meta: #8b949e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #1d1f23;
+    --fg: #d4d7dd;
+    --fg-muted: #8b929c;
+    --heading: #eceef1;
+    --accent: #6cb6ff;
+    --link: #6cb6ff;
+    --border: #3a3f47;
+    --code-bg: #25282e;
+    --inline-code-bg: rgba(110, 118, 129, 0.3);
+    --selection: #2f4a6d;
+    --caret: #eceef1;
+    --quote-bar: #464c55;
+    --table-stripe: #22252a;
+    --mark-muted: #6b727c;
+    --danger: #ff7b72;
+    --overlay: rgba(0, 0, 0, 0.5);
+    --surface: #26292f;
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+
+    --tok-keyword: #ff7b72;
+    --tok-string: #a5d6ff;
+    --tok-number: #79c0ff;
+    --tok-comment: #8b949e;
+    --tok-function: #d2a8ff;
+    --tok-type: #ffa657;
+    --tok-property: #79c0ff;
+    --tok-operator: #d4d7dd;
+    --tok-meta: #8b949e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--font-size);
+}
+
+/* ---------- code tokens (fenced blocks; also source mode) ---------- */
+
+.tok-keyword { color: var(--tok-keyword); }
+.tok-string,
+.tok-string2 { color: var(--tok-string); }
+.tok-number,
+.tok-bool,
+.tok-atom { color: var(--tok-number); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-variableName.tok-definition,
+.tok-function { color: var(--tok-function); }
+.tok-typeName,
+.tok-className { color: var(--tok-type); }
+.tok-propertyName { color: var(--tok-property); }
+.tok-operator,
+.tok-punctuation { color: var(--tok-operator); }
+.tok-meta { color: var(--tok-meta); }
+
+/* ---------- app chrome ---------- */
+
+.status-bar {
+  position: fixed;
+  right: 14px;
+  bottom: 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  opacity: 0.85;
+  user-select: none;
+  pointer-events: none;
+}
+
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+  max-width: min(560px, calc(100vw - 32px));
+}
+.toast {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: grid;
+  place-items: center;
+  z-index: 30;
+}
+.modal {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 20px 22px 16px;
+  width: min(440px, calc(100vw - 32px));
+}
+.modal h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.modal p { margin: 0 0 18px; font-size: 14px; color: var(--fg-muted); line-height: 1.5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.modal-actions button {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+.modal-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.modal-actions button.danger { color: var(--danger); }
+.modal-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

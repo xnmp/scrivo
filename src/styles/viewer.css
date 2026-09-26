@@ -1,0 +1,161 @@
+/* Reading view. Metrics mirror the editor's live preview (editor.css) so switching
+   between the two keeps the page where it was: same widths, heading sizes, and one
+   blank line's worth of space between blocks. */
+
+#viewer {
+  height: 100%;
+  overflow-y: auto;
+  outline: none;
+}
+
+/* Only the active surface is shown; before the page decides, that's the reader. */
+body[data-mode='edit'] #viewer,
+body:not([data-mode='edit']) #editor {
+  display: none;
+}
+
+.markdown-body {
+  --block-gap: calc(var(--line-height) * 1em);
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 48px 32px 40vh;
+  line-height: var(--line-height);
+  overflow-wrap: break-word;
+}
+
+.markdown-body > :first-child { margin-top: 0; }
+
+.markdown-body :is(p, ul, ol, blockquote, pre, .table-wrap, dl, .footnote-definition) {
+  margin: 0 0 var(--block-gap);
+}
+
+.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--heading);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 calc(var(--block-gap) * 0.5);
+}
+.markdown-body h1 { font-size: 2.1em; padding-top: 0.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+.markdown-body h2 { font-size: 1.6em; padding-top: 0.6em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+.markdown-body h3 { font-size: 1.35em; padding-top: 0.5em; }
+.markdown-body h4 { font-size: 1.15em; padding-top: 0.4em; }
+.markdown-body h5 { font-size: 1em; padding-top: 0.4em; }
+.markdown-body h6 { font-size: 1em; padding-top: 0.4em; color: var(--fg-muted); }
+
+.markdown-body strong { font-weight: 600; }
+.markdown-body del { text-decoration: line-through; }
+
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--inline-code-bg);
+  border-radius: 4px;
+  padding: 0.12em 0.32em;
+}
+
+.markdown-body a[href] { color: var(--link); text-decoration: none; }
+.markdown-body a[href]:hover { text-decoration: underline; }
+/* A link whose destination was unsafe keeps its text but doesn't look clickable. */
+.markdown-body .inert-link { color: inherit; }
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--quote-bar);
+  padding-left: 1em;
+  color: var(--fg-muted);
+}
+.markdown-body blockquote > :last-child { margin-bottom: 0; }
+
+.markdown-body .alert { --alert: var(--accent); border-left-color: var(--alert); color: var(--fg); }
+.markdown-body .alert-tip { --alert: #1a7f37; }
+.markdown-body .alert-important { --alert: #8250df; }
+.markdown-body .alert-warning { --alert: #9a6700; }
+.markdown-body .alert-caution { --alert: var(--danger); }
+.markdown-body .alert-title { color: var(--alert); font-weight: 600; margin: 0 0 0.25em; }
+
+.markdown-body :is(ul, ol) { padding-left: 1.35em; }
+.markdown-body li > :is(ul, ol) { margin: 0; padding-left: 1.6em; }
+.markdown-body li > p { margin: 0; }
+.markdown-body li::marker { color: var(--fg-muted); }
+/* Task items put the checkbox where the bullet would be, as the editor does. */
+.markdown-body li:has(> input[type='checkbox']) { list-style: none; }
+.markdown-body li > input[type='checkbox'] {
+  margin: 0 0.35em 0 -1.35em;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
+  accent-color: var(--accent);
+}
+
+.markdown-body hr {
+  border: 0;
+  height: 2px;
+  background: var(--border);
+  margin: calc(var(--block-gap) / 2 - 1px) 0 var(--block-gap);
+}
+
+.markdown-body pre {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  line-height: 1.5;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.5em 1em;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: none; padding: 0; font-size: 1em; border-radius: 0; }
+.markdown-body pre[data-lang]::before {
+  content: attr(data-lang);
+  float: right;
+  font-size: 0.8em;
+  color: var(--fg-muted);
+  font-family: var(--font-body);
+}
+.markdown-body pre.front-matter { font-size: 0.85em; color: var(--fg-muted); }
+.markdown-body pre.raw-html,
+.markdown-body code.raw-html {
+  background: none;
+  padding: 0;
+  color: var(--fg-muted);
+}
+
+.markdown-body .table-wrap { overflow-x: auto; }
+.markdown-body table { border-collapse: collapse; line-height: 1.5; }
+.markdown-body :is(th, td) { border: 1px solid var(--border); padding: 0.35em 0.9em; }
+.markdown-body th { font-weight: 600; background: var(--code-bg); }
+.markdown-body tbody tr:nth-child(even) { background: var(--table-stripe); }
+.markdown-body [data-align='left'] { text-align: left; }
+.markdown-body [data-align='center'] { text-align: center; }
+.markdown-body [data-align='right'] { text-align: right; }
+
+.markdown-body img { max-width: 100%; vertical-align: middle; border-radius: 4px; }
+.markdown-body .image-missing {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  border: 1px dashed var(--border);
+  color: var(--fg-muted);
+  font-size: 0.9em;
+}
+
+/* Most systems have no OpenType MATH font; without one, MathML lays out glyph by glyph
+   through system fallback, which is slow and looks poor. The font only downloads when
+   a document contains math. Libertinus Math, SIL OFL 1.1 (assets/fonts). */
+@font-face {
+  font-family: 'Scrivo Math';
+  src: url('../assets/fonts/libertinus-math.woff2') format('woff2');
+  font-display: block;
+}
+.markdown-body math { font-family: 'Scrivo Math', math; }
+.markdown-body math[display='block'] { margin: 0.4em 0; overflow-x: auto; overflow-y: hidden; }
+.markdown-body .math-error { color: var(--danger); background: none; }
+
+.markdown-body .footnote-ref { font-size: 0.75em; line-height: 0; }
+.markdown-body .footnote-definition {
+  display: flex;
+  gap: 0.5em;
+  font-size: 0.9em;
+  color: var(--fg-muted);
+}
+.markdown-body .footnote-definition > p { margin: 0; }
+.markdown-body .footnote-label { line-height: inherit; }
+
+.markdown-body ::selection { background: var(--selection); }

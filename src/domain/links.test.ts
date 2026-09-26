@@ -1,5 +1,6 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { resolveTarget } from './links';
+import { linkAction, resolveTarget } from './links';
 import { reachesPrefix, touches } from './reveal';
 
 describe('resolveTarget', () => {
@@ -62,5 +63,42 @@ describe('reveal policy', () => {
     expect(reachesPrefix(caret(1), 0, 2)).toBe(true);
     expect(reachesPrefix(caret(0), 0, 2)).toBe(true);
     expect(reachesPrefix([{ from: 1, to: 5 }], 0, 2)).toBe(true);
+  });
+});
+
+describe('linkAction', () => {
+  it.each([
+    ['#intro', { kind: 'anchor', id: 'intro' }],
+    ['#caf%C3%A9', { kind: 'anchor', id: 'café' }],
+    ['#', { kind: 'none' }],
+    ['other.md', { kind: 'document', path: '/docs/other.md', anchor: null }],
+    ['../up/Other.MARKDOWN#Part-2', { kind: 'document', path: '/up/Other.MARKDOWN', anchor: 'Part-2' }],
+    ['notes.txt', { kind: 'document', path: '/docs/notes.txt', anchor: null }],
+    ['file:///tmp/x.md#a', { kind: 'document', path: '/tmp/x.md', anchor: 'a' }],
+    ['report.pdf', { kind: 'reveal', path: '/docs/report.pdf' }],
+    ['script.sh', { kind: 'reveal', path: '/docs/script.sh' }],
+    ['C:\\apps\\evil.exe', { kind: 'reveal', path: 'C:\\apps\\evil.exe' }],
+    ['https://example.com/a#b', { kind: 'external', url: 'https://example.com/a#b' }],
+    ['mailto:me@example.com', { kind: 'external', url: 'mailto:me@example.com' }],
+    ['javascript:alert(1)', { kind: 'none' }],
+    ['ftp://example.com/x', { kind: 'none' }],
+    ['', { kind: 'none' }],
+  ] as const)('%s', (href, action) => {
+    expect(linkAction(href, '/docs')).toEqual(action);
+  });
+
+  it('cannot resolve relative links in an unsaved document', () => {
+    expect(linkAction('other.md', null)).toEqual({ kind: 'none' });
+    expect(linkAction('#top', null)).toEqual({ kind: 'anchor', id: 'top' });
+  });
+
+  it('never asks to run a local file, whatever its name', () => {
+    fc.assert(
+      fc.property(fc.string(), (name) => {
+        const action = linkAction(name, '/docs');
+        expect(['anchor', 'document', 'external', 'reveal', 'none']).toContain(action.kind);
+        if (action.kind === 'external') expect(action.url).toMatch(/^(https?|mailto|tel):/i);
+      }),
+    );
   });
 });

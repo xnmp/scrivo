@@ -1,48 +1,8 @@
-import { Text } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
 import { createMemoryPlatform, type MemoryPlatform } from '../platform/memory';
 import { createDocumentController, type DocumentController } from './controller';
-import { FileError, type ConflictChoice, type EditorPort, type Prompter, type UnsavedChoice } from './ports';
-
-/** Headless editor over CodeMirror's immutable Text. */
-function fakeEditor() {
-  let doc = Text.empty;
-  let path: string | null = null;
-  const toDoc = (s: string) => Text.of(s.split('\n'));
-  const port: EditorPort<Text> & { type(s: string): void; value(): string; path(): string | null } = {
-    snapshot: () => doc,
-    toText: (t) => t.toString(),
-    reset: (text, p) => ((path = p), (doc = toDoc(text))),
-    replace: (text) => (doc = toDoc(text)),
-    setDocumentPath: (p) => void (path = p),
-    type: (s) => void (doc = toDoc(doc.toString() + s)),
-    value: () => doc.toString(),
-    path: () => path,
-  };
-  return port;
-}
-
-function scriptedPrompter() {
-  const answers = { unsaved: [] as UnsavedChoice[], conflict: [] as ConflictChoice[], disk: [] as Array<'reload' | 'keep'> };
-  const asked: string[] = [];
-  const notices: string[] = [];
-  const prompter: Prompter = {
-    async unsavedChanges(name) {
-      asked.push(`unsaved:${name}`);
-      return answers.unsaved.shift() ?? 'cancel';
-    },
-    async saveConflict(name) {
-      asked.push(`conflict:${name}`);
-      return answers.conflict.shift() ?? 'cancel';
-    },
-    async changedOnDisk(name) {
-      asked.push(`disk:${name}`);
-      return answers.disk.shift() ?? 'keep';
-    },
-    notify: (m) => void notices.push(m),
-  };
-  return { prompter, answers, asked, notices };
-}
+import { FileError } from './ports';
+import { fakeEditor, scriptedPrompter } from './testing';
 
 async function setup(files: Record<string, string> = {}, startupPath?: string) {
   const platform = createMemoryPlatform({ files, ...(startupPath ? { startupPath } : {}) });

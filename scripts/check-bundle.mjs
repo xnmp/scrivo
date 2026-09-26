@@ -10,7 +10,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-const STARTUP_BUDGET_BYTES = 480 * 1024;
+const STARTUP_BUDGET_BYTES = 40 * 1024;
 
 const dist = path.resolve(process.argv[2] ?? 'dist');
 const html = readFileSync(path.join(dist, 'index.html'), 'utf8');

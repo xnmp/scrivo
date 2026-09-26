@@ -1,8 +1,15 @@
 // Platform over Tauri. The only module that imports @tauri-apps/*.
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { FileStamp } from '../domain/document';
-import { FileError, type FileErrorCode, type Platform, type ReadResult, type StartupDocument } from '../app/ports';
+import {
+  FileError,
+  type FileErrorCode,
+  type Platform,
+  type ReadResult,
+  type StartupDocument,
+  type StartupView,
+  type ViewDocument,
+} from '../app/ports';
 
 interface CommandError {
   code: FileErrorCode;
@@ -50,7 +57,10 @@ export function traceMark(label: string): void {
 export const fileUrl = (path: string): string => convertFileSrc(path);
 
 export function createTauriPlatform(): Platform {
-  const win = getCurrentWindow();
+  // The window API (~15 KB with its dependencies) isn't needed for first paint: the
+  // backend sets the initial title. Load it on first use.
+  let win: Promise<import('@tauri-apps/api/window').Window> | null = null;
+  const currentWindow = () => (win ??= import('@tauri-apps/api/window').then((m) => m.getCurrentWindow()));
   return {
     fs: {
       read: (path) => call<ReadResult>('read_document', path, { path }),
@@ -69,16 +79,35 @@ export function createTauriPlatform(): Platform {
       },
     },
     window: {
-      setTitle: (title) => void win.setTitle(title),
+      setTitle: (title) => void currentWindow().then((w) => w.setTitle(title)),
       onCloseRequested: (handler) =>
-        void win.onCloseRequested(async (event) => {
-          if (!(await handler())) event.preventDefault();
-        }),
+        void currentWindow().then((w) =>
+          w.onCloseRequested(async (event) => {
+            if (!(await handler())) event.preventDefault();
+          }),
+        ),
       onFocus: (handler) =>
-        void win.onFocusChanged(({ payload: focused }) => {
-          if (focused) handler();
-        }),
-      destroy: () => win.destroy(),
+        void currentWindow().then((w) =>
+          w.onFocusChanged(({ payload: focused }) => {
+            if (focused) handler();
+          }),
+        ),
+      destroy: () => currentWindow().then((w) => w.destroy()),
+    },
+    render: {
+      startupView: () => invoke<StartupView>('startup_view'),
+      renderFile: (path) => call<ViewDocument>('render_file', path, { path }),
+      renderText: (text, path) => call<ViewDocument>('render_markdown', path ?? '', { text, path }),
+    },
+    shell: {
+      async openUrl(url) {
+        const { openUrl } = await import('@tauri-apps/plugin-opener');
+        await openUrl(url);
+      },
+      async revealFile(path) {
+        const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+        await revealItemInDir(path);
+      },
     },
     async startupDocument(): Promise<StartupDocument> {
       const raw = await invoke<RawStartup>('startup_document');

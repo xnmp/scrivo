@@ -1,19 +1,30 @@
 import { textStats } from '../domain/stats';
 
-/** Word count in the corner, recomputed when typing pauses. */
-export function createStatusBar(host: HTMLElement, getText: () => Iterable<string>, getMode: () => string) {
+export interface StatusBar {
+  set(text: string): void;
+}
+
+/** The small status line in the corner. */
+export function createStatusBar(host: HTMLElement): StatusBar {
   const el = document.createElement('div');
   el.className = 'status-bar';
   el.setAttribute('aria-live', 'off');
   host.appendChild(el);
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    set(text) {
+      if (el.textContent !== text) el.textContent = text;
+    },
+  };
+}
 
+/** Word count of a document, recomputed when typing pauses. */
+export function wordCounter(status: StatusBar, getText: () => Iterable<string>, getMode: () => string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const render = () => {
     const { words } = textStats(getText());
     const mode = getMode();
-    el.textContent = `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}${mode ? ` · ${mode}` : ''}`;
+    status.set(`${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}${mode ? ` · ${mode}` : ''}`);
   };
-
   return {
     /** Schedule an update; cheap to call on every keystroke. */
     update(delayMs = 300) {

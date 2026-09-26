@@ -1,0 +1,253 @@
+// One document window with two surfaces: the reading view and the editor.
+//
+// The window opens in the reading view. The backend renders the document while the
+// webview boots, so there is something to read before any editor code has loaded.
+// The editor loads on first use; from then on it owns the document (dirty state,
+// saving, conflicts) and the reading view shows the editor's current text.
+import { displayName, documentDir, sameStamp, windowTitle } from '../domain/document';
+import { linkAction } from '../domain/links';
+import type { DocumentController } from './controller';
+import { describeError } from './errors';
+import type { Platform, ViewDocument } from './ports';
+
+export type Position = { readonly line: number } | { readonly anchor: string };
+
+/** The reading view, as the workspace sees it. */
+export interface ViewerPort {
+  /** Resolves once the document is on screen (long documents keep loading after). */
+  show(doc: ViewDocument, at?: Position): Promise<void>;
+  /** 1-based source line of the block at the top of the viewport. */
+  topLine(): number;
+  /** Scroll to the element with this id; false when there is none. */
+  scrollToAnchor(id: string): boolean;
+}
+
+/** The editor, once loaded. */
+export interface EditorHandle {
+  readonly controller: DocumentController;
+  text(): string;
+  /** 1-based line at the top of the viewport. */
+  topLine(): number;
+  /** Scroll so `line` is at the top and put the caret there. */
+  revealLine(line: number): void;
+  focus(): void;
+}
+
+export type Mode = 'view' | 'edit';
+
+export interface Workspace {
+  /** Show the startup document (reading view) or start the editor. */
+  start(): Promise<void>;
+  mode(): Mode;
+  toggle(): Promise<void>;
+  /** Switch to the editor, at `line` or where the reading view is scrolled. */
+  edit(line?: number): Promise<void>;
+  view(): Promise<void>;
+  /** Open a file (from a dialog when `path` is omitted) in the current mode. */
+  open(path?: string): Promise<void>;
+  newDocument(): Promise<void>;
+  save(): Promise<void>;
+  followLink(href: string): Promise<void>;
+  /** Pick up changes made by other programs (on window focus, file watch events). */
+  checkDisk(): Promise<void>;
+  /** Resolves true when the window may close. */
+  requestClose(): Promise<boolean>;
+}
+
+export interface WorkspaceDeps {
+  readonly platform: Platform;
+  readonly viewer: ViewerPort;
+  /** Loads and creates the editor; called at most once. */
+  readonly loadEditor: () => Promise<EditorHandle>;
+  /** Make the given surface the visible one. */
+  readonly showSurface: (mode: Mode) => void;
+  readonly notify: (message: string) => void;
+}
+
+const serialQueue = () => {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(op: () => Promise<T>): Promise<T> => {
+    const result = tail.then(op);
+    tail = result.catch(() => undefined);
+    return result;
+  };
+};
+
+export function createWorkspace(deps: WorkspaceDeps): Workspace {
+  const { platform, viewer, showSurface, notify } = deps;
+  const serial = serialQueue();
+
+  let mode: Mode = 'view';
+  /** What the reading view shows. */
+  let shown: ViewDocument | null = null;
+  /** The editor's text when the reading view was last rendered from it. */
+  let shownText: string | null = null;
+  let editor: EditorHandle | null = null;
+  let loading: Promise<EditorHandle> | null = null;
+
+  const ensureEditor = (): Promise<EditorHandle> => {
+    loading ??= deps.loadEditor().then((e) => (editor = e));
+    // A failed load (e.g. a chunk that won't import) may be retried later.
+    loading.catch(() => (loading = null));
+    return loading;
+  };
+
+  const setMode = (next: Mode) => {
+    mode = next;
+    showSurface(next);
+  };
+
+  const display = async (doc: ViewDocument, at?: Position) => {
+    const titleChanged = doc.path !== shown?.path;
+    shown = doc;
+    await viewer.show(doc, at);
+    // Once the editor exists its controller owns the title (it tracks dirtiness).
+    if (!editor && titleChanged) platform.window.setTitle(windowTitle(doc.path, false));
+  };
+
+  /** Re-render the reading view from the editor's buffer. */
+  const renderEditor = async (e: EditorHandle, at?: Position): Promise<boolean> => {
+    const text = e.text();
+    try {
+      const doc = await platform.render.renderText(text, e.controller.info().path);
+      shownText = text;
+      await display(doc, at);
+      return true;
+    } catch (err) {
+      notify(`Could not show the document: ${describeError(err)}`);
+      return false;
+    }
+  };
+
+  const openInViewer = async (path: string, at?: Position): Promise<boolean> => {
+    try {
+      await display(await platform.render.renderFile(path), at);
+      return true;
+    } catch (err) {
+      notify(`Could not open ${displayName(path)}: ${describeError(err)}`);
+      return false;
+    }
+  };
+
+  const editNow = async (line?: number) => {
+    if (mode === 'edit') return;
+    const target = line ?? viewer.topLine();
+    let e: EditorHandle;
+    try {
+      e = await ensureEditor();
+    } catch (err) {
+      notify(`Could not load the editor: ${describeError(err)}`);
+      return;
+    }
+    const path = shown?.path ?? null;
+    if (path !== null && e.controller.info().path !== path) {
+      await e.controller.open(path);
+      // The file couldn't be read (the controller said why): stay in the reading view.
+      if (e.controller.info().path !== path) return;
+    }
+    setMode('edit');
+    e.revealLine(target);
+    e.focus();
+  };
+
+  const viewNow = async () => {
+    if (mode === 'view' || !editor) return;
+    if (await renderEditor(editor, { line: editor.topLine() })) setMode('view');
+  };
+
+  const openNow = async (path?: string, anchor?: string | null) => {
+    const at = anchor ? { anchor } : undefined;
+    if (editor) {
+      const before = editor.controller.info().path;
+      await editor.controller.open(path);
+      const after = editor.controller.info().path;
+      if (mode === 'view' && after !== before) await renderEditor(editor, at);
+      else if (mode === 'view' && at) viewer.scrollToAnchor(at.anchor);
+      return;
+    }
+    const target = path ?? (await platform.dialogs.pickOpen());
+    if (target === null) return;
+    if (target === shown?.path) {
+      if (at) viewer.scrollToAnchor(at.anchor);
+      return;
+    }
+    await openInViewer(target, at);
+  };
+
+  const checkDiskNow = async () => {
+    if (editor) {
+      await editor.controller.checkDisk();
+      if (mode === 'view' && editor.text() !== shownText) await renderEditor(editor, { line: viewer.topLine() });
+      return;
+    }
+    const path = shown?.path;
+    if (!path || !shown?.stamp) return;
+    let stamp;
+    try {
+      stamp = await platform.fs.stat(path);
+    } catch {
+      return; // can't tell; keep showing what we have
+    }
+    if (stamp === null) {
+      notify(`${displayName(path)} was deleted or moved; showing the last version.`);
+      shown = { ...shown, stamp: null };
+      return;
+    }
+    if (!sameStamp(stamp, shown.stamp)) await openInViewer(path, { line: viewer.topLine() });
+  };
+
+  return {
+    start: () =>
+      serial(async () => {
+        const startup = await platform.render.startupView().catch(() => ({ kind: 'edit' }) as const);
+        if (startup.kind === 'view') {
+          await display(startup.document);
+          setMode('view');
+          return;
+        }
+        const e = await ensureEditor();
+        await e.controller.start(await platform.startupDocument());
+        setMode('edit');
+        e.focus();
+      }),
+    mode: () => mode,
+    toggle: () => serial(() => (mode === 'view' ? editNow() : viewNow())),
+    edit: (line) => serial(() => editNow(line)),
+    view: () => serial(viewNow),
+    open: (path) => serial(() => openNow(path)),
+    newDocument: () =>
+      serial(async () => {
+        const e = await ensureEditor();
+        await e.controller.newDocument();
+        if (e.controller.info().path === null && !e.controller.info().dirty) {
+          setMode('edit');
+          e.focus();
+        }
+      }),
+    save: () =>
+      serial(async () => {
+        if (editor) await editor.controller.save();
+      }),
+    followLink: (href) =>
+      serial(async () => {
+        const action = linkAction(href, documentDir(shown?.path ?? editor?.controller.info().path ?? null));
+        switch (action.kind) {
+          case 'anchor':
+            viewer.scrollToAnchor(action.id);
+            return;
+          case 'document':
+            return openNow(action.path, action.anchor);
+          case 'external':
+            return platform.shell.openUrl(action.url).catch((err) => notify(`Could not open the link: ${describeError(err)}`));
+          case 'reveal':
+            return platform.shell
+              .revealFile(action.path)
+              .catch((err) => notify(`Could not show ${displayName(action.path)}: ${describeError(err)}`));
+          case 'none':
+            return;
+        }
+      }),
+    checkDisk: () => serial(checkDiskNow),
+    requestClose: () => serial(async () => (editor ? editor.controller.requestClose() : true)),
+  };
+}

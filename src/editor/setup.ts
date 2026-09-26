@@ -17,6 +17,8 @@ export interface EditorCommands {
   saveAs(): void;
   open(): void;
   newDocument(): void;
+  /** Switch to the reading view. */
+  toggleReading(): void;
 }
 
 export interface EditorOptions {
@@ -33,6 +35,10 @@ export interface Editor {
   readonly port: EditorPort<Text>;
   readonly sourceMode: () => boolean;
   toggleSourceMode(): void;
+  /** 1-based line at the top of the viewport. */
+  topLine(): number;
+  /** Scroll `line` to the top of the viewport and put the caret at its start. */
+  revealLine(line: number): void;
 }
 
 /** Start typing after a leading heading marker rather than in front of it. */
@@ -66,6 +72,7 @@ export function createEditor(options: EditorOptions): Editor {
     { key: 'Mod-Shift-s', run: () => (options.commands.saveAs(), true), preventDefault: true },
     { key: 'Mod-o', run: () => (options.commands.open(), true), preventDefault: true },
     { key: 'Mod-n', run: () => (options.commands.newDocument(), true), preventDefault: true },
+    { key: 'Mod-e', run: () => (options.commands.toggleReading(), true), preventDefault: true },
     { key: 'Mod-/', run: () => (toggleSourceMode(), true), preventDefault: true },
     { key: 'Mod-f', run: (v) => (void openSearch(v, false), true), preventDefault: true },
     { key: 'Mod-h', run: (v) => (void openSearch(v, true), true), preventDefault: true },
@@ -124,5 +131,19 @@ export function createEditor(options: EditorOptions): Editor {
     },
   };
 
-  return { view, port, sourceMode: () => source, toggleSourceMode };
+  const topLine = () => {
+    const scrolled = view.scrollDOM.getBoundingClientRect().top - view.documentTop;
+    return view.state.doc.lineAt(view.lineBlockAtHeight(Math.max(0, scrolled)).from).number;
+  };
+
+  const revealLine = (line: number) => {
+    const { doc } = view.state;
+    const target = doc.line(Math.min(Math.max(1, Math.round(line)), doc.lines));
+    view.dispatch({
+      selection: EditorSelection.cursor(target.from),
+      effects: EditorView.scrollIntoView(target.from, { y: 'start' }),
+    });
+  };
+
+  return { view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine };
 }

@@ -57,3 +57,47 @@ export function resolveTarget(raw: string, docDir: string | null): Target | null
   if (docDir === null) return null;
   return { kind: 'file', path: joinPath(docDir, decode(dest)) };
 }
+
+const MARKDOWN_EXTENSIONS = /\.(md|markdown|mdown|mkd|mkdn|mdwn|mdtxt|mdtext|txt)$/i;
+
+/** Files Scrivo opens itself rather than handing to the system. */
+export const isMarkdownPath = (path: string): boolean => MARKDOWN_EXTENSIONS.test(path);
+
+/** Schemes handed to the system's default application. */
+const EXTERNAL_SCHEMES = /^(https?|mailto|tel):/i;
+
+/** What following a link in the reading view does. */
+export type LinkAction =
+  | { readonly kind: 'anchor'; readonly id: string }
+  | { readonly kind: 'document'; readonly path: string; readonly anchor: string | null }
+  | { readonly kind: 'external'; readonly url: string }
+  /** A local file that isn't markdown: shown in the file manager, never executed. */
+  | { readonly kind: 'reveal'; readonly path: string }
+  | { readonly kind: 'none' };
+
+const fragmentOf = (raw: string): string | null => {
+  const i = raw.indexOf('#');
+  if (i < 0 || i === raw.length - 1) return null;
+  const f = raw.slice(i + 1);
+  try {
+    return decodeURIComponent(f);
+  } catch {
+    return f;
+  }
+};
+
+export function linkAction(href: string, docDir: string | null): LinkAction {
+  const raw = href.trim();
+  if (raw.startsWith('#')) {
+    const id = fragmentOf(raw);
+    return id === null ? { kind: 'none' } : { kind: 'anchor', id };
+  }
+  const target = resolveTarget(raw, docDir);
+  if (target === null) return { kind: 'none' };
+  if (target.kind === 'url') {
+    return EXTERNAL_SCHEMES.test(target.url) ? { kind: 'external', url: target.url } : { kind: 'none' };
+  }
+  return isMarkdownPath(target.path)
+    ? { kind: 'document', path: target.path, anchor: fragmentOf(raw) }
+    : { kind: 'reveal', path: target.path };
+}
