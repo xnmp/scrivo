@@ -1,0 +1,46 @@
+run 1: window=425 complete=1027 ms  pss=510 MiB  (148 frames @ 17 ms)
+run 2: window=348 complete=924 ms  pss=494 MiB  (140 frames @ 17 ms)
+run 3: window=381 complete=962 ms  pss=493 MiB  (143 frames @ 17 ms)
+run 4: window=384 complete=904 ms  pss=492 MiB  (141 frames @ 17 ms)
+run 5: window=361 complete=926 ms  pss=494 MiB  (141 frames @ 17 ms)
+run 6: window=367 complete=906 ms  pss=492 MiB  (142 frames @ 17 ms)
+run 7: window=393 complete=1080 ms  pss=492 MiB  (131 frames @ 20 ms)
+run 8: window=366 complete=914 ms  pss=494 MiB  (140 frames @ 17 ms)
+
+typora medium.md runs=8 on cage (headless, 1280x720)
+  window   ms  : min=348 median=381 p90=425 max=425
+  complete ms  : min=904 median=926 p90=1080 max=1080
+  pss      MiB : min=492 median=494 p90=510 max=510
+run 1: window=323 complete=500 ms  pss=262 MiB  (112 frames @ 18 ms)
+run 2: window=291 complete=504 ms  pss=258 MiB  (115 frames @ 18 ms)
+run 3: window=300 complete=533 ms  pss=270 MiB  (116 frames @ 18 ms)
+run 4: window=273 complete=484 ms  pss=271 MiB  (114 frames @ 17 ms)
+run 5: window=308 complete=530 ms  pss=269 MiB  (113 frames @ 18 ms)
+run 6: window=302 complete=516 ms  pss=271 MiB  (115 frames @ 18 ms)
+run 7: window=281 complete=479 ms  pss=270 MiB  (113 frames @ 18 ms)
+run 8: window=251 complete=444 ms  pss=271 MiB  (119 frames @ 16 ms)
+
+scrivo medium.md runs=8 on cage (headless, 1280x720)
+  window   ms  : min=251 median=300 p90=323 max=323
+  complete ms  : min=444 median=504 p90=533 max=533
+  pss      MiB : min=258 median=270 p90=271 max=271
+run 1: window=421 complete=1920 ms  pss=841 MiB  (207 frames @ 17 ms)
+run 2: window=351 complete=1926 ms  pss=820 MiB  (202 frames @ 17 ms)
+run 3: window=369 complete=1839 ms  pss=821 MiB  (201 frames @ 17 ms)
+run 4: window=360 complete=1934 ms  pss=881 MiB  (195 frames @ 18 ms)
+run 5: window=419 complete=2063 ms  pss=830 MiB  (187 frames @ 19 ms)
+
+typora large.md runs=5 on cage (headless, 1280x720)
+  window   ms  : min=351 median=369 p90=421 max=421
+  complete ms  : min=1839 median=1926 p90=2063 max=2063
+  pss      MiB : min=820 median=830 p90=881 max=881
+run 1: window=284 complete=511 ms  pss=282 MiB  (117 frames @ 17 ms)
+run 2: window=323 complete=504 ms  pss=271 MiB  (80 frames @ 25 ms)
+run 3: window=569 complete=982 ms  pss=283 MiB  (82 frames @ 30 ms)
+run 4: window=617 complete=1058 ms  pss=297 MiB  (83 frames @ 31 ms)
+run 5: window=605 complete=992 ms  pss=283 MiB  (87 frames @ 29 ms)
+
+scrivo large.md runs=5 on cage (headless, 1280x720)
+  window   ms  : min=284 median=569 p90=617 max=617
+  complete ms  : min=504 median=982 p90=1058 max=1058
+  pss      MiB : min=271 median=283 p90=297 max=297

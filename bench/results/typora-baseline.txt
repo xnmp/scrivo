@@ -1,0 +1,25 @@
+run 1: window=288 first=418 complete=933 ms  pss=505 MiB  (1701x1350, 57 frames @ 37 ms)
+run 2: window=314 first=610 complete=1040 ms  pss=503 MiB  (1701x1350, 58 frames @ 38 ms)
+run 3: window=330 first=622 complete=1056 ms  pss=501 MiB  (3416x1350, 41 frames @ 55 ms)
+run 4: window=327 first=598 complete=1027 ms  pss=505 MiB  (1701x1350, 58 frames @ 38 ms)
+run 5: window=305 first=604 complete=963 ms  pss=503 MiB  (1701x1350, 54 frames @ 40 ms)
+run 6: window=308 first=617 complete=1024 ms  pss=504 MiB  (1701x1350, 58 frames @ 38 ms)
+run 7: window=324 first=610 complete=1079 ms  pss=503 MiB  (3416x1350, 43 frames @ 53 ms)
+run 8: window=356 first=648 complete=1149 ms  pss=504 MiB  (1701x1350, 53 frames @ 43 ms)
+
+typora medium.md runs=8
+  window   ms  : min=288 median=324 p90=356 max=356
+  first    ms  : min=418 median=610 p90=648 max=648
+  complete ms  : min=933 median=1040 p90=1149 max=1149
+  pss      MiB : min=501 median=504 p90=505 max=505
+run 1: window=312 first=416 complete=1897 ms  pss=840 MiB  (1701x1350, 82 frames @ 37 ms)
+run 2: window=316 first=591 complete=2140 ms  pss=838 MiB  (1701x1350, 87 frames @ 38 ms)
+run 3: window=306 first=614 complete=2281 ms  pss=838 MiB  (3416x1350, 63 frames @ 55 ms)
+run 4: window=314 first=589 complete=2133 ms  pss=838 MiB  (1701x1350, 88 frames @ 37 ms)
+run 5: window=327 first=624 complete=2257 ms  pss=841 MiB  (3416x1350, 67 frames @ 51 ms)
+
+typora large.md runs=5
+  window   ms  : min=306 median=314 p90=327 max=327
+  first    ms  : min=416 median=591 p90=624 max=624
+  complete ms  : min=1897 median=2140 p90=2281 max=2281
+  pss      MiB : min=838 median=838 p90=841 max=841
