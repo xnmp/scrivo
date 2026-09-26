@@ -1,5 +1,5 @@
 // Shared helpers for the Playwright suite. Talk to the app mostly through
-// `window.__scrivo` (see src/main.ts) rather than reimplementing editor internals here.
+// `window.__scrivo` (see src/boot.ts) rather than reimplementing editor internals here.
 import type { Page } from '@playwright/test';
 
 export interface OpenOptions {
