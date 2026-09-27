@@ -14,10 +14,12 @@ import type { Position, ViewerPort } from '../app/workspace';
 
 export interface Viewer extends ViewerPort {
   focus(): void;
-  /** Resolves once the whole current document is in the page. */
-  settled(): Promise<void>;
+  /** Resolves once the whole current document is in the page. A signal prioritizes insertion until completion or abort. */
+  settled(interactive?: AbortSignal): Promise<void>;
   /** Insert every block still pending, now. */
   loadAll(): void;
+  /** Stop insertion when the reading surface is hidden. A later show() starts fresh. */
+  suspend(): void;
   /** Changes whenever the page starts showing different content. */
   version(): number;
   /** Changes when text nodes are replaced without changing the document. */
@@ -29,6 +31,9 @@ export interface Viewer extends ViewerPort {
 
 /** Time budget per idle slice for appending blocks. */
 const SLICE_MS = 12;
+/** Bound required insertion work when the browser reports no idle time. */
+const BACKGROUND_TIMEOUT_MS = 250;
+const INTERACTIVE_TIMEOUT_MS = 25;
 /** Blocks appended per step when filling the first screen. */
 const FIRST_SCREEN_STEP = 24;
 const LARGE_CODE_LENGTH = 1_000_000;
@@ -210,7 +215,18 @@ export function createViewer(
   let contentVersion = 0;
   let textRevision = 0;
   const shownListeners: Array<(doc: ViewDocument) => void> = [];
-  let settledWaiters: Array<() => void> = [];
+  let settledWaiters: Array<{ resolve: () => void; signal?: AbortSignal; abort?: () => void }> = [];
+  let interactiveCompletion = false;
+  let rescheduleBackground: (() => void) | null = null;
+  let cancelBackground: (() => void) | null = null;
+
+  const resolveSettledWaiters = () => {
+    settledWaiters.forEach(({ resolve, signal, abort }) => {
+      if (signal && abort) signal.removeEventListener('abort', abort);
+      resolve();
+    });
+    settledWaiters = [];
+  };
 
   const appendBlocks = (count: number, maxChunkParses = Infinity, shouldYield: () => boolean = () => false): number => {
     let parsedChunks = 0;
@@ -234,8 +250,10 @@ export function createViewer(
     if (pending && !pending.firstChild && nextChunk === chunkEnds.length) {
       pending = null;
       pendingHtml = '';
-      settledWaiters.forEach((resolve) => resolve());
-      settledWaiters = [];
+      interactiveCompletion = false;
+      rescheduleBackground = null;
+      cancelBackground = null;
+      resolveSettledWaiters();
     }
     return appended;
   };
@@ -247,19 +265,32 @@ export function createViewer(
 
   const appendInBackground = (gen: number) => {
     let perBlock = 0.05; // ms per block, refined as we go
+    let idleId = 0;
+    const schedule = () => {
+      idleId = requestIdleCallback(step, {
+        timeout: interactiveCompletion ? INTERACTIVE_TIMEOUT_MS : BACKGROUND_TIMEOUT_MS,
+      });
+    };
     const step = (deadline: IdleDeadline) => {
       if (gen !== generation || !pending) return;
-      const budget = Math.max(2, Math.min(SLICE_MS, deadline.timeRemaining()));
+      const budget = deadline.didTimeout ? SLICE_MS : Math.max(2, Math.min(SLICE_MS, deadline.timeRemaining()));
       const count = Math.max(8, Math.floor(budget / perBlock));
       const start = performance.now();
       // Most renderer chunks are cheap, but a table can be costly. Parse at most
-      // two chunks per idle callback and stop appending when its budget runs out.
-      const appended = appendBlocks(count, 2, () => performance.now() - start >= budget || deadline.timeRemaining() < 2);
+      // two chunks per callback and stop appending when its budget runs out.
+      // An expired callback reports no idle time, but still gets a bounded slice.
+      const appended = appendBlocks(count, 2,
+        () => performance.now() - start >= budget || (!deadline.didTimeout && deadline.timeRemaining() < 2));
       void article.offsetHeight; // lay out now, inside this slice, not in the next frame
       perBlock = Math.max(0.005, (performance.now() - start) / Math.max(1, appended));
-      if (pending) requestIdleCallback(step);
+      if (pending) schedule();
     };
-    requestIdleCallback(step);
+    rescheduleBackground = () => {
+      cancelIdleCallback(idleId);
+      schedule();
+    };
+    cancelBackground = () => cancelIdleCallback(idleId);
+    schedule();
   };
 
   const lineOf = (el: Element) => Number(el.getAttribute('data-line')) || 1;
@@ -335,6 +366,9 @@ export function createViewer(
       if (gen !== generation) return;
 
       pending = template.content;
+      interactiveCompletion = settledWaiters.some(({ signal }) => signal && !signal.aborted);
+      rescheduleBackground = null;
+      cancelBackground = null;
       pendingHtml = doc.html;
       chunkEnds = ends;
       nextChunk = 1;
@@ -357,8 +391,38 @@ export function createViewer(
     topLine,
     scrollToAnchor,
     focus: () => scroller.focus({ preventScroll: true }),
-    settled: () => (pending ? new Promise<void>((resolve) => settledWaiters.push(resolve)) : Promise.resolve()),
+    settled: (interactive) => (pending && !interactive?.aborted ? new Promise<void>((resolve) => {
+      const waiter: { resolve: () => void; signal?: AbortSignal; abort?: () => void } = { resolve, signal: interactive };
+      if (interactive) {
+        waiter.abort = () => {
+          interactive.removeEventListener('abort', waiter.abort!);
+          settledWaiters = settledWaiters.filter((item) => item !== waiter);
+          resolve();
+          if (interactiveCompletion && !settledWaiters.some(({ signal }) => signal && !signal.aborted)) {
+            interactiveCompletion = false;
+            rescheduleBackground?.();
+          }
+        };
+        interactive.addEventListener('abort', waiter.abort, { once: true });
+      }
+      settledWaiters.push(waiter);
+      if (interactive && !interactiveCompletion) {
+        interactiveCompletion = true;
+        rescheduleBackground?.();
+      }
+    }) : Promise.resolve()),
     loadAll: () => appendUntil(() => false),
+    suspend: () => {
+      generation++;
+      contentVersion++;
+      cancelBackground?.();
+      cancelBackground = null;
+      rescheduleBackground = null;
+      interactiveCompletion = false;
+      pending = null;
+      pendingHtml = '';
+      resolveSettledWaiters();
+    },
     version: () => contentVersion,
     textVersion: () => textRevision,
     invalidateTextNodes: () => void textRevision++,

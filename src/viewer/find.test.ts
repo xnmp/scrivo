@@ -123,4 +123,19 @@ describe('finder', () => {
     expect(await pending).toBeNull();
     expect(selected()).toBe('');
   });
+
+  it('cancels an interactive wait when Find is closed', async () => {
+    article.innerHTML = '<p>alpha</p>';
+    let cancelled = false;
+    const finder = createFinder(scroller, article, {
+      ...source,
+      settled: (signal) => new Promise<void>((resolve) => {
+        signal!.addEventListener('abort', () => { cancelled = true; resolve(); }, { once: true });
+      }),
+    });
+    const pending = finder.search('alpha');
+    finder.clear();
+    expect(cancelled).toBe(true);
+    expect(await pending).toBeNull();
+  });
 });

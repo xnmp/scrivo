@@ -119,6 +119,7 @@ const workspace = createWorkspace({
     } else {
       findBar?.close();
       outline?.close();
+      viewer.suspend();
       editorApp?.shown();
     }
   },

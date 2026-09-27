@@ -1,0 +1,29 @@
+round 1 scrivo-before-idle-timeouts: window=215 content=346 complete=346
+round 1 scrivo: window=237 content=411 complete=411
+round 2 scrivo: window=213 content=358 complete=358
+round 2 scrivo-before-idle-timeouts: window=212 content=357 complete=357
+round 3 scrivo-before-idle-timeouts: window=277 content=411 complete=411
+round 3 scrivo: window=237 content=350 complete=350
+round 4 scrivo: window=233 content=365 complete=365
+round 4 scrivo-before-idle-timeouts: window=231 content=377 complete=377
+round 5 scrivo-before-idle-timeouts: window=219 content=365 complete=365
+round 5 scrivo: window=240 content=369 complete=369
+round 6 scrivo: window=232 content=362 complete=362
+round 6 scrivo-before-idle-timeouts: window=223 content=371 complete=371
+round 7 scrivo-before-idle-timeouts: window=255 content=403 complete=403
+round 7 scrivo: window=220 content=350 complete=350
+round 8 scrivo: window=285 content=458 complete=458
+round 8 scrivo-before-idle-timeouts: window=216 content=362 complete=362
+round 9 scrivo-before-idle-timeouts: window=218 content=347 complete=347
+round 9 scrivo: window=228 content=357 complete=357
+round 10 scrivo: window=225 content=371 complete=371
+round 10 scrivo-before-idle-timeouts: window=237 content=350 complete=350
+round 11 scrivo-before-idle-timeouts: window=237 content=369 complete=369
+round 11 scrivo: window=212 content=357 complete=357
+round 12 scrivo: window=246 content=377 complete=377
+round 12 scrivo-before-idle-timeouts: window=255 content=386 complete=386
+
+medium.md, 12 rounds
+  scrivo-before-idle-timeouts n=12  window med=227  content med=367  complete med=367
+  scrivo           n=12  window med=233  content med=364  complete med=364
+  scrivo vs scrivo-before-idle-timeouts: content -4 ms (paired median), faster in 6/12 rounds

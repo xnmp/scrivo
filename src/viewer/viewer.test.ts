@@ -9,12 +9,13 @@ const docOf = (count: number, text?: (line: number) => string) =>
   doc(Array.from({ length: count }, (_, i) => para(i + 1, text?.(i + 1))).join(''));
 
 /** Idle callbacks run only when the test says so. */
-let idleQueue: IdleRequestCallback[] = [];
+let idleQueue: Array<{ id: number; callback: IdleRequestCallback; timeout?: number }> = [];
+let nextIdleId = 1;
 const runIdle = () => {
   while (idleQueue.length > 0) {
     const batch = idleQueue;
     idleQueue = [];
-    batch.forEach((cb) => cb({ didTimeout: false, timeRemaining: () => 5 }));
+    batch.forEach(({ callback }) => callback({ didTimeout: false, timeRemaining: () => 5 }));
   }
 };
 
@@ -36,7 +37,15 @@ const texts = () => [...article.children].map((el) => el.textContent);
 
 beforeEach(() => {
   idleQueue = [];
-  (globalThis as any).requestIdleCallback = (cb: IdleRequestCallback) => idleQueue.push(cb);
+  nextIdleId = 1;
+  (globalThis as any).requestIdleCallback = (callback: IdleRequestCallback, options?: IdleRequestOptions) => {
+    const id = nextIdleId++;
+    idleQueue.push({ id, callback, timeout: options?.timeout });
+    return id;
+  };
+  (globalThis as any).cancelIdleCallback = (id: number) => {
+    idleQueue = idleQueue.filter((item) => item.id !== id);
+  };
   document.body.innerHTML = '<div id="viewer"><article id="document" class="markdown-body"></article></div>';
   scroller = document.getElementById('viewer')!;
   article = document.getElementById('document')!;
@@ -47,6 +56,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete (globalThis as any).requestIdleCallback;
+  delete (globalThis as any).cancelIdleCallback;
 });
 
 describe('showing a document', () => {
@@ -71,7 +81,7 @@ describe('showing a document', () => {
     const chunkEnds = chunks.slice(0, -1).map((_, i) => chunks.slice(0, i + 1).join('').length);
     await viewer.show({ ...doc(html), chunkEnds });
     expect(article.children.length).toBeLessThan(40);
-    idleQueue.shift()?.({ didTimeout: false, timeRemaining: () => 5 });
+    idleQueue.shift()?.callback({ didTimeout: false, timeRemaining: () => 5 });
     expect(article.children.length).toBeLessThan(200);
     runIdle();
     await viewer.settled();
@@ -85,6 +95,45 @@ describe('showing a document', () => {
     await viewer.show(docOf(3));
     expect(texts()).toEqual(['Paragraph 1', 'Paragraph 2', 'Paragraph 3']);
     await expect(viewer.settled()).resolves.toBeUndefined();
+  });
+
+  it('promotes pending insertion for interactive consumers and completes on timeout slices', async () => {
+    await viewer.show(docOf(100));
+    expect(idleQueue.map((item) => item.timeout)).toEqual([250]);
+    const settled = viewer.settled(new AbortController().signal);
+    expect(idleQueue.map((item) => item.timeout)).toEqual([25]);
+    while (idleQueue.length > 0) {
+      const item = idleQueue.shift()!;
+      item.callback({ didTimeout: true, timeRemaining: () => 0 });
+    }
+    await settled;
+    expect(texts()).toEqual(Array.from({ length: 100 }, (_, i) => `Paragraph ${i + 1}`));
+  });
+
+  it('returns to background scheduling when an interactive wait is cancelled', async () => {
+    await viewer.show(docOf(100));
+    const controller = new AbortController();
+    const settled = viewer.settled(controller.signal);
+    expect(idleQueue.map((item) => item.timeout)).toEqual([25]);
+    controller.abort();
+    await settled;
+    expect(idleQueue.map((item) => item.timeout)).toEqual([250]);
+    runIdle();
+    expect(texts()).toHaveLength(100);
+  });
+
+  it('stops pending insertion while the reading surface is hidden', async () => {
+    await viewer.show(docOf(100));
+    const visible = article.children.length;
+    let settled = false;
+    void viewer.settled().then(() => { settled = true; });
+    viewer.suspend();
+    runIdle();
+    await Promise.resolve();
+    expect(article.children.length).toBe(visible);
+    expect(settled).toBe(true);
+    await viewer.show(docOf(3));
+    expect(texts()).toEqual(['Paragraph 1', 'Paragraph 2', 'Paragraph 3']);
   });
 
   it('an empty document empties the page', async () => {

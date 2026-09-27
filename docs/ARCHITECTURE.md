@@ -44,6 +44,12 @@ Find refreshes at most every 250 ms while open and once at completion so repeate
 full-document indexing does not dominate highlighting. The Rust renderer also
 provides UTF-16 offsets at complete top-level block boundaries, so the viewer
 parses only the first HTML chunk before paint and later chunks during idle time.
+The insertion scheduler gives required background work a 250 ms idle-callback
+timeout. While Find awaits the complete document, a cancellable wait lowers that
+timeout to 25 ms; closing or replacing the query returns to background pacing.
+Expired callbacks use the same 12 ms work budget rather than treating their zero
+reported idle time as a reason to append only one block. Switching to edit mode
+suspends unfinished reader insertion; switching back renders from the editor buffer.
 An early Find query waits for that insertion to settle before indexing and range
 geometry. The bar remains interactive and shows a pending state; newer queries
 or closing the bar cancel stale results. This avoids forcing full-document layout
@@ -206,7 +212,8 @@ Adopted:
 | Render in Rust on the prefetch thread, in parallel with window creation | HTML ready before the page asks |
 | Progressive insertion (first 1.5 screens, rest in idle slices) | large.md first frame 1285 → ~400 ms |
 | Parse only the first safe HTML chunk before paint | −20 ms paired median on large.md, faster in 10/12 release pairs (see README) |
-| Insert up to two HTML chunks per 12 ms idle slice after initial screen insertion | −419 ms paired median to full large-document insertion (12/12 pairs faster); first-viewport differences stayed within a few ms across separate 12-pair runs |
+| Insert up to two HTML chunks per 12 ms slice after initial screen insertion | −419 ms paired median to full large-document insertion (12/12 pairs faster); first-viewport differences stayed within a few ms across separate 12-pair runs |
+| Bound insertion under continuous animation; prioritize and cancel early Find waits | Real 800-code-block Find completes while animation leaves no idle time; startup comparison in current handover |
 | Load the math font before inserting math | first layout 142 → 86 ms (math-heavy page) |
 | `system-ui` first in the body font stack | first layout 75 → 53 ms |
 | Warm EGL + image loader on worker threads (`prewarm.rs`) | −48 ms (10/12 rounds) |

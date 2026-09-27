@@ -23,7 +23,7 @@ export interface Finder {
 /** What the finder needs from the viewer. */
 export interface FindSource {
   /** Resolves when every block of the current document is in the page. */
-  settled(): Promise<void>;
+  settled(interactive?: AbortSignal): Promise<void>;
   /** Bumped whenever indexed text nodes may have changed. */
   textVersion(): number;
 }
@@ -62,6 +62,7 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
   let current = -1;
   let capped = false;
   let request = 0;
+  let waiting: AbortController | null = null;
 
   const state = (): FindState => ({ count: matches.length, current, capped });
 
@@ -142,15 +143,21 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
 
   const clear = () => {
     request++;
+    waiting?.abort();
+    waiting = null;
     clearMatches();
   };
 
   return {
     async search(query) {
+      waiting?.abort();
       const id = ++request;
       clearMatches();
       if (query === '') return state();
-      await source.settled();
+      const controller = new AbortController();
+      waiting = controller;
+      await source.settled(controller.signal);
+      if (waiting === controller) waiting = null;
       if (id !== request) return null;
       const version = source.textVersion();
       if (index?.version !== version) index = indexText(article, version);

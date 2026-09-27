@@ -3,16 +3,16 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current checkpoint strengthens
-Windows file revision detection while retaining startup behavior. The previous
-checkpoint kept early Find responsive; the one before it reduced large-document
-insertion time without materially changing the first viewport. Earlier checkpoints
-extended bounded layout of giant Unicode code blocks and fixed Find geometry in contained
-code, false save conflicts from lossy timestamps, and conditional writes, and
-added renderer-supplied HTML chunk boundaries, viewer phase traces, batched
-postpaint code highlighting, reviewed
-startup benchmarks, and a manifest-based bundle gate. The broader goal is
-ongoing; there is no release or deployment.
+verified, and exceptionally fast at startup. The current checkpoint bounds
+large-document insertion under continuous main-thread activity so an early Find
+can finish. The previous checkpoint strengthened Windows file revision detection.
+Earlier checkpoints kept early Find responsive, reduced large-document insertion
+time without materially changing the first viewport, bounded layout of giant
+Unicode code blocks, fixed Find geometry in contained code and false save
+conflicts from lossy timestamps, and added conditional writes, renderer-supplied
+HTML chunk boundaries, viewer phase traces, batched postpaint code highlighting,
+reviewed startup benchmarks, and a manifest-based bundle gate. The broader goal
+is ongoing; there is no release or deployment.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -22,7 +22,62 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: stronger Windows file revisions
+## Current checkpoint: bounded insertion and cancellable early Find
+
+- A real Chromium probe of the 443 KB fixture reproduced idle starvation: with
+  a continuous animation using roughly 16 ms of each frame, three seconds after
+  opening Find only 2 of 800 code blocks had entered the page and the bar still
+  said `Searching…`. The browser can delay `requestIdleCallback` indefinitely when
+  there is no idle time; the [MDN API guidance](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestIdleCallback)
+  recommends a timeout for required work.
+- `src/viewer/viewer.ts` now schedules background slices with a 250 ms timeout.
+  An early Find request uses a 25 ms timeout until the document is complete or
+  its `AbortSignal` is cancelled. A timed-out callback gets a bounded 12 ms work
+  budget; its reported zero idle time no longer causes immediate one-block
+  yielding. At most two renderer chunks are parsed per slice. The first viewport
+  is still inserted synchronously before any background callback is scheduled.
+- `src/viewer/find.ts` aborts the previous wait on a new query or when Find closes,
+  so insertion returns to background pacing when the search is no longer needed.
+  An independent reviewer found this cancellation requirement during review.
+  The second review found that a hidden reader would otherwise keep doing forced
+  timeout work while the user edited. `boot.ts` now suspends the reader on the
+  switch to edit mode; returning to the reader renders a fresh document as the
+  workspace already requires. Unit tests cover promotion, timeout completion,
+  demotion, suspension, and stale search cancellation.
+  `e2e/reading-busy-find.spec.ts` keeps the animation running until
+  the actual Find bar shows `1 of 1` and all 800 blocks are present; it passed
+  in the full Chromium suite. An exploratory run with the timeout slice showed
+  740/800 code blocks after three seconds of the same load, up from 2/800 on the
+  baseline. These are diagnostic observations, not comparative benchmark samples.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| TypeScript and Vitest | Pass; 300/300 unit tests |
+| Full Chromium suite | 63/63 passed after reader suspension, including the existing 250 ms insertion frame-gap gate |
+| Full native WebKitGTK suite | 12/12 specs, 15 tests passed on the final rebuilt debug binary |
+| Release build and web bundle gate | Pass; 38/40 KiB static, 52/56 KiB known prepaint JS/CSS |
+| Paired release startup checks | 12/12 valid pairs per fixture; −4 ms medium, +3 ms large paired median; faster in 6/12 each |
+| Independent adversarial review | Found missing cancellation and hidden-reader work; both addressed; final review found no concrete defect |
+
+Paired raw rounds are in `bench/results/paired-idle-timeout-medium.txt` and
+`bench/results/paired-idle-timeout-large.txt`. The baseline release binary
+SHA-256 is `d9e3745d94f6f556d9b29f127f048af35f8a73bab2d8bc942d9280b304baadd3`;
+the final release binary SHA-256 is
+`a14ac7d8e303cc959be8e598269d1971f9fb577ad1ec90dd2e6a2b27f4997adb`.
+For each fixture, run `node bench/ab.mjs bench/fixtures/medium.md 12
+/tmp/scrivo-before-idle-timeouts src-tauri/target/release/scrivo`, substituting
+`large.md` for the other run. The small, split paired differences do not establish a startup
+speed change. The baseline diagnostic's 2/800 and candidate's 740/800 counts
+were observed under synthetic continuous animation in Chromium, not native
+release startup runs.
+
+The broader objective is still active. Windows runtime checks on NTFS and a
+weak/virtual filesystem remain the highest-value follow-up. Also revisit the
+final save check → rename race before claiming fully race-free conditional writes.
+
+## Previous checkpoint: stronger Windows file revisions (`0d8539a`)
 
 - The previous Windows `FileStamp` contained only size and modified time. A
   same-size external edit with restored modified time could be missed, allowing
@@ -83,7 +138,7 @@ Linux refactor did not produce an obvious startup change on these fixtures.
 The full objective remains active. The highest-value follow-up is Windows runtime
 testing on NTFS and FAT/exFAT (or a virtual drive), including the new same-size
 conflict tests, native Save As and symlink behavior, and startup. Also retain the
-previous checkpoint's idle-starvation and final check → rename caveats below.
+final check → rename caveat below. The idle-starvation issue is addressed above.
 
 ## Previous checkpoint: responsive early Find (`0d638ba`)
 
@@ -112,11 +167,8 @@ previous checkpoint's idle-starvation and final check → rename caveats below.
   default 5-second assertion timeout under 12-way contention; increasing only
   the final-result wait to 15 seconds made the full run pass. The immediate
   responsiveness threshold did not change.
-- Independent review found no concrete race. Find now waits for the viewer's
-  `requestIdleCallback` insertion chain, which has no timeout. Continuous main
-  thread activity could keep `Searching…` visible longer; this was not reproduced.
-  Assess a deadline policy only with frame and startup measurements, since the
-  current idle scheduler protects the initial viewport.
+- Independent review found no concrete Find race. The idle-starvation risk left
+  at that checkpoint was later reproduced and addressed in the current checkpoint.
 
 ### Validation for this checkpoint
 
@@ -138,11 +190,9 @@ and the same command with `large.md`. Their logs are in
 reviewed viewport, but without paired baseline rounds they do not establish
 a startup time change.
 
-The next agent should inspect the `requestIdleCallback` starvation risk only if it can reproduce a
-meaningful delayed Find under load, and should keep the complete-document result,
-150 ms input-path check, 250 ms insertion frame-gap gate, and startup reference
-checks when changing the scheduler. The final cross-process check → rename race
-remains a data-safety follow-up below.
+The complete-document result, 150 ms input-path check, 250 ms insertion
+frame-gap gate, and startup reference checks remain regression gates. The final
+cross-process check → rename race remains a data-safety follow-up below.
 
 ## Previous checkpoint: faster background insertion (`65d29fc`)
 
@@ -205,8 +255,8 @@ Only the first-viewport A/B commands are stable repository tooling; reproduce
 settled-time numbers with the trace command and a rebuilt `8fea444` baseline if
 needed. Do not compare absolute medians between benchmark sessions.
 
-The early-Find pause identified here is addressed by the current checkpoint;
-see the split diagnostic and actual input-path test above.
+The early-Find pause identified here was addressed by the responsive early Find
+checkpoint above; the current checkpoint also bounds its completion under load.
 
 ## Previous checkpoint: Unicode width for giant code blocks (`8fea444`)
 
