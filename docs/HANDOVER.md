@@ -4,11 +4,10 @@
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
 verified, and exceptionally fast at startup. The latest checkpoint on `main`
-accounts for prepaint and deferred bundle assets. The prior commit,
-`1565334 Validate startup screens and large-document rendering`, hardened the
-startup comparison, made the large fixture visibly distinct, and
-added a native large-file outcome test. This checkpoint makes the build gate use
-Vite's manifest, validates deferred assets, and counts known prepaint imports.
+adds a verified editor-startup benchmark, reruns the feature suites, and measures
+when large documents finish progressive insertion. The prior checkpoint,
+`425cd77 Account for prepaint and deferred bundle assets`, made the build gate
+use Vite's manifest, validate deferred assets, and count known prepaint imports.
 The broader goal is ongoing; there is no release or deployment.
 
 Read `README.md` for usage and the latest performance table,
@@ -90,7 +89,9 @@ and the budget omitted a conditional 1 MB math font.
 | `bun run typecheck` | Pass |
 | `bunx tsc --noEmit -p e2e-native/tsconfig.json` | Pass |
 | `bun run test` | 292 tests across 16 files passed |
-| `bun run test:e2e:native` | 11/11 passed, including large-file tail |
+| `bun run test:e2e` | 52/52 Chromium tests passed on this continuation |
+| `bun run test:e2e:native` | 11/11 native WebKitGTK specs passed on this continuation, including large-file tail |
+| `cargo test -q` | 26/26 Rust tests passed on this continuation |
 | `bun run build:web` | Pass; 34/40 KiB static, 47/56 KiB known prepaint JS/CSS, 1,060 KiB referenced assets, 2,517 KiB deferred graph |
 | `bunx tauri build --no-bundle` | Pass; release binary rebuilt with manifest-bearing web assets |
 | `node --check bench/bench.mjs` and `bench/ab.mjs` | Pass |
@@ -103,6 +104,28 @@ suite initially had 10 pass and one new test fail from its stale handle, then pa
 11/11 after the test correction. Playwright WebKit cannot start on this host because
 `libicu74`, `libxml2`, and `libflite1` are missing; native WebKitGTK was exercised.
 Repository-wide `cargo fmt --check` still reports broad preexisting formatting drift.
+
+## Editor startup and full-document timing (this continuation)
+
+- `bench/bench.mjs --edit` launches `scrivo --edit FILE` and loads a separate
+  fixture-hashed screenshot reference. The new `scrivo-medium-edit.png` was visually
+  inspected: it shows the CodeMirror editor, the Medium fixture heading and body,
+  and 1,373 words in the status bar. The reviewer measured a 20.25% tile difference
+  from the reader reference, well beyond the 0.3% readiness threshold. Five trial
+  runs and a retained 12-run series all passed. The raw series is
+  `bench/results/verified-medium-edit.txt`: median window **213 ms**, visible
+  editor **389 ms**, stable first viewport **389 ms**, PSS **286 MiB**. This is a
+  standalone Scrivo measurement; `bench/ab.mjs` does not pass `--edit` to Typora.
+- The retained three-run trace in `bench/results/diagnostic-large-settled.txt`
+  showed verified first-viewport content at **377–492 ms** and `document settled`
+  (all progressive blocks inserted) at **1,016–1,417 ms** after process start. An
+  earlier diagnostic three-run session had a 1,935 ms settle outlier under load.
+  These traces are not a paired comparison, and full-document completion is not
+  the screenshot benchmark's `complete` metric. The native tail E2E passed again.
+- An unverified missing-file launch was captured separately to inspect the empty
+  editor path; the screenshot showed the expected empty editor. Its 3-run median
+  content time was 335 ms, but the run intentionally exited nonzero and is not a
+  reviewed benchmark result.
 
 ## Final paired measurements
 
@@ -153,6 +176,11 @@ measure how long that takes. A prior single startup trace is in
   been measured. A prior concurrent browser/native run had one failure in each
   suite under load; later full concurrent and sequential reruns passed, but its
   exact cause was not established.
+- `document settled` times insertion only. After that, reading-view code highlighting
+  visits each fenced block and yields once per block (`src/viewer/code-highlight.ts`).
+  A 400-section fixture has many code blocks; its total highlighting time and effect
+  on early interactions have not been measured. Instrument before changing the idle
+  policy or parser scheduling.
 
 ## Commands
 
@@ -168,6 +196,7 @@ bunx tauri build --no-bundle
 node bench/ab.mjs bench/fixtures/medium.md 12 typora src-tauri/target/release/scrivo
 node bench/ab.mjs bench/fixtures/large.md 12 typora src-tauri/target/release/scrivo
 node bench/bench.mjs scrivo bench/fixtures/medium.md 1 --trace
+node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit
 ```
 
 To refresh a reference after a visual or platform change, run one app and fixture

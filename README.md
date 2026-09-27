@@ -74,6 +74,13 @@ retained as [medium](bench/results/pre-readiness-medium.txt) and
 [large](bench/results/pre-readiness-large.txt) historical logs; they are not directly
 comparable with these results.
 
+The editor startup path has its own reviewed first-viewport reference. In 12
+headless launches of `scrivo --edit medium.md`, the median window time was 213 ms
+and the median visible editor time was 389 ms; all 12 runs passed the reference
+check. The [raw editor log](bench/results/verified-medium-edit.txt) is a standalone
+Scrivo measurement, not a paired Typora comparison. Reproduce it with
+`node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
+
 The web build gate counts 34 KiB of linked static startup JS/CSS against a 40 KiB
 budget. Tauri's window API loads during boot; including it gives 47 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a

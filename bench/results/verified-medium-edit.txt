@@ -1,0 +1,18 @@
+run 1: window=214 content=407 complete=407 ms  pss=272 MiB  (116 frames @ 17 ms)
+run 2: window=208 content=371 complete=371 ms  pss=271 MiB  (114 frames @ 16 ms)
+run 3: window=228 content=390 complete=390 ms  pss=286 MiB  (114 frames @ 17 ms)
+run 4: window=209 content=386 complete=386 ms  pss=285 MiB  (114 frames @ 17 ms)
+run 5: window=229 content=408 complete=408 ms  pss=285 MiB  (113 frames @ 17 ms)
+run 6: window=212 content=389 complete=389 ms  pss=286 MiB  (112 frames @ 17 ms)
+run 7: window=211 content=390 complete=390 ms  pss=286 MiB  (115 frames @ 17 ms)
+run 8: window=210 content=372 complete=372 ms  pss=288 MiB  (114 frames @ 16 ms)
+run 9: window=224 content=370 complete=370 ms  pss=287 MiB  (112 frames @ 17 ms)
+run 10: window=226 content=388 complete=388 ms  pss=286 MiB  (113 frames @ 17 ms)
+run 11: window=229 content=418 complete=418 ms  pss=286 MiB  (113 frames @ 17 ms)
+run 12: window=210 content=389 complete=389 ms  pss=287 MiB  (115 frames @ 16 ms)
+
+scrivo medium.md --edit runs=12 on cage (headless, 1280x720)
+  window   ms  : min=208 median=213 p90=229 max=229
+  content  ms  : min=370 median=389 p90=408 max=418
+  complete ms  : min=370 median=389 p90=408 max=418
+  pss      MiB : min=271 median=286 p90=287 max=288

@@ -13,7 +13,7 @@
 //
 // Every run uses a private, headless 1280×720 cage compositor.
 //
-// Usage: node bench/bench.mjs <typora|scrivo> <file.md> [runs=8] [--dump=DIR] [--trace]
+// Usage: node bench/bench.mjs <typora|scrivo> <file.md> [runs=8] [--dump=DIR] [--trace] [--edit]
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -29,16 +29,18 @@ const dumpDir = flags.find((f) => f.startsWith('--dump='))?.slice('--dump='.leng
 const failureDir = flags.find((f) => f.startsWith('--failure-dir='))?.slice('--failure-dir='.length);
 const trace = flags.includes('--trace');
 const unverified = flags.includes('--unverified');
+const edit = flags.includes('--edit');
 if (flags.includes('--desktop')) throw new Error('live-desktop benchmarking is unsupported; use the private cage compositor');
 if (!appName || !fileArg) {
-  console.error('usage: bench.mjs <typora|scrivo> <file.md> [runs] [--dump=DIR] [--failure-dir=DIR] [--trace] [--reference=FILE] [--unverified]');
+  console.error('usage: bench.mjs <typora|scrivo> <file.md> [runs] [--dump=DIR] [--failure-dir=DIR] [--trace] [--edit (scrivo only)] [--reference=FILE] [--unverified]');
   process.exit(2);
 }
+if (edit && appName !== 'scrivo') throw new Error('--edit is only supported for scrivo');
 const file = path.resolve(fileArg);
 const runs = Number(runsArg);
 if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('runs must be a positive integer');
 const referenceFile = flags.find((f) => f.startsWith('--reference='))?.slice('--reference='.length)
-  ?? path.join(import.meta.dirname, 'references', `${appName}-${path.basename(file, path.extname(file))}.json`);
+  ?? path.join(import.meta.dirname, 'references', `${appName}-${path.basename(file, path.extname(file))}${edit ? '-edit' : ''}.json`);
 const reference = unverified ? null : loadReference(referenceFile, readFileSync(file));
 
 const APPS = {
@@ -217,7 +219,7 @@ if (unverified) {
 try {
   for (let i = 0; i < runs; i++) {
     const t0 = performance.now();
-    const child = spawn(app.cmd, [file], {
+    const child = spawn(app.cmd, edit ? ['--edit', file] : [file], {
       env: trace ? { ...display.env, SCRIVO_TRACE: '1' } : display.env,
       stdio: trace ? ['ignore', 'pipe', 'ignore'] : 'ignore',
       detached: true,
@@ -262,7 +264,7 @@ try {
   await display.stop();
 }
 
-console.log(`\n${appName} ${path.basename(file)} runs=${runs} on ${display.name}`);
+console.log(`\n${appName} ${path.basename(file)}${edit ? ' --edit' : ''} runs=${runs} on ${display.name}`);
 for (const [k, unit] of [['window', 'ms'], ['content', 'ms'], ['complete', 'ms'], ['pss', 'MiB']]) {
   if (results[k].length) console.log(`  ${k.padEnd(8)} ${unit.padEnd(3)} : ${fmt(stats(results[k]))}`);
 }

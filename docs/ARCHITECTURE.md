@@ -163,6 +163,8 @@ first-viewport reference). The final viewport must also match that reference and
 before the 20-second cap; at least 80% of rounds must form
 valid pairs. "Complete" means viewport stability, not full-document completion. A
 native E2E test checks that the large document's tail is present and scrollable.
+The `--edit` mode of `bench/bench.mjs` uses a separate reviewed Scrivo editor
+reference; it is a standalone measurement, not part of the paired Typora results.
 Earlier experiments below used the original fixed launch order, so their deltas are
 directional rather than directly comparable with the current README results.
 
