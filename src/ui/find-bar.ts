@@ -50,11 +50,42 @@ export function createFindBar(host: HTMLElement, finder: Finder, onDismiss: () =
     count.textContent = input.value === '' ? '' : none ? 'No matches' : `${s.current + 1} of ${s.count}${s.capped ? '+' : ''}`;
   };
 
-  const search = () => show(finder.search(input.value));
-  const next = (direction: 1 | -1) => show(finder.next(direction));
+  let searching = false;
+  const previous = button('Previous match', '↑', () => next(-1));
+  const following = button('Next match', '↓', () => next(1));
+  const setSearching = (value: boolean) => {
+    searching = value;
+    previous.disabled = value;
+    following.disabled = value;
+  };
+  const search = () => {
+    const query = input.value;
+    if (query === '') {
+      finder.clear();
+      setSearching(false);
+      show({ count: 0, current: -1, capped: false });
+      return;
+    }
+    setSearching(true);
+    bar.classList.remove('no-match');
+    count.textContent = 'Searching…';
+    void finder.search(query).then((result) => {
+      if (result === null || bar.hidden) return;
+      setSearching(false);
+      show(result);
+    }).catch(() => {
+      if (bar.hidden || input.value !== query) return;
+      setSearching(false);
+      count.textContent = 'Search failed';
+    });
+  };
+  const next = (direction: 1 | -1) => {
+    if (!searching) show(finder.next(direction));
+  };
   const close = () => {
     bar.hidden = true;
     finder.clear();
+    setSearching(false);
   };
   const dismiss = () => {
     if (bar.hidden) return;
@@ -73,7 +104,7 @@ export function createFindBar(host: HTMLElement, finder: Finder, onDismiss: () =
     }
   });
 
-  bar.append(input, count, button('Previous match', '↑', () => next(-1)), button('Next match', '↓', () => next(1)), button('Close', '✕', dismiss));
+  bar.append(input, count, previous, following, button('Close', '✕', dismiss));
   host.appendChild(bar);
 
   return {

@@ -44,6 +44,10 @@ Find refreshes at most every 250 ms while open and once at completion so repeate
 full-document indexing does not dominate highlighting. The Rust renderer also
 provides UTF-16 offsets at complete top-level block boundaries, so the viewer
 parses only the first HTML chunk before paint and later chunks during idle time.
+An early Find query waits for that insertion to settle before indexing and range
+geometry. The bar remains interactive and shows a pending state; newer queries
+or closing the bar cancel stale results. This avoids forcing full-document layout
+during the input event while retaining complete-document search.
 Code blocks of at least 1 MB are split into 250-line contained spans before layout,
 keeping all text in the DOM while bounding visible-scroll work. The viewer sets
 the code width from the widest ASCII line and a bounded set of distinct Unicode

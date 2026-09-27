@@ -13,7 +13,7 @@ export interface FindState {
 
 export interface Finder {
   /** Find `query` and show the first match at or below the top of the view. */
-  search(query: string): FindState;
+  search(query: string): Promise<FindState | null>;
   /** Move to the next (1) or previous (-1) match. */
   next(direction: 1 | -1): FindState;
   /** Remove all highlights. */
@@ -22,8 +22,8 @@ export interface Finder {
 
 /** What the finder needs from the viewer. */
 export interface FindSource {
-  /** Insert any blocks still pending, so the whole document can be searched. */
-  loadAll(): void;
+  /** Resolves when every block of the current document is in the page. */
+  settled(): Promise<void>;
   /** Bumped whenever indexed text nodes may have changed. */
   textVersion(): number;
 }
@@ -61,6 +61,7 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
   let ranges: Range[] = [];
   let current = -1;
   let capped = false;
+  let request = 0;
 
   const state = (): FindState => ({ count: matches.length, current, capped });
 
@@ -129,7 +130,7 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
     if (range) reveal(range);
   };
 
-  const clear = () => {
+  const clearMatches = () => {
     highlights?.delete(HIGHLIGHT_ALL);
     highlights?.delete(HIGHLIGHT_CURRENT);
     if (!highlights && ranges.length > 0) getSelection()?.removeAllRanges();
@@ -139,10 +140,18 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
     capped = false;
   };
 
+  const clear = () => {
+    request++;
+    clearMatches();
+  };
+
   return {
-    search(query) {
-      clear();
-      source.loadAll();
+    async search(query) {
+      const id = ++request;
+      clearMatches();
+      if (query === '') return state();
+      await source.settled();
+      if (id !== request) return null;
       const version = source.textVersion();
       if (index?.version !== version) index = indexText(article, version);
       const idx = index;

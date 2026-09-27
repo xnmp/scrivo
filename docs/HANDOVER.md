@@ -3,10 +3,11 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current work reduces the time to
-finish inserting a large document without materially changing its first viewport
-time. The previous checkpoint extended bounded layout of giant code blocks to
-Unicode and tabbed lines. Earlier checkpoints fixed Find geometry in contained
+verified, and exceptionally fast at startup. The current checkpoint keeps early
+Find responsive while preserving complete-document search. The previous checkpoint
+reduced the time to finish inserting a large document without materially changing
+its first viewport time; the one before that extended bounded layout of giant code
+blocks to Unicode and tabbed lines. Earlier checkpoints fixed Find geometry in contained
 code, false save conflicts from lossy timestamps, and conditional writes, and
 added renderer-supplied HTML chunk boundaries, viewer phase traces, batched
 postpaint code highlighting, reviewed
@@ -21,7 +22,67 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: faster background insertion
+## Current checkpoint: responsive early Find
+
+- Before this change, typing into Find immediately after the 443 KB fixture's first
+  screen appeared paused the webview for about 444 ms. A split Chromium diagnostic
+  corrected the initial attribution: `viewer.loadAll()` itself took 33–37 ms;
+  synchronous Find indexing/geometry immediately after bulk insertion took
+  another 413–441 ms. When background insertion had settled first, the same
+  one-match Find took about 7 ms. These are exploratory host timings, not a
+  statistical benchmark. The old handover wording attributed the entire pause to
+  `loadAll()` and was inaccurate.
+- `src/viewer/find.ts` now awaits `viewer.settled()` before indexing and revealing
+  a match, letting the existing bounded idle insertion complete without a sudden
+  layout flush on the input event. Find still covers the whole document. A request
+  counter prevents a superseded query or a closed bar from publishing stale
+  matches. `src/ui/find-bar.ts` shows `Searching…` immediately, disables previous
+  and next while waiting, preserves input focus, and handles a failed search.
+  Empty queries clear synchronously.
+- `e2e/reading-early-find.spec.ts` exercises the actual Ctrl+F input path in one
+  browser task immediately after the first screen of the real fixture. It requires
+  opening and entering the query in under 150 ms, while fewer than 800 code blocks
+  are inserted; then it requires the final `1 of 1`, the visible `fib_400` match,
+  and all 800 code blocks. A second test closes Find during insertion and checks
+  that completion cannot restore highlights. Finder unit tests cover cancellation
+  by a newer query and by clear. The full-suite run initially hit Playwright's
+  default 5-second assertion timeout under 12-way contention; increasing only
+  the final-result wait to 15 seconds made the full run pass. The immediate
+  responsiveness threshold did not change.
+- Independent review found no concrete race. Find now waits for the viewer's
+  `requestIdleCallback` insertion chain, which has no timeout. Continuous main
+  thread activity could keep `Searching…` visible longer; this was not reproduced.
+  Assess a deadline policy only with frame and startup measurements, since the
+  current idle scheduler protects the initial viewport.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| TypeScript and Vitest | Pass; 296/296 unit tests |
+| Full Chromium suite | 62/62 passed, including early Find and close during insertion |
+| Full native WebKitGTK suite | 12/12 specs, 15 tests passed on final debug build |
+| Debug and release builds, web bundle gate | Pass; 37/40 KiB static, 51/56 KiB known prepaint JS/CSS, 1,060 KiB conditional font, 2,517 KiB deferred graph |
+| Independent review | No concrete Find race found; idle starvation remains a theoretical limit |
+| Verified release startup smoke | 5/5 medium and 5/5 large reviewed-screen matches; first-viewport medians 365 ms and 361 ms |
+
+The release binary SHA-256 is
+`90871a3d4c398722b9fdb7b1cfc91ca4180682b70ba0261642bc1170317f5388`.
+The smoke commands were `node bench/bench.mjs scrivo bench/fixtures/medium.md 5`
+and the same command with `large.md`. Their logs are in
+`/tmp/scrivo-async-find-startup-medium.log` and
+`/tmp/scrivo-async-find-startup-large.log` on this host. These validate the
+reviewed viewport, but without paired baseline rounds they do not establish
+a startup time change.
+
+The broad startup and data-safety goal remains active. The next agent should
+inspect the `requestIdleCallback` starvation risk only if it can reproduce a
+meaningful delayed Find under load, and should keep the complete-document result,
+150 ms input-path check, 250 ms insertion frame-gap gate, and startup reference
+checks when changing the scheduler. The Windows save-conflict behavior and final
+cross-process check → rename race remain data-safety follow-ups below.
+
+## Previous checkpoint: faster background insertion (`65d29fc`)
 
 - The 443 KB large fixture contains 151 safe HTML chunks. Instrumentation on the
   committed one-chunk scheduler observed about 150 idle callbacks after initial
@@ -82,16 +143,8 @@ Only the first-viewport A/B commands are stable repository tooling; reproduce
 settled-time numbers with the trace command and a rebuilt `8fea444` baseline if
 needed. Do not compare absolute medians between benchmark sessions.
 
-An exploratory Chromium probe called Find immediately after the 443 KB document's
-first screen appeared. `src/viewer/find.ts` synchronously invoked
-`viewer.loadAll()`, inserting the remaining code blocks before indexing text;
-the search found its one match but blocked for **444 ms** on this host. The
-probe was temporary and is not a committed performance gate. This is the next
-concrete responsiveness target: preserve complete-document search while keeping
-typing and Find open responsive during background insertion. Keep the first-viewport
-reference check and a frame-gap measurement when changing the idle policy. The
-Windows conflict and final cross-process check → rename race remain data-safety
-follow-ups described below.
+The early-Find pause identified here is addressed by the current checkpoint;
+see the split diagnostic and actual input-path test above.
 
 ## Previous checkpoint: Unicode width for giant code blocks (`8fea444`)
 
