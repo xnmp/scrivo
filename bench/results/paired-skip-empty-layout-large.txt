@@ -1,0 +1,29 @@
+round 1 scrivo-before-first-layout-check: window=312 content=461 complete=461
+round 1 scrivo: window=376 content=527 complete=527
+round 2 scrivo: window=442 content=635 complete=635
+round 2 scrivo-before-first-layout-check: window=372 content=614 complete=614
+round 3 scrivo-before-first-layout-check: window=274 content=421 complete=421
+round 3 scrivo: window=390 content=539 complete=539
+round 4 scrivo: window=405 content=668 complete=668
+round 4 scrivo-before-first-layout-check: window=430 content=633 complete=633
+round 5 scrivo-before-first-layout-check: window=481 content=764 complete=764
+round 5 scrivo: window=407 content=631 complete=631
+round 6 scrivo: window=440 content=767 complete=767
+round 6 scrivo-before-first-layout-check: window=442 content=715 complete=715
+round 7 scrivo-before-first-layout-check: window=424 content=635 complete=635
+round 7 scrivo: window=429 content=668 complete=668
+round 8 scrivo: window=384 content=636 complete=636
+round 8 scrivo-before-first-layout-check: window=405 content=661 complete=661
+round 9 scrivo-before-first-layout-check: window=446 content=712 complete=712
+round 9 scrivo: window=435 content=723 complete=723
+round 10 scrivo: window=421 content=684 complete=684
+round 10 scrivo-before-first-layout-check: window=402 content=671 complete=671
+round 11 scrivo-before-first-layout-check: window=366 content=629 complete=629
+round 11 scrivo: window=409 content=640 complete=640
+round 12 scrivo: window=414 content=663 complete=663
+round 12 scrivo-before-first-layout-check: window=424 content=680 complete=680
+
+large.md, 12 rounds
+  scrivo-before-first-layout-check n=12  window med=415  content med=648  complete med=648
+  scrivo           n=12  window med=412  content med=652  complete med=652
+  scrivo vs scrivo-before-first-layout-check: content +17 ms (paired median), faster in 3/12 rounds

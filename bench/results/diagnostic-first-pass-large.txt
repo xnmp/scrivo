@@ -1,0 +1,63 @@
+run 1: window=350 content=576 complete=576 ms  pss=365 MiB  (65 frames @ 32 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE     10.6 ms  startup document read
+SCRIVO_TRACE     37.0 ms  startup view prefetched
+SCRIVO_TRACE     54.9 ms  tauri setup
+SCRIVO_TRACE     55.3 ms  egl-warm: done
+SCRIVO_TRACE     81.5 ms  image-warm: done
+SCRIVO_TRACE    231.8 ms  window built
+SCRIVO_TRACE    395.6 ms  js start
+SCRIVO_TRACE    396.6 ms  startup view command entered
+SCRIVO_TRACE    397.3 ms  startup view cloned
+SCRIVO_TRACE    397.3 ms  startup view delivered
+SCRIVO_TRACE    410.0 ms  viewer first HTML chunk parsed
+SCRIVO_TRACE    423.1 ms  viewer math font ready
+SCRIVO_TRACE    462.5 ms  viewer first pass: blocks=24 append=1.0ms layout=36.0ms checks=2
+SCRIVO_TRACE    462.6 ms  viewer first blocks laid out
+SCRIVO_TRACE    466.7 ms  document shown
+SCRIVO_TRACE    495.9 ms  first frame with document
+SCRIVO_TRACE   2548.0 ms  document settled
+run 2: window=384 content=636 complete=636 ms  pss=352 MiB  (69 frames @ 31 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE      1.0 ms  startup document read
+SCRIVO_TRACE     29.5 ms  startup view prefetched
+SCRIVO_TRACE     62.4 ms  egl-warm: done
+SCRIVO_TRACE     94.8 ms  tauri setup
+SCRIVO_TRACE     98.0 ms  image-warm: done
+SCRIVO_TRACE    291.9 ms  window built
+SCRIVO_TRACE    421.7 ms  js start
+SCRIVO_TRACE    421.9 ms  startup view command entered
+SCRIVO_TRACE    424.0 ms  startup view cloned
+SCRIVO_TRACE    424.0 ms  startup view delivered
+SCRIVO_TRACE    440.1 ms  viewer first HTML chunk parsed
+SCRIVO_TRACE    460.6 ms  viewer math font ready
+SCRIVO_TRACE    504.6 ms  viewer first pass: blocks=24 append=1.0ms layout=42.0ms checks=2
+SCRIVO_TRACE    504.7 ms  viewer first blocks laid out
+SCRIVO_TRACE    514.5 ms  document shown
+SCRIVO_TRACE    541.7 ms  first frame with document
+SCRIVO_TRACE   3275.7 ms  document settled
+run 3: window=369 content=612 complete=612 ms  pss=315 MiB  (65 frames @ 33 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE     13.3 ms  startup document read
+SCRIVO_TRACE     25.7 ms  startup view prefetched
+SCRIVO_TRACE     48.1 ms  egl-warm: done
+SCRIVO_TRACE     64.8 ms  tauri setup
+SCRIVO_TRACE    106.2 ms  image-warm: done
+SCRIVO_TRACE    240.5 ms  window built
+SCRIVO_TRACE    395.6 ms  js start
+SCRIVO_TRACE    396.2 ms  startup view command entered
+SCRIVO_TRACE    396.9 ms  startup view cloned
+SCRIVO_TRACE    396.9 ms  startup view delivered
+SCRIVO_TRACE    416.0 ms  viewer first HTML chunk parsed
+SCRIVO_TRACE    432.7 ms  viewer math font ready
+SCRIVO_TRACE    481.6 ms  viewer first pass: blocks=24 append=1.0ms layout=46.0ms checks=2
+SCRIVO_TRACE    481.9 ms  viewer first blocks laid out
+SCRIVO_TRACE    490.0 ms  document shown
+SCRIVO_TRACE    519.6 ms  first frame with document
+SCRIVO_TRACE   3103.5 ms  document settled
+
+scrivo large.md runs=3 on cage (headless, 1280x720)
+  window   ms  : min=350 median=369 p90=384 max=384
+  content  ms  : min=576 median=612 p90=636 max=636
+  complete ms  : min=576 median=612 p90=636 max=636
+  pss      MiB : min=315 median=352 p90=365 max=365

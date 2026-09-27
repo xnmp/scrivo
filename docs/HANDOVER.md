@@ -25,7 +25,10 @@ show a consistent first-viewport gain. The release binary was restored to the
 `fb7ed11` build before the latest trace-only marks were added; no product code from
 the binary experiment remains. The latest release binary includes only Rust
 startup timing marks. The raw measurements and a reproducible 5 MB visual
-reference are kept.
+reference are kept. A later first-layout experiment was also reverted after a
+paired large-file regression; the product path still matches this checkpoint.
+The restored release binary currently has SHA-256
+`60d13b8e46171297babc0397397f5ba456132582e4d94ae8d81f486958e7570f`.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -37,6 +40,26 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
 
 ## Latest startup investigation (after `eec536a`)
 
+- **First-screen layout experiment, reverted.** A three-run diagnostic instrumented
+  `viewer.show()` without changing its insertion order. For medium, large, and
+  synthetic 5 MB documents it appended exactly **24 initial blocks** in about
+  **1–2 ms**; the two `scrollHeight` checks together took **25–46 ms**. Raw
+  verified traces are `bench/results/diagnostic-first-pass-{medium,large,5mb}.txt`.
+  Removing the initial height check on the empty article kept the same 1.5-screen
+  target and passed typecheck, 302 unit tests, the release/bundle gate, and
+  visually verified startup runs. In 12/12 valid paired release rounds per
+  fixture, first viewport changed **−3 ms** for medium (7/12 faster) and
+  **+17 ms** for large (3/12 faster). The host was slower and noisier than in
+  prior runs, so absolute times across sessions are not comparable; the rotated
+  pairs do not support keeping the change. It was reverted. Raw pairs are
+  `bench/results/paired-skip-empty-layout-{medium,large}.txt`. No 5 MB pair was
+  run for this candidate after the large regression. The baseline binary for
+  these pairs was `/tmp/scrivo-before-first-layout-check`, SHA-256
+  `95f311350948c633476149f70f0922c3a1b6138fc0d54186acbf254a844192e8`.
+  The restored release build and bundle gate passed, and one fresh verified
+  medium and large startup launch each matched its reviewed reference.
+  A better first-layout candidate needs to reduce actual layout work while
+  preserving the first viewport and early scroll behavior.
 - **Prefetch/clone phase split.** Temporary Rust marks, retained because they
   are inert unless `SCRIVO_TRACE=1`, show that the worker completes reading and
   rendering before the web page asks for the view. Three verified release runs

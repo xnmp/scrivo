@@ -244,6 +244,7 @@ Rejected (measured, then reverted):
 |---|---|
 | `content-visibility: auto` on blocks | large.md layout 521 → 967 ms |
 | Reduce first-screen insertion batch from 24 to 16 blocks | medium.md first-viewport paired median +1 ms in 12 pairs; no reliable gain |
+| Skip the initial empty-article height check before inserting 24 blocks | 12-pair release runs gave −3 ms medium and +17 ms large first viewport; the large-file regression outweighed the inconclusive medium result |
 | Start math-font loading before parsing the first HTML chunk | 12-pair release runs gave +5 ms medium and −1 ms large first viewport; no reliable gain |
 | Raw binary `startup_view` IPC with JSON metadata and UTF-8 HTML | 12-pair release runs gave −11 ms medium, +5 ms large, and −13 ms for a synthetic 5 MB fixture; the mixed first-viewport result did not justify a custom Rust/TypeScript protocol or its postMessage number-array fallback cost |
 | Targeted `content-visibility: auto` on a 5 MB code block | background insertion became fast, but scrolling into it caused a 350 ms frame gap |
