@@ -28,6 +28,22 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
 
 ## Latest startup investigation (after `eec536a`)
 
+- A later trace split the time between Rust's `startup_view` return and the
+  viewer's first HTML parse. Temporary marks at JavaScript receipt and viewer
+  entry showed that the browser parses the first ~6.4 KB HTML chunk in under
+  1 ms; most of the earlier 30 ms gap was transfer/deserialization of the full
+  rendered document. The native IPC payloads and three observed delivery→JS
+  intervals were: medium 22 KB, **0.9–1.1 ms**; large 1.12 MB,
+  **7.9–12.0 ms**; synthetic 5.17 MB, **31.6–38.7 ms**. Raw traces are
+  `bench/results/diagnostic-ipc-medium.txt`,
+  `bench/results/diagnostic-ipc-large.txt`, and
+  `bench/results/diagnostic-ipc-5mb-unverified.txt`. These are diagnostic
+  runs under variable host load, not paired speed comparisons. The temporary
+  trace calls were removed and the baseline release binary restored.
+  Sending only the first chunk before paint could reduce large-file transfer
+  time, but it would require a robust tail-loading contract for early Find,
+  anchors, scroll, cancellation, and editor handoff. Preserve those outcomes
+  before pursuing that larger design change.
 - A synthetic 5.14 MB document was made by appending 16,000 320-character
   code lines to `bench/fixtures/medium.md` in `/tmp`. Three release launches in
   the private compositor reported a stable viewport at 411–441 ms and a

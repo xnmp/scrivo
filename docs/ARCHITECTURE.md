@@ -249,6 +249,10 @@ Rejected (measured, then reverted):
 Known costs we don't control: the WebKit web process start (~100 ms: launch, EGL,
 fontconfig), GTK's client-side title bar icons (11 SVG decodes through glycin, ~20 ms
 after warm-up), NVIDIA's EGL init (Mesa's is ~35 ms faster on the same machine).
+The full rendered startup document crosses Tauri IPC before the first viewport;
+temporary phase marks measured about 1 ms for a 22 KB payload, 8–12 ms for a
+1.12 MB payload, and 32–39 ms for a synthetic 5.17 MB payload. First-chunk HTML
+parsing itself stayed under 1 ms. See the diagnostic IPC traces in the handover.
 
 ## Testing
 
