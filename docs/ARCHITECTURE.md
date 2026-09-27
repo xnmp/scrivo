@@ -190,6 +190,13 @@ The viewer also marks first-chunk HTML parsing, math-font readiness, and first-b
 Three-run medium and large traces are retained in `bench/results/diagnostic-viewer-*.txt`;
 the latest phase breakdown and its limits are in `docs/HANDOVER.md`.
 
+When returning from edit mode, the workspace renders the editor's latest text,
+then gives the hidden reader a measurable viewport using `visibility: hidden`
+before inserting its first screen. The editor stays visible until the reader is
+ready. A changed editor snapshot causes the transition to retry; abandoned reader
+insertion is suspended. Source-line navigation loads enough content below its
+target to avoid scroll clamping while the rest of the document is pending.
+
 ## Performance decisions
 
 Current comparisons use the release build with `bench/ab.mjs` (paired rounds with
@@ -214,6 +221,7 @@ Adopted:
 | Parse only the first safe HTML chunk before paint | −20 ms paired median on large.md, faster in 10/12 release pairs (see README) |
 | Insert up to two HTML chunks per 12 ms slice after initial screen insertion | −419 ms paired median to full large-document insertion (12/12 pairs faster); first-viewport differences stayed within a few ms across separate 12-pair runs |
 | Bound insertion under continuous animation; prioritize and cancel early Find waits | Real 800-code-block Find completes while animation leaves no idle time; startup comparison in current handover |
+| Keep the reader measurable while switching from edit mode | The 443 KB document returns with its first screen instead of inserting all 800 code blocks synchronously; isolated Chromium diagnostic 561 → 145 ms; paired startup check in current handover |
 | Load the math font before inserting math | first layout 142 → 86 ms (math-heavy page) |
 | `system-ui` first in the body font stack | first layout 75 → 53 ms |
 | Warm EGL + image loader on worker threads (`prewarm.rs`) | −48 ms (10/12 rounds) |

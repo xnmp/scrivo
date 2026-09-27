@@ -3,11 +3,13 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current checkpoint bounds
-large-document insertion under continuous main-thread activity so an early Find
-can finish. The previous checkpoint strengthened Windows file revision detection.
-Earlier checkpoints kept early Find responsive, reduced large-document insertion
-time without materially changing the first viewport, bounded layout of giant
+verified, and exceptionally fast at startup. The current checkpoint makes the
+edit-to-reader transition progressive for large documents and keeps edits typed
+during rendering. The previous checkpoint bounded large-document insertion under
+continuous main-thread activity; the one before it strengthened Windows file
+revision detection. Earlier checkpoints kept early Find responsive, reduced
+large-document insertion time without materially changing the first viewport,
+bounded layout of giant
 Unicode code blocks, fixed Find geometry in contained code and false save
 conflicts from lossy timestamps, and added conditional writes, renderer-supplied
 HTML chunk boundaries, viewer phase traces, batched postpaint code highlighting,
@@ -22,7 +24,63 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: bounded insertion and cancellable early Find
+## Current checkpoint: progressive edit-to-reader transition
+
+- A real 443 KB Chromium diagnostic showed that returning from edit mode inserted
+  all 800 code blocks before the reader appeared; the isolated transition took
+  about 561 ms. `viewNow()` rendered the reader while `body[data-mode='edit']`
+  applied `display: none` to it. Its zero layout height made the first-screen
+  insertion loop run to the end. [CSS Display](https://www.w3.org/TR/css-display-3/)
+  specifies that `display: none` generates no box; [CSS visibility](https://www.w3.org/TR/CSS22/visufx.html)
+  keeps an invisible box in layout.
+- The workspace now calls `prepareView()` only after rendering the editor buffer.
+  The boot adapter applies a temporary CSS state that gives the reader its real
+  viewport dimensions while keeping the editor visible and the reader invisible.
+  It removes the state after switching to the reader. An isolated diagnostic then
+  returned with 2 of 800 code blocks inserted in about 145 ms; the rest appended
+  progressively. These are single diagnostic runs, not a paired benchmark.
+- The newly progressive path exposed a source-line scroll clamp: the viewer had
+  loaded beyond the target line without loading enough content below it to place
+  that line at the top. `scrollToLine()` now fills below the target as anchor
+  navigation already does. The existing Ctrl+E position test initially caught
+  the three-line drift and now passes.
+- The editor stays usable while asynchronous rendering runs. A text snapshot can
+  become stale if the user types during rendering or insertion. The workspace
+  now retries until the rendered snapshot matches the current editor text, and
+  suspends insertion of an abandoned reader document. Unit tests delay each
+  phase independently and verify that the final reader contains both edits.
+  `e2e/reading-large-toggle.spec.ts` checks a populated first viewport, partial
+  insertion at handoff, the final 800 blocks, and a reachable tail. The native
+  large-file test checks the same handoff from the document top. A first native
+  attempt asserted partial insertion while the reader was at the tail after a
+  previous test; loading the whole document was correct for that target. A
+  temporary WebKitGTK probe confirmed the prepared reader had a real 451 px
+  viewport and stopped the first-screen pass after 12 blocks. The probe was
+  removed, and the test now scrolls to the top before switching.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| TypeScript and Vitest | Pass; 302/302 unit tests |
+| Chromium suite | 64/64 passed on the second 12-worker run; the first run had one 250 ms frame-gap miss in a giant Unicode block; that spec passed at 150 ms alone and 200 ms in the full rerun |
+| Native WebKitGTK suite | 12/12 specs, 16 tests passed on the rebuilt debug app; the new large-document return test captures the handoff state in a `MutationObserver` |
+| Release build and bundle gate | Pass; 39/40 KiB static, 52/56 KiB known prepaint JS/CSS |
+| Paired release startup checks | 12/12 valid pairs per fixture; +7 ms medium (candidate faster in 5/12), −7 ms large (9/12); no consistent effect |
+| Independent adversarial review | Found unnecessary old-DOM layout and stale async snapshot/background retry paths; all addressed; final review found no concrete defect |
+
+Raw paired rounds are in `bench/results/paired-progressive-toggle-medium.txt`
+and `bench/results/paired-progressive-toggle-large.txt`. Baseline release binary
+SHA-256: `a14ac7d8e303cc959be8e598269d1971f9fb577ad1ec90dd2e6a2b27f4997adb`;
+candidate: `7db12b67b56e5960039284c58cceda2e1636e949efd37bab3e917acc6c7469f1`.
+Each run used `node bench/ab.mjs` with the fixture, 12 rounds, the copied baseline
+binary, and the candidate release binary. The medium and large paired differences
+split direction and are small; they do not establish a startup speed change.
+
+The broader objective remains active. Windows runtime tests on NTFS and a
+weak/virtual filesystem and the final save check → rename race remain priorities.
+
+## Previous checkpoint: bounded insertion and cancellable early Find (`dc73f06`)
 
 - A real Chromium probe of the 443 KB fixture reproduced idle starvation: with
   a continuous animation using roughly 16 ms of each frame, three seconds after

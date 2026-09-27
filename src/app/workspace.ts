@@ -16,6 +16,8 @@ export type Position = { readonly line: number } | { readonly anchor: string };
 export interface ViewerPort {
   /** Resolves once the document is on screen (long documents keep loading after). */
   show(doc: ViewDocument, at?: Position): Promise<void>;
+  /** Stop background work for a document that will no longer be shown. */
+  suspend(): void;
   /** 1-based source line of the block at the top of the viewport. */
   topLine(): number;
   /** Scroll to the element with this id; false when there is none. */
@@ -62,6 +64,8 @@ export interface WorkspaceDeps {
   readonly loadEditor: () => Promise<EditorHandle>;
   /** Make the given surface the visible one. */
   readonly showSurface: (mode: Mode) => void;
+  /** Give the reader a measurable, nonvisible viewport while replacing the editor. */
+  readonly prepareView: () => () => void;
   readonly notify: (message: string) => void;
   /** Called when the current document path changes, including at startup. */
   readonly onPathChanged?: (path: string | null) => void;
@@ -121,13 +125,18 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
     if (!editor && titleChanged) platform.window.setTitle(windowTitle(doc.path, false));
   };
 
+  const renderEditorSnapshot = async (e: EditorHandle) => {
+    const text = e.text();
+    const document = await platform.render.renderText(text, e.controller.info().path);
+    return { text, document };
+  };
+
   /** Re-render the reading view from the editor's buffer. */
   const renderEditor = async (e: EditorHandle, at?: Position): Promise<boolean> => {
-    const text = e.text();
     try {
-      const doc = await platform.render.renderText(text, e.controller.info().path);
-      shownText = text;
-      await display(doc, at);
+      const snapshot = await renderEditorSnapshot(e);
+      await display(snapshot.document, at);
+      shownText = snapshot.text;
       return true;
     } catch (err) {
       notify(`Could not show the document: ${describeError(err)}`);
@@ -169,7 +178,34 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
 
   const viewNow = async () => {
     if (mode === 'view' || !editor) return;
-    if (await renderEditor(editor, { line: editor.topLine() })) setMode('view');
+    // The editor stays usable while rendering. If its text changes across an
+    // await, render the newer snapshot before handing the surface over.
+    for (;;) {
+      let snapshot: Awaited<ReturnType<typeof renderEditorSnapshot>>;
+      try {
+        snapshot = await renderEditorSnapshot(editor);
+      } catch (err) {
+        notify(`Could not show the document: ${describeError(err)}`);
+        return;
+      }
+      if (editor.text() !== snapshot.text) continue;
+      const releaseView = deps.prepareView();
+      try {
+        await display(snapshot.document, { line: editor.topLine() });
+        if (editor.text() !== snapshot.text) {
+          viewer.suspend();
+          continue;
+        }
+        shownText = snapshot.text;
+        setMode('view');
+        return;
+      } catch (err) {
+        notify(`Could not show the document: ${describeError(err)}`);
+        return;
+      } finally {
+        releaseView();
+      }
+    }
   };
 
   const openNow = async (path?: string, anchor?: string | null) => {

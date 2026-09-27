@@ -123,6 +123,10 @@ const workspace = createWorkspace({
       editorApp?.shown();
     }
   },
+  prepareView() {
+    document.body.dataset.preparingView = 'true';
+    return () => { delete document.body.dataset.preparingView; };
+  },
   async loadEditor() {
     const { createEditorApp } = await loadEditorModule();
     editorApp = createEditorApp({

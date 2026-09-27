@@ -84,8 +84,8 @@ check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
-The current web build gate counts 37 KiB of linked static startup JS/CSS against a 40 KiB
-budget. Tauri's window API loads during boot; including it gives 51 KiB of known
+The current web build gate counts 39 KiB of linked static startup JS/CSS against a 40 KiB
+budget. Tauri's window API loads during boot; including it gives 52 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
 1,060 KiB math font referenced by the reading-view stylesheet and a 2,517 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
@@ -97,6 +97,11 @@ reached full document insertion 419 ms sooner by paired median (faster in all
 12 rounds). Separate 12-pair startup runs found −3 ms on medium and +5 ms on
 large; these small differences do not establish a first-viewport speed change.
 [Raw rounds and conditions](docs/HANDOVER.md) are retained.
+
+Returning from editing a large document now prepares a measurable reading viewport
+while the editor remains visible. It shows the first screen before inserting the
+rest of the document. Browser and native integration tests verify the complete
+result; the latest paired startup checks found no consistent first-viewport change.
 
 Run the comparison locally with:
 

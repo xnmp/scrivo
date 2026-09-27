@@ -81,4 +81,40 @@ describe('large file in the native reading view', () => {
     );
     expect(highlighted).toEqual(expectedCode);
   });
+
+  it('returns from editing with a populated first screen and finishes the document in the background', async () => {
+    await browser.keys(['Escape']);
+    await browser.execute(() => { document.getElementById('viewer')!.scrollTop = 0; });
+    await browser.keys(['Control', 'e']);
+    await browser.waitUntil(() => browser.execute(() => document.body.dataset.mode === 'edit'), {
+      timeout: 15_000,
+      timeoutMsg: 'large document did not enter edit mode',
+    });
+    await browser.execute(() => {
+      const observer = new MutationObserver(() => {
+        if (document.body.dataset.mode !== 'view') return;
+        const viewer = document.getElementById('viewer')!;
+        const article = document.getElementById('document')!;
+        (window as any).__largeToggleFirst = {
+          codes: article.querySelectorAll('pre[data-lang] > code').length,
+          viewport: viewer.clientHeight,
+          content: article.scrollHeight,
+        };
+        observer.disconnect();
+      });
+      observer.observe(document.body, { attributes: true, attributeFilter: ['data-mode'] });
+    });
+    await browser.keys(['Control', 'e']);
+    await browser.waitUntil(() => browser.execute(() => Boolean((window as any).__largeToggleFirst)), {
+      timeout: 15_000,
+      timeoutMsg: 'large document did not return to reading mode',
+    });
+    const first = await browser.execute(() => (window as any).__largeToggleFirst as { codes: number; viewport: number; content: number });
+    expect(first.codes).toBeLessThan(800);
+    expect(first.viewport).toBeGreaterThan(0);
+    expect(first.content).toBeGreaterThan(first.viewport * 1.5);
+    await browser.waitUntil(() => browser.execute(() =>
+      document.querySelectorAll('#document pre[data-lang] > code').length === 800,
+    ), { timeout: 20_000, timeoutMsg: 'large document did not finish inserting after the mode switch' });
+  });
 });

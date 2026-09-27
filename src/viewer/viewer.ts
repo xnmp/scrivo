@@ -18,8 +18,6 @@ export interface Viewer extends ViewerPort {
   settled(interactive?: AbortSignal): Promise<void>;
   /** Insert every block still pending, now. */
   loadAll(): void;
-  /** Stop insertion when the reading surface is hidden. A later show() starts fresh. */
-  suspend(): void;
   /** Changes whenever the page starts showing different content. */
   version(): number;
   /** Changes when text nodes are replaced without changing the document. */
@@ -321,8 +319,7 @@ export function createViewer(
   const scrollToElement = (el: Element) => el.scrollIntoView({ block: 'start' });
 
   const scrollToLine = (line: number) => {
-    // Load past the target, with a screenful below it, so it can reach the top.
-    appendUntil(() => lastLoadedLine() > line && article.scrollHeight > scroller.clientHeight * 2);
+    appendUntil(() => lastLoadedLine() > line);
     const els = lineElements();
     // Last element starting at or before `line`.
     let lo = 0;
@@ -333,8 +330,14 @@ export function createViewer(
       else hi = mid;
     }
     const el = els[lo - 1];
-    if (el) scrollToElement(el);
-    else scroller.scrollTop = 0;
+    if (!el) {
+      scroller.scrollTop = 0;
+      return;
+    }
+    // The target needs content below it or scrollIntoView clamps near the end of
+    // the currently inserted fragment. Use the same margin as anchor navigation.
+    appendUntil(() => article.scrollHeight - el.offsetTop > scroller.clientHeight * 2);
+    scrollToElement(el);
   };
 
   const findAnchor = (id: string): HTMLElement | null =>

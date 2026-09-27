@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createMemoryPlatform, type MemoryPlatform } from '../platform/memory';
+import { createMemoryPlatform, fakeRender, type MemoryPlatform, type RenderFn } from '../platform/memory';
 import { createDocumentController } from './controller';
 import type { ViewDocument } from './ports';
 import { fakeEditor, scriptedPrompter } from './testing';
@@ -9,9 +9,11 @@ function fakeViewer() {
   const shown: Array<{ doc: ViewDocument; at: Position | undefined }> = [];
   const anchors: string[] = [];
   let top = 1;
+  let suspensions = 0;
   return {
     port: {
       show: async (doc: ViewDocument, at?: Position) => void shown.push({ doc, at }),
+      suspend: () => { suspensions++; },
       topLine: () => top,
       scrollToAnchor: (id: string) => {
         anchors.push(id);
@@ -21,22 +23,25 @@ function fakeViewer() {
     shown,
     anchors,
     scrollTo: (line: number) => void (top = line),
+    suspensions: () => suspensions,
     /** Text of the rendered paragraphs/headings currently shown. */
     text: () => (shown.at(-1)?.doc.html ?? '').replace(/<[^>]+>/g, '|').split('|').filter(Boolean).join('\n'),
   };
 }
 
 async function setup(
-  opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number; watch?: boolean } = {},
+  opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number; watch?: boolean; render?: RenderFn } = {},
 ) {
   const platform: MemoryPlatform = createMemoryPlatform({
     files: opts.files ?? {},
     ...(opts.startupPath ? { startupPath: opts.startupPath } : {}),
     ...(opts.startInEditor ? { startInEditor: true } : {}),
+    ...(opts.render ? { render: opts.render } : {}),
   });
   const viewer = fakeViewer();
   const p = scriptedPrompter();
   const surfaces: Mode[] = [];
+  const preparation: string[] = [];
   const editorPort = fakeEditor();
   const revealed: number[] = [];
   let editorTop = 1;
@@ -47,6 +52,10 @@ async function setup(
     platform,
     viewer: viewer.port,
     showSurface: (m) => void surfaces.push(m),
+    prepareView: () => {
+      preparation.push('prepared');
+      return () => void preparation.push('released');
+    },
     notify: p.prompter.notify,
     ...(opts.watch ? { onPathChanged: (path: string | null) => void platform.fs.watch(path, () => void workspace.checkDisk()) } : {}),
     loadEditor: async () => {
@@ -71,6 +80,7 @@ async function setup(
     editorPort,
     revealed,
     surfaces,
+    preparation,
     ...p,
     loads: () => loads,
     scrollEditorTo: (l: number) => void (editorTop = l),
@@ -137,6 +147,63 @@ describe('switching between reading and editing', () => {
     await t.workspace.view();
     expect(t.viewer.text()).toBe('A\none\ntwo\nthree\nfour');
     expect(t.platform.disk.get('/d/a.md')).toBe(files['/d/a.md']);
+  });
+
+  it('shows edits typed while rendering and prepares layout only after the render is ready', async () => {
+    let renderStarted!: () => void;
+    let finishRender!: () => void;
+    const started = new Promise<void>((resolve) => { renderStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { finishRender = resolve; });
+    const t = await setup({
+      files,
+      startupPath: '/d/a.md',
+      startInEditor: true,
+      render: async (text, path) => {
+        if (text.includes('first') && !text.includes('second')) {
+          renderStarted();
+          await gate;
+        }
+        return fakeRender(text, path);
+      },
+    });
+    t.typeInEditor(' first');
+    const switching = t.workspace.view();
+    await started;
+    expect(t.preparation).toEqual([]);
+    t.typeInEditor(' second');
+    finishRender();
+    await switching;
+    expect(t.workspace.mode()).toBe('view');
+    expect(t.viewer.text()).toContain('first second');
+    expect(t.preparation).toEqual(['prepared', 'released']);
+  });
+
+  it('discards a rendered view when the editor changes during viewer insertion', async () => {
+    const t = await setup({ files, startupPath: '/d/a.md', startInEditor: true });
+    let displayStarted!: () => void;
+    let finishDisplay!: () => void;
+    const started = new Promise<void>((resolve) => { displayStarted = resolve; });
+    const gate = new Promise<void>((resolve) => { finishDisplay = resolve; });
+    const originalShow = t.viewer.port.show;
+    let first = true;
+    t.viewer.port.show = async (doc, at) => {
+      if (first) {
+        first = false;
+        displayStarted();
+        await gate;
+      }
+      await originalShow(doc, at);
+    };
+    t.typeInEditor(' first');
+    const switching = t.workspace.view();
+    await started;
+    t.typeInEditor(' second');
+    finishDisplay();
+    await switching;
+    expect(t.workspace.mode()).toBe('view');
+    expect(t.viewer.text()).toContain('first second');
+    expect(t.viewer.suspensions()).toBe(1);
+    expect(t.preparation).toEqual(['prepared', 'released', 'prepared', 'released']);
   });
 
   it('opens the editor at a given line', async () => {
