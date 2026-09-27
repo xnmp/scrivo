@@ -3,7 +3,9 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current checkpoint makes the
+verified, and exceptionally fast at startup. The current checkpoint closes the
+late-creation overwrite race when saving to a previously absent path. The previous
+checkpoint makes the
 edit-to-reader transition progressive for large documents and keeps edits typed
 during rendering. The previous checkpoint bounded large-document insertion under
 continuous main-thread activity; the one before it strengthened Windows file
@@ -24,7 +26,43 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: progressive edit-to-reader transition
+## Current checkpoint: atomic installation of new documents
+
+- `WriteCondition::Absent` and `WriteCondition::Overwrite` when the target was
+  initially absent previously checked the path, then used replacing `fs::rename`.
+  A deterministic test hook between the final check and rename reproduced silent
+  overwrite of a file created by another writer in that gap.
+- New-target installation now uses Linux `renameat2(RENAME_NOREPLACE)`, macOS
+  `renamex_np(RENAME_EXCL)`, or Windows `MoveFileExW` without its replacement flag.
+  A late file or symlink returns `Conflict` and remains intact; temp files are
+  removed. Existing-target saves retain the earlier check and replace behavior.
+  Rust tests cover late files for both absent and explicit-overwrite conditions,
+  a late symlink, and the no-replace primitive with an existing destination.
+  The Windows API call now adds an extended-length prefix for long drive/UNC
+  paths, matching Rust's own long-path handling; a Windows-only test saves beyond
+  260 UTF-16 units. That test cross-compiles but has not run on Windows.
+- An independent review caught an unsafe checked-rename fallback and a hard-link
+  cleanup problem. Both fallbacks were removed. If a filesystem lacks atomic
+  no-replace rename, a new-document save returns an I/O error with the message
+  `filesystem cannot atomically create a new document`; it does not overwrite a
+  competing path. This may limit new saves on older or virtual filesystems and
+  needs runtime checks on such volumes. This change does **not** close the
+  existing-target final check → rename race.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| Reproduction | New late-file regression failed against the old replacing rename |
+| Rust app tests | 36/36 passed on Linux |
+| Rust renderer tests | 35/35 passed; unchanged renderer |
+| Isolated Windows-target module/tests check | Passed `cargo check --offline --tests --target x86_64-pc-windows-gnu`; runtime not tested |
+| Native WebKitGTK suite | 12/12 specs, 16 tests passed on rebuilt debug app, including new-file creation and save conflict outcomes; private DBus/Xvfb needed unsandboxed execution |
+| Web build and bundle gate | Passed as part of native build; 39/40 KiB static and 52/56 KiB known prepaint JS/CSS |
+| Release build | Passed `bunx tauri build --no-bundle`; no startup benchmark was repeated for this save-path-only change |
+| Independent adversarial review | Found and drove removal of unsafe/partial-success fallbacks and long-path handling; final review found no further concrete defect |
+
+## Previous checkpoint: progressive edit-to-reader transition (`28ee47a`)
 
 - A real 443 KB Chromium diagnostic showed that returning from edit mode inserted
   all 800 code blocks before the reader appeared; the isolated transition took
@@ -78,7 +116,8 @@ binary, and the candidate release binary. The medium and large paired difference
 split direction and are small; they do not establish a startup speed change.
 
 The broader objective remains active. Windows runtime tests on NTFS and a
-weak/virtual filesystem and the final save check → rename race remain priorities.
+weak/virtual filesystem and the existing-target final save check → rename race
+remain priorities.
 
 ## Previous checkpoint: bounded insertion and cancellable early Find (`dc73f06`)
 
@@ -772,7 +811,9 @@ measure how long that takes. A prior single startup trace is in
   own reviewed references. This is a first-viewport benchmark, not a Typora
   full-document completion test.
 - The Rust write path still has the cross-process race between final conflict
-  check and rename. Windows stamps now include change time and file identity where
+  check and rename when replacing an existing target. New-target installation
+  uses atomic no-replace rename where supported and fails safely otherwise.
+  Windows stamps now include change time and file identity where
   available, plus a bounded-memory content hash on weaker filesystems; runtime
   Windows verification remains outstanding. A writable file in a directory
   that forbids temporary-file creation now fails safely and keeps the buffer dirty.

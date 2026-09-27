@@ -145,8 +145,14 @@ files it doesn't reference, start programs, or navigate the webview.
   absent file, or user-confirmed overwrite. Symlink saves verify that the link still
   resolves to the original target; dangling links are not replaced.
   Save As first requires an absent target and asks before replacing an existing file.
-  No cross-process compare-and-rename is atomic, so a
-  writer racing in the final gap before rename can still be overwritten. On Windows,
+  Installing a previously absent target uses the platform's no-replace rename
+  (Linux `renameat2(RENAME_NOREPLACE)`, macOS `renamex_np(RENAME_EXCL)`, or Windows
+  `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`), so a file or symlink created
+  after the final check is not overwritten. If that operation is unavailable on
+  the filesystem, creating a new document fails rather than risking another
+  writer's file. Replacing an existing target still has a cross-process race
+  between the final stamp check and rename; it is not an atomic compare-and-swap.
+  On Windows,
   the stamp includes the volume/file ID and metadata change time when supported.
   FAT, exFAT, and some virtual filesystems may lack a strong ID or change time, so
   their stamps also include a SHA-256 hash of the file content. Stat and save checks

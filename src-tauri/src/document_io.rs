@@ -273,6 +273,10 @@ pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Res
 }
 
 fn write_document_with(path: &Path, text: &str, condition: WriteCondition, before_replace: impl FnOnce()) -> Result<FileStamp, DocError> {
+    write_document_with_hooks(path, text, condition, before_replace, || {})
+}
+
+fn write_document_with_hooks(path: &Path, text: &str, condition: WriteCondition, before_replace: impl FnOnce(), before_rename: impl FnOnce()) -> Result<FileStamp, DocError> {
     let path = absolute(path)?;
     let target = match fs::canonicalize(&path) {
         Ok(resolved) => resolved,
@@ -346,7 +350,12 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
                 Err(e) => return Err(e.into()),
             }
         }
-        fs::rename(&tmp_path, &target)?;
+        before_rename();
+        if existing.is_none() {
+            install_new_target(&tmp_path, &target)?;
+        } else {
+            fs::rename(&tmp_path, &target)?;
+        }
         sync_dir(dir);
         Ok(())
     })();
@@ -355,6 +364,116 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
         return Err(e);
     }
     state_at_path(&target)?.map(|(_, stamp)| stamp).ok_or(DocError::NotFound)
+}
+
+/// Install a prepared new document without replacing a path another writer
+/// created after our last check. The source and destination share a directory.
+fn install_new_target(source: &Path, target: &Path) -> Result<(), DocError> {
+    let result = rename_no_replace(source, target);
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => match fs::symlink_metadata(target) {
+            Ok(_) => Err(DocError::Conflict),
+            Err(not_found) if not_found.kind() == io::ErrorKind::NotFound => Err(error.into()),
+            Err(metadata_error) => Err(metadata_error.into()),
+        },
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let source_c = CString::new(source.as_os_str().as_bytes())?;
+    let target_c = CString::new(target.as_os_str().as_bytes())?;
+    // SAFETY: both NUL-terminated path buffers live through the syscall.
+    let result = unsafe {
+        libc::renameat2(libc::AT_FDCWD, source_c.as_ptr(), libc::AT_FDCWD, target_c.as_ptr(), libc::RENAME_NOREPLACE)
+    };
+    if result == 0 { return Ok(()); }
+    let error = io::Error::last_os_error();
+    if matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)) {
+        return Err(atomic_new_file_unsupported());
+    }
+    Err(error)
+}
+
+#[cfg(target_os = "macos")]
+fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let source_c = CString::new(source.as_os_str().as_bytes())?;
+    let target_c = CString::new(target.as_os_str().as_bytes())?;
+    // SAFETY: both NUL-terminated path buffers live through the syscall.
+    let result = unsafe { libc::renamex_np(source_c.as_ptr(), target_c.as_ptr(), libc::RENAME_EXCL) };
+    if result == 0 { return Ok(()); }
+    let error = io::Error::last_os_error();
+    if matches!(error.raw_os_error(), Some(libc::EINVAL | libc::ENOTSUP)) {
+        return Err(atomic_new_file_unsupported());
+    }
+    Err(error)
+}
+
+#[cfg(windows)]
+fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+
+    let source = windows_api_path(source)?;
+    let target = windows_api_path(target)?;
+    // SAFETY: both NUL-terminated UTF-16 buffers live through the API call.
+    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), 0) } != 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+fn windows_api_path(path: &Path) -> io::Result<Vec<u16>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    // Callers pass paths already normalized by `absolute` or `canonicalize`.
+    // Mirror std's long-path threshold: short paths keep Win32 name semantics,
+    // while long drive/UNC paths need an extended-length prefix for MoveFileExW.
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    if wide.contains(&0) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "path contains NUL"));
+    }
+    const BACKSLASH: u16 = b'\\' as u16;
+    const QUESTION: u16 = b'?' as u16;
+    let verbatim = [BACKSLASH, BACKSLASH, QUESTION, BACKSLASH];
+    let nt_prefix = [BACKSLASH, QUESTION, QUESTION, BACKSLASH];
+    if wide.len() + 1 >= 248 && !wide.starts_with(&verbatim) && !wide.starts_with(&nt_prefix) {
+        let prefix: Vec<u16> = if wide.starts_with(&[BACKSLASH, BACKSLASH, b'.' as u16, BACKSLASH]) {
+            wide.drain(..4);
+            "\\\\?\\".encode_utf16().collect()
+        } else if wide.starts_with(&[BACKSLASH, BACKSLASH]) {
+            wide.drain(..2);
+            "\\\\?\\UNC\\".encode_utf16().collect()
+        } else {
+            "\\\\?\\".encode_utf16().collect()
+        };
+        wide.splice(..0, prefix);
+    }
+    wide.push(0);
+    Ok(wide)
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn rename_no_replace(_source: &Path, _target: &Path) -> io::Result<()> {
+    Err(atomic_new_file_unsupported())
+}
+
+#[cfg(not(windows))]
+fn atomic_new_file_unsupported() -> io::Error {
+    io::Error::new(io::ErrorKind::Unsupported, "filesystem cannot atomically create a new document")
+}
+
+#[cfg(not(any(unix, windows)))]
+fn rename_no_replace(_source: &Path, _target: &Path) -> io::Result<()> {
+    Err(atomic_new_file_unsupported())
 }
 
 fn create_temp(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
@@ -470,6 +589,72 @@ mod tests {
         fs::write(&p, "theirs").unwrap();
         assert!(matches!(write_document(&p, "mine", WriteCondition::Absent), Err(DocError::Conflict)));
         assert_eq!(fs::read_to_string(&p).unwrap(), "theirs");
+    }
+
+    #[test]
+    fn absent_condition_preserves_file_created_after_final_check() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Absent, || {}, || {
+            fs::write(&p, "theirs").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "theirs");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn overwrite_of_initially_absent_file_preserves_late_creation() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Overwrite, || {}, || {
+            fs::write(&p, "theirs").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "theirs");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn no_replace_install_preserves_existing_destination() {
+        let d = tmp();
+        let source = d.path().join("prepared.tmp");
+        let target = d.path().join("a.md");
+        fs::write(&source, "mine").unwrap();
+        fs::write(&target, "theirs").unwrap();
+        assert!(rename_no_replace(&source, &target).is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "theirs");
+        assert_eq!(fs::read_to_string(&source).unwrap(), "mine");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn creates_new_file_beyond_legacy_windows_path_limit() {
+        use std::os::windows::ffi::OsStrExt;
+        let d = tmp();
+        let mut dir = d.path().to_path_buf();
+        for _ in 0..22 { dir.push("nestedfolder"); }
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.md");
+        assert!(p.as_os_str().encode_wide().count() > 260);
+        write_document(&p, "mine", WriteCondition::Absent).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "mine");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absent_condition_preserves_symlink_created_after_final_check() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let other = d.path().join("other.md");
+        fs::write(&other, "theirs").unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Absent, || {}, || {
+            std::os::unix::fs::symlink(&other, &p).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_link(&p).unwrap(), other);
+        assert_eq!(fs::read_to_string(&other).unwrap(), "theirs");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 2);
     }
 
     #[cfg(any(unix, windows))]
