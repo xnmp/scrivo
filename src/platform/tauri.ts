@@ -4,6 +4,7 @@ import type { FileStamp } from '../domain/document';
 import {
   FileError,
   type FileErrorCode,
+  type ImportedAttachment,
   type Platform,
   type ReadResult,
   type RecoveryCopy,
@@ -94,6 +95,21 @@ export function createTauriPlatform(): Platform {
         if (path !== null) await ensureWatchListener();
         await call<void>('watch_document', path ?? '', { path });
       },
+    },
+    attachments: {
+      async importBytes(documentPath, name, mimeType, bytes) {
+        try {
+          return await invoke<ImportedAttachment>('import_attachment_bytes', bytes, { headers: {
+            'x-document-path': encodeURIComponent(documentPath),
+            'x-file-name': encodeURIComponent(name),
+            'x-mime-type': encodeURIComponent(mimeType),
+          } });
+        } catch (error) {
+          throw toFileError(name, error);
+        }
+      },
+      importPath: (documentPath, sourcePath) => call<ImportedAttachment>('import_attachment_path', sourcePath, { document: documentPath, source: sourcePath }),
+      rollback: (documentPath, imported) => call<void>('rollback_attachment', imported.fileName, { document: documentPath, imported }),
     },
     dialogs: {
       async pickOpen() {

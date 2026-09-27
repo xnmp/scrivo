@@ -1,9 +1,9 @@
 // Live preview: Typora-style rendering of markdown source in place.
 import { isolateHistory } from '@codemirror/commands';
 import { syntaxTree } from '@codemirror/language';
-import { StateField, type ChangeSpec, type EditorState, type Extension, type Transaction } from '@codemirror/state';
+import { Facet, StateField, type ChangeSpec, type EditorState, type Extension, type Transaction } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
-import { deleteTableColumn, emptyTableRow, insertTableColumn, moveTableColumn, replaceCell, setColumnAlignment, sortTableRows } from '../../domain/table';
+import { deleteTableColumn, emptyTableRow, insertTableColumn, moveTableColumn, pasteTableCells, replaceCell, setColumnAlignment, sortTableRows } from '../../domain/table';
 import { buildBlocks, buildInline, type BlockCallbacks } from './build';
 import { imageUrl, previewEnv, refreshPreview } from './env';
 import type { InlineNode } from './inline-ast';
@@ -59,6 +59,10 @@ function renderInline(nodes: readonly InlineNode[], parent: HTMLElement, view: E
 }
 
 /** Cell edits change only the Markdown source; the table widget is a view of it. */
+export const tablePasteNotice = Facet.define<(message: string) => void, (message: string) => void>({
+  combine: (values) => values[values.length - 1] ?? (() => {}),
+});
+
 const structuralTableEdit = (view: EditorView, changes: ChangeSpec): void => {
   view.dispatch({ changes, userEvent: 'input.table', annotations: isolateHistory.of('full') });
 };
@@ -71,6 +75,20 @@ function onTableCellInput(view: EditorView, tableFrom: number, row: number, col:
   const line = doc.line(lineNo);
   const next = replaceCell(line.text, col, value);
   if (next !== line.text) view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, userEvent: 'input.table' });
+}
+
+function onTablePaste(view: EditorView, tableFrom: number, row: number, col: number, rows: number, text: string): { row: number; col: number } | null {
+  const doc = view.state.doc;
+  const first = doc.lineAt(tableFrom).number;
+  if (first + rows > doc.lines) return null;
+  const source = Array.from({ length: rows + 1 }, (_, offset) => doc.line(first + offset).text);
+  const pasted = pasteTableCells(source, row, col, text);
+  if (!pasted) {
+    view.state.facet(tablePasteNotice)('Could not paste table cells: grid too large, or a cell contains tabs or line breaks.');
+    return null;
+  }
+  structuralTableEdit(view, { from: doc.line(first).from, to: doc.line(first + rows).to, insert: pasted.lines.join('\n') });
+  return { row: pasted.lastRow, col: pasted.lastColumn };
 }
 
 function onTableAppendRow(view: EditorView, tableFrom: number, rows: number, columns: number): void {
@@ -151,7 +169,7 @@ function onTableAction(view: EditorView, tableFrom: number, row: number, col: nu
   structuralTableEdit(view, change);
 }
 
-const callbacks: BlockCallbacks = { onTableCellInput, onTableAppendRow, onTableAction, renderInline };
+const callbacks: BlockCallbacks = { onTableCellInput, onTablePaste, onTableAppendRow, onTableAction, renderInline };
 
 const envChanged = (a: EditorState, b: EditorState) => a.facet(previewEnv) !== b.facet(previewEnv);
 const refreshed = (trs: readonly Transaction[]) => trs.some((tr) => tr.effects.some((e) => e.is(refreshPreview)));

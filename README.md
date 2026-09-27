@@ -20,8 +20,9 @@ fenced code is highlighted after the document appears. `Ctrl+O` opens a file;
 the window stays open; a dirty editor asks before replacing its text.
 The editor supports fenced code, tables, task lists, math, images, and YAML front
 matter. In a rendered table, click a cell to place the text caret; `Tab`/`Shift+Tab`
-move between cells, `Enter` moves down, and arrow keys move between focused cells.
-Moving past the last row adds one. Right-click a cell (or press `Shift+F10`) to
+move between cells, `Enter` moves down, and arrow keys cross cells at the text edges.
+Moving past the last row adds one. Pasting spreadsheet cells fills the table and
+adds rows or columns as needed. Right-click a cell (or press `Shift+F10`) to
 add, delete, or move rows and columns, sort a column, or change its alignment.
 Table edits remain Markdown and can be undone. Local image paths resolve relative
 to the document.

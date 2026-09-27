@@ -176,6 +176,7 @@ export class TableWidget extends WidgetType {
     readonly source: string,
     readonly model: () => TableModel,
     readonly onCellInput: (view: EditorView, tableFrom: number, row: number, col: number, value: string) => void,
+    readonly onPaste: (view: EditorView, tableFrom: number, row: number, col: number, rows: number, text: string) => { row: number; col: number } | null,
     readonly onAppendRow: (view: EditorView, tableFrom: number, rows: number, columns: number) => void,
     readonly onAction: (view: EditorView, tableFrom: number, row: number, col: number, rows: number, columns: number, action: TableAction) => void,
     readonly renderInline: (nodes: readonly InlineNode[], parent: HTMLElement, view: EditorView) => void,
@@ -191,6 +192,27 @@ export class TableWidget extends WidgetType {
   private renderCell(cell: HTMLElement, row: number, col: number, view: EditorView, nodes = this.currentModel().inlineNodes(row, col)) {
     cell.replaceChildren();
     this.renderInline(nodes, cell, view);
+  }
+
+  private focusCell(view: EditorView, tableFrom: number, row: number, col: number, activation: 'select' | 'end' = 'select') {
+    requestAnimationFrame(() => {
+      const wrap = tableAt(view, tableFrom);
+      const cell = wrap?.querySelector<HTMLElement>(`[data-row="${row}"][data-col="${col}"]`);
+      if (wrap && cell) (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, activation);
+    });
+  }
+
+  private pasteIntoCell(wrap: HTMLElement, cell: HTMLElement, view: EditorView, event: ClipboardEvent): boolean {
+    const text = event.clipboardData?.getData('text/plain');
+    if (!text || !/[\t\r\n]/.test(text)) return false;
+    const row = Number(cell.dataset.row);
+    const col = Number(cell.dataset.col);
+    const tableFrom = view.posAtDOM(wrap);
+    const current = renderedTables.get(wrap) ?? this;
+    const target = current.onPaste(view, tableFrom, row, col, current.currentModel().sourceCells.length, text);
+    event.preventDefault();
+    if (target) this.focusCell(view, tableFrom, target.row, target.col);
+    return true;
   }
 
   private activateCell(wrap: HTMLElement, cell: HTMLElement, view: EditorView, activation: 'select' | 'end' | number = 'select') {
@@ -214,35 +236,36 @@ export class TableWidget extends WidgetType {
     input.addEventListener('input', (event) => { if (!(event as InputEvent).isComposing) write(); });
     input.addEventListener('compositionend', write);
     input.addEventListener('blur', () => (renderedTables.get(wrap) ?? this).renderCell(cell, row, col, view));
+    input.addEventListener('paste', (event) => { this.pasteIntoCell(wrap, cell, view, event); });
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         cell.focus();
         return;
       }
-      if (event.key !== 'Tab' && event.key !== 'Enter' && event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-      if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return;
+      const left = event.key === 'ArrowLeft' && input.selectionStart === 0 && input.selectionEnd === 0;
+      const right = event.key === 'ArrowRight' && input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+      if (event.key !== 'Tab' && event.key !== 'Enter' && event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && !left && !right) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || (event.key.startsWith('Arrow') && event.shiftKey)) return;
       const { sourceCells: rows, align } = (renderedTables.get(wrap) ?? this).currentModel();
       if (align.length === 0) return;
-      const backwards = event.key === 'Tab' && event.shiftKey;
+      const backwards = (event.key === 'Tab' || event.key === 'Enter') && event.shiftKey || left;
       if (backwards && row === 0 && col === 0) return;
+      if (event.key === 'Enter' && backwards && row === 0) return;
       if (event.key === 'ArrowUp' && row === 0) return;
       if (event.key === 'ArrowDown' && row + 1 >= rows.length) return;
+      if (right && row + 1 >= rows.length && col + 1 >= align.length) return;
       event.preventDefault();
       const target = event.key === 'ArrowUp' || event.key === 'ArrowDown'
         ? { row: row + (event.key === 'ArrowDown' ? 1 : -1), col }
         : event.key === 'Enter'
-          ? { row: row + 1, col }
+          ? { row: row + (backwards ? -1 : 1), col }
           : backwards
             ? { row: col === 0 ? row - 1 : row, col: col === 0 ? align.length - 1 : col - 1 }
             : { row: col + 1 === align.length ? row + 1 : row, col: col + 1 === align.length ? 0 : col + 1 };
       const tableFrom = view.posAtDOM(wrap);
       if (target.row >= rows.length) this.onAppendRow(view, tableFrom, rows.length, align.length);
-      requestAnimationFrame(() => {
-        const currentWrap = tableAt(view, tableFrom);
-        const next = currentWrap?.querySelector<HTMLElement>(`[data-row="${target.row}"][data-col="${target.col}"]`);
-        if (currentWrap && next) (renderedTables.get(currentWrap) ?? this).activateCell(currentWrap, next, view);
-      });
+      this.focusCell(view, tableFrom, target.row, target.col);
     });
     input.focus();
     if (typeof activation === 'number') {
@@ -398,6 +421,20 @@ export class TableWidget extends WidgetType {
       if (e.target instanceof HTMLInputElement) return;
       const cell = (e.target as HTMLElement).closest<HTMLElement>('th,td');
       if (!cell) return;
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const row = Number(cell.dataset.row);
+        const col = Number(cell.dataset.col);
+        const previous = e.shiftKey;
+        if (previous && row === 0 && col === 0) return;
+        e.preventDefault();
+        const target = previous
+          ? { row: col === 0 ? row - 1 : row, col: col === 0 ? cols - 1 : col - 1 }
+          : { row: col + 1 === cols ? row + 1 : row, col: col + 1 === cols ? 0 : col + 1 };
+        const tableFrom = view.posAtDOM(wrap);
+        if (target.row >= rows.length) this.onAppendRow(view, tableFrom, rows.length, cols);
+        this.focusCell(view, tableFrom, target.row, target.col);
+        return;
+      }
       if (e.key.startsWith('Arrow') && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const row = Number(cell.dataset.row);
         const col = Number(cell.dataset.col);
@@ -426,6 +463,20 @@ export class TableWidget extends WidgetType {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, 'end');
+    });
+    table.addEventListener('paste', (event) => {
+      if (event.target instanceof HTMLInputElement) return;
+      const cell = (event.target as HTMLElement).closest<HTMLElement>('th,td');
+      if (!cell) return;
+      if (this.pasteIntoCell(wrap, cell, view, event)) return;
+      const text = event.clipboardData?.getData('text/plain');
+      if (text === undefined || text === '') return;
+      event.preventDefault();
+      const row = Number(cell.dataset.row);
+      const col = Number(cell.dataset.col);
+      const tableFrom = view.posAtDOM(wrap);
+      this.onCellInput(view, tableFrom, row, col, text);
+      this.focusCell(view, tableFrom, row, col, 'end');
     });
     table.addEventListener('contextmenu', (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>('th,td');

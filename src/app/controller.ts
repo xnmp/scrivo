@@ -14,10 +14,12 @@ import {
   type Snapshot,
 } from '../domain/document';
 import { decideExternalChange } from '../domain/external';
+import { attachmentLink } from '../domain/attachment';
 import { decode, encode } from '../domain/text-format';
 import {
   FileError,
   type EditorPort,
+  type ImportedAttachment,
   type Platform,
   type Prompter,
   type ReadResult,
@@ -37,12 +39,20 @@ export type SaveStatus =
   | { readonly kind: 'saved' | 'edited' | 'saving' }
   | { readonly kind: 'action-needed'; readonly reason: string };
 
+export type AttachmentRequest =
+  | { readonly kind: 'bytes'; readonly name: string; readonly mimeType: string; readonly read: () => Promise<Uint8Array> }
+  | { readonly kind: 'path'; readonly path: string };
+
+export type ImportOutcome = 'imported' | 'cancelled' | 'failed';
+
 export interface DocumentController {
   start(startup: StartupDocument): Promise<void>;
   /** True when a file was opened, including when its recovery prompt restored another document. */
   open(path?: string): Promise<boolean>;
   save(): Promise<boolean>;
   saveAs(): Promise<boolean>;
+  /** Import assets, then insert their links in one editor transaction. */
+  importAttachments(sources: readonly AttachmentRequest[], insert: (markdown: string) => boolean): Promise<ImportOutcome>;
   newDocument(): Promise<void>;
   /** Resolves true when the window may close. */
   requestClose(): Promise<boolean>;
@@ -415,6 +425,36 @@ export function createDocumentController<S extends Snapshot>(deps: {
     }
   };
 
+  const importAttachmentsNow = async (
+    sources: readonly AttachmentRequest[], insert: (markdown: string) => boolean,
+  ): Promise<ImportOutcome> => {
+    if (sources.length === 0) return 'cancelled';
+    // An untitled or not-yet-created file needs a real folder before assets can
+    // be placed next to it. This uses the same conditional save path as Ctrl+S.
+    if ((doc.path === null || doc.stamp === null) && !(await saveNow())) return 'cancelled';
+    const documentPath = doc.path!;
+    const imported: ImportedAttachment[] = [];
+    try {
+      const links: string[] = [];
+      for (const source of sources) {
+        const result = source.kind === 'path'
+          ? await platform.attachments.importPath(documentPath, source.path)
+          : await platform.attachments.importBytes(documentPath, source.name, source.mimeType, await source.read());
+        imported.push(result);
+        links.push(attachmentLink(result.fileName, source.kind === 'bytes' ? source.mimeType : ''));
+      }
+      if (!insert(links.join('\n'))) throw new Error('the insertion point is no longer available');
+      return 'imported';
+    } catch (error) {
+      for (const result of imported.reverse()) {
+        try { await platform.attachments.rollback(documentPath, result); }
+        catch (rollbackError) { prompter.notify(`Could not remove an incomplete attachment: ${describeError(rollbackError)}`); }
+      }
+      prompter.notify(`Could not import attachment: ${describeError(error)}`);
+      return 'failed';
+    }
+  };
+
   return {
     start: (startup) =>
       serial(async () => {
@@ -460,6 +500,7 @@ export function createDocumentController<S extends Snapshot>(deps: {
 
     save: () => serial(saveNow),
     saveAs: () => serial(saveAsNow),
+    importAttachments: (sources, insert) => serial(() => importAttachmentsNow(sources, insert)),
 
     newDocument: () =>
       serial(async () => {

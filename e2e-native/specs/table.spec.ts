@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { state } from '../state';
 
 describe('live table editing', () => {
@@ -32,5 +33,21 @@ describe('live table editing', () => {
       timeout: 10_000,
       timeoutMsg: 'table alignment was not saved to Markdown',
     });
+  });
+
+  it('pastes an X11 spreadsheet block into the table and saves every cell', async () => {
+    const fixture = state.fixture!;
+    await $('.cm-lp-table tbody tr:first-child td:first-child').click();
+    await $('.cm-lp-table-input').waitForDisplayed();
+    const copied = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'text/plain', '-i'], {
+      input: 'Ana\t25\nBo\t30\n', stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    expect(copied.status).toBe(0);
+    await browser.keys(['Control', 'v']);
+    await browser.keys(['Control', 's']);
+    await browser.waitUntil(() => {
+      const saved = readFileSync(fixture.docPath, 'utf8');
+      return saved.includes('| Ana | 25 |') && saved.includes('| Bo | 30 |');
+    }, { timeout: 10_000, timeoutMsg: 'pasted spreadsheet cells were not saved to Markdown' });
   });
 });

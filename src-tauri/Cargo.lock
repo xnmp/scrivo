@@ -3217,6 +3217,7 @@ dependencies = [
  "gio",
  "libc",
  "notify",
+ "percent-encoding",
  "proptest",
  "scrivo-render",
  "serde",

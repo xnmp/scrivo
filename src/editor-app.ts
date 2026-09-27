@@ -48,6 +48,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
       controller.contentChanged();
       words.update();
     },
+    onTablePasteRejected: (message) => prompter.notify(message),
   });
   const showSaveStatus = createSaveIndicator(options.status, options.commands.save);
   const controller = createDocumentController({

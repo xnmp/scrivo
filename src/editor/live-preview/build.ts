@@ -374,6 +374,7 @@ export function buildInline(
 
 export interface BlockCallbacks {
   readonly onTableCellInput: (view: EditorView, tableFrom: number, row: number, col: number, value: string) => void;
+  readonly onTablePaste: (view: EditorView, tableFrom: number, row: number, col: number, rows: number, text: string) => { row: number; col: number } | null;
   readonly onTableAppendRow: (view: EditorView, tableFrom: number, rows: number, columns: number) => void;
   readonly onTableAction: (view: EditorView, tableFrom: number, row: number, col: number, rows: number, columns: number, action: TableAction) => void;
   readonly renderInline: (nodes: readonly InlineNode[], parent: HTMLElement, view: EditorView) => void;
@@ -429,7 +430,7 @@ export function buildBlocks(state: EditorState, selection: readonly Span[], call
     if (name === 'Table') {
       if (revealed || doc.lineAt(node.from).number + 1 > doc.lines) continue;
       const source = state.sliceDoc(from, to);
-      const widget = new TableWidget(source, () => tableModel(state, node), callbacks.onTableCellInput, callbacks.onTableAppendRow, callbacks.onTableAction, callbacks.renderInline);
+      const widget = new TableWidget(source, () => tableModel(state, node), callbacks.onTableCellInput, callbacks.onTablePaste, callbacks.onTableAppendRow, callbacks.onTableAction, callbacks.renderInline);
       decos.push(Decoration.replace({ widget, block: true }).range(from, to));
     } else {
       const marks = childrenNamed(node, 'BlockMathMark');

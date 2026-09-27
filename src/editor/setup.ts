@@ -11,7 +11,7 @@ import { richPaste } from './clipboard';
 import { formattingKeymap } from './commands';
 import { markdownEditingKeymap } from './editing';
 import { accessibleFoldGutter } from './folding';
-import { livePreview, previewEnv } from './live-preview';
+import { livePreview, previewEnv, tablePasteNotice } from './live-preview';
 import { markdownSupport } from './syntax';
 import { editorTheme } from './theme';
 
@@ -31,6 +31,7 @@ export interface EditorOptions {
   readonly fileUrl: (path: string) => string;
   readonly onDocChanged: () => void;
   readonly onSelectionChanged?: () => void;
+  readonly onTablePasteRejected?: (message: string) => void;
 }
 
 export interface Editor {
@@ -42,6 +43,12 @@ export interface Editor {
   topLine(): number;
   /** Scroll `line` to the top of the viewport and put the caret at its start. */
   revealLine(line: number): void;
+  beginInsertion(at?: { readonly x: number; readonly y: number }): EditorInsertion | null;
+}
+
+export interface EditorInsertion {
+  insert(markdown: string): boolean;
+  cancel(): void;
 }
 
 /** Start typing after a leading heading marker rather than in front of it. */
@@ -66,6 +73,8 @@ export function createEditor(options: EditorOptions): Editor {
   const mode = new Compartment();
   const env = new Compartment();
   let source = false;
+  interface PendingInsertion { ranges: Array<{ from: number; to: number }>; valid: boolean }
+  const pendingInsertions = new Set<PendingInsertion>();
 
   const envFor = (path: string | null) => previewEnv.of({ docDir: documentDir(path), fileUrl: options.fileUrl });
   const modeExtension = () => (source ? EditorView.editorAttributes.of({ class: 'cm-source-mode' }) : livePreview());
@@ -100,8 +109,18 @@ export function createEditor(options: EditorOptions): Editor {
     searchCompartment.of([]),
     mode.of(modeExtension()),
     env.of(envFor(path)),
+    tablePasteNotice.of(options.onTablePasteRejected ?? (() => {})),
     EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'off', autocapitalize: 'off', 'aria-label': 'Document' }),
     EditorView.updateListener.of((u) => {
+      if (u.docChanged) for (const pending of pendingInsertions) {
+        for (const range of pending.ranges) {
+          if (range.from !== range.to && u.changes.touchesRange(range.from, range.to)) pending.valid = false;
+          const from = u.changes.mapPos(range.from, range.from === range.to ? 1 : -1);
+          const to = u.changes.mapPos(range.to, 1);
+          range.from = from;
+          range.to = to;
+        }
+      }
       exposeFoldGutter(u.view);
       if (u.docChanged) options.onDocChanged();
       if (u.selectionSet || u.docChanged) options.onSelectionChanged?.();
@@ -178,5 +197,32 @@ export function createEditor(options: EditorOptions): Editor {
     });
   };
 
-  return { view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine };
+  const beginInsertion = (at?: { readonly x: number; readonly y: number }): EditorInsertion | null => {
+    const position = at ? view.posAtCoords(at) : null;
+    if (at && position === null) return null;
+    const ranges = position === null
+      ? view.state.selection.ranges.map(({ from, to }) => ({ from, to }))
+      : [{ from: position, to: position }];
+    const pending: PendingInsertion = { ranges, valid: true };
+    pendingInsertions.add(pending);
+    return {
+      insert(markdown) {
+        pendingInsertions.delete(pending);
+        if (!pending.valid) return false;
+        try {
+          const changes = view.state.changes(pending.ranges.map(({ from, to }) => ({ from, to, insert: markdown })));
+          const selection = EditorSelection.create(pending.ranges.map(({ to }) =>
+            EditorSelection.cursor(changes.mapPos(to, 1))));
+          view.dispatch({ changes, selection, annotations: Transaction.userEvent.of('input.paste'), scrollIntoView: true });
+          view.focus();
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      cancel() { pendingInsertions.delete(pending); },
+    };
+  };
+
+  return { view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine, beginInsertion };
 }

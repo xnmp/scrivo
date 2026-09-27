@@ -25,6 +25,7 @@ notify = "8.2.0"
 scrivo-render = { path = "render" }
 tauri-plugin-opener = "2"
 tempfile = "3"
+percent-encoding = "2"
 
 # prewarm.rs: the same GLib stack Tauri already links on Linux (versions match tauri's).
 [target.'cfg(target_os = "linux")'.dependencies]

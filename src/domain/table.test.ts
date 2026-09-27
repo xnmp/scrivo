@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deleteTableColumn, emptyTableRow, escapeCellPipes, insertTableColumn, moveTableColumn, parseAlignments, replaceCell, setColumnAlignment, sortTableRows, splitRow } from './table';
+import { deleteTableColumn, emptyTableRow, escapeCellPipes, insertTableColumn, moveTableColumn, parseAlignments, pasteTableCells, replaceCell, setColumnAlignment, sortTableRows, splitRow } from './table';
 
 const cells = (row: string) => splitRow(row).map(({ from, to }) => row.slice(from, to));
 
@@ -21,6 +21,41 @@ describe('splitRow', () => {
 
   it('returns offsets into the original row', () => {
     expect(splitRow('|  ab  |')).toEqual([{ from: 3, to: 5 }]);
+  });
+});
+
+describe('pasting spreadsheet cells', () => {
+  const source = ['| Name | Score |', '| :--- | ---: |', '| Ann | 10 |', '| Bo | 20 |'];
+
+  it('fills a rectangle, expands the table, and keeps untouched cells and alignment', () => {
+    const pasted = pasteTableCells(source, 1, 1, '25\tnew|value\r\n30\tlast\r\n');
+    expect(pasted?.lines).toEqual([
+      '| Name | Score |  |',
+      '| :--- | ---: | --- |',
+      '| Ann | 25 | new\\|value |',
+      '| Bo | 30 | last |',
+    ]);
+    expect(source[2]).toBe('| Ann | 10 |');
+  });
+
+  it('adds body rows when a one-column clipboard block starts in the last row', () => {
+    expect(pasteTableCells(source, 2, 0, 'Cy\nDee')?.lines).toEqual([
+      '| Name | Score |', '| :--- | ---: |', '| Ann | 10 |', '| Cy | 20 |', '| Dee |  |',
+    ]);
+  });
+
+  it('unquotes spreadsheet fields and rejects cells that cannot fit in Markdown tables', () => {
+    expect(pasteTableCells(source, 1, 0, '"Ana ""A"""\t"25"')?.lines[2]).toBe('| Ana "A" | 25 |');
+    expect(pasteTableCells(source, 1, 0, '"hello\nworld"\t42')).toBeNull();
+    expect(pasteTableCells(source, 1, 0, '"hello\tworld"\t42')).toBeNull();
+  });
+
+  it('rejects plain text, out-of-range targets and excessively large grids', () => {
+    expect(pasteTableCells(source, 1, 0, 'plain text')).toBeNull();
+    expect(pasteTableCells(source, 9, 0, 'a\tb')).toBeNull();
+    expect(pasteTableCells(source, 1, 0, `${'x\t'.repeat(20_001)}x`)).toBeNull();
+    const tall = [source[0]!, source[1]!, ...Array(1_000).fill('| a | b |')];
+    expect(pasteTableCells(tall, 1, 0, Array(101).fill('x').join('\t'))).toBeNull();
   });
 });
 

@@ -97,6 +97,86 @@ test.describe('tables', () => {
     await expect(page.locator('.cm-lp-table tbody tr').last().locator('td').first().locator('input')).toBeFocused();
   });
 
+  test('pasting spreadsheet cells expands rows and columns in one undoable edit', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    await page.locator('.cm-lp-table tbody td').first().click();
+    await page.evaluate(() => {
+      const clipboard = new DataTransfer();
+      clipboard.setData('text/plain', 'Ana\t25\tA|B\nCy\t30\tlast\nDee\t40\tend\n');
+      document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+    });
+    await expect(page.locator('.cm-lp-table tbody tr')).toHaveCount(3);
+    await expect(page.locator('.cm-lp-table th')).toHaveCount(3);
+    await expect(page.locator('.cm-lp-table tbody tr').last().locator('td').last().locator('input')).toHaveValue('end');
+    const pasted = await docText(page);
+    await setCaret(page, pasted.length);
+    expect(await page.locator('.cm-lp-table tbody td').allInnerTexts()).toEqual([
+      'Ana', '25', 'A|B', 'Cy', '30', 'last', 'Dee', '40', 'end',
+    ]);
+    expect(pasted).toContain('| Ana | 25 | A\\|B |');
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await docText(page)).toBe(text);
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    expect(await docText(page)).toBe(pasted);
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect.poll(() => diskGet(page, '/sample/inline.md')).toBe(pasted);
+    await controllerOpen(page, '/sample/inline.md');
+    await setCaret(page, pasted.length);
+    await expect(page.locator('.cm-lp-table tbody tr')).toHaveCount(3);
+  });
+
+  test('cell-edge arrows and Tab on a selected cell continue table editing', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    const first = page.locator('.cm-lp-table tbody tr').first().locator('td').first();
+    await first.click();
+    const input = page.locator('.cm-lp-table-input');
+    await input.evaluate((element: HTMLInputElement) => element.setSelectionRange(element.value.length, element.value.length));
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.cm-lp-table tbody tr').first().locator('td').nth(1).locator('input')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.cm-lp-table tbody tr').nth(1).locator('td').first().locator('input')).toBeFocused();
+    await page.keyboard.press('Shift+Enter');
+    await expect(first.locator('input')).toBeFocused();
+    await page.locator('.cm-lp-table th').nth(1).click();
+    await page.keyboard.press('Shift+Enter');
+    await expect(page.locator('.cm-lp-table th').nth(1).locator('input')).toBeFocused();
+    expect(await docText(page)).toBe(text);
+  });
+
+  test('pasting into a selected cell writes to Markdown without opening an input first', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    await page.locator('.cm-lp-table tbody td').first().focus();
+    await page.evaluate(() => {
+      const clipboard = new DataTransfer();
+      clipboard.setData('text/plain', 'Alex');
+      document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+    });
+    await expect(page.locator('.cm-lp-table tbody td').first().locator('input')).toHaveValue('Alex');
+    expect(await docText(page)).toContain('| Alex  | 10');
+  });
+
+  test('oversized grid paste is rejected without corrupting Markdown', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    const cell = page.locator('.cm-lp-table tbody td').first();
+    await cell.focus();
+    const paste = async () => page.evaluate(() => {
+      const clipboard = new DataTransfer();
+      clipboard.setData('text/plain', 'a\tb\n'.repeat(10_001));
+      document.activeElement!.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+    });
+    await paste();
+    await expect(page.getByText('Could not paste table cells: grid too large, or a cell contains tabs or line breaks.')).toBeVisible();
+    expect(await docText(page)).toBe(text);
+    await cell.click();
+    await paste();
+    expect(await docText(page)).toBe(text);
+  });
+
   test('the table menu inserts and deletes rows and columns in one undoable edit', async ({ page }) => {
     await openApp(page, { text });
     await setCaret(page, text.length);

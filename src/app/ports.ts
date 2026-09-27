@@ -50,6 +50,18 @@ export interface FileSystem {
   watch(path: string | null, onChange: () => void): Promise<void>;
 }
 
+export interface ImportedAttachment {
+  readonly fileName: string;
+  readonly stamp: FileStamp;
+}
+
+export interface AttachmentStore {
+  importBytes(documentPath: string, name: string, mimeType: string, bytes: Uint8Array): Promise<ImportedAttachment>;
+  importPath(documentPath: string, sourcePath: string): Promise<ImportedAttachment>;
+  /** Delete only the unchanged file created by this import after insertion fails. */
+  rollback(documentPath: string, imported: ImportedAttachment): Promise<void>;
+}
+
 export interface RecoveryCopy {
   readonly id: string;
   readonly path: string | null;
@@ -143,6 +155,7 @@ export interface Shell {
 
 export interface Platform {
   readonly fs: FileSystem;
+  readonly attachments: AttachmentStore;
   readonly recovery: RecoveryStore;
   readonly dialogs: Dialogs;
   readonly window: WindowPort;

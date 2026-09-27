@@ -84,11 +84,95 @@ export function emptyTableRow(columns: number): string {
   return `| ${Array(columns).fill('').join(' | ')} |`;
 }
 
+export interface TablePaste {
+  readonly lines: readonly string[];
+  readonly lastRow: number;
+  readonly lastColumn: number;
+}
+
+/** Spreadsheet TSV quoting follows CSV rules; a Markdown cell cannot contain a line break or tab. */
+function parseTableClipboard(text: string): string[][] | null {
+  const rows: string[][] = [];
+  let cells: string[] = [];
+  let value = '';
+  let quoted = false;
+  let afterQuote = false;
+  let atStart = true;
+  let width = 0;
+  const addCell = () => {
+    cells.push(value);
+    value = '';
+    atStart = true;
+    afterQuote = false;
+  };
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]!;
+    if (quoted) {
+      if (char === '"' && text[i + 1] === '"') { value += '"'; i++; }
+      else if (char === '"') { quoted = false; afterQuote = true; }
+      else if (char === '\t' || char === '\n') return null;
+      else value += char;
+    } else if (char === '\t' || char === '\n') {
+      addCell();
+      if (cells.length > 20_000) return null;
+      if (char === '\n') {
+        width = Math.max(width, cells.length);
+        rows.push(cells);
+        if (rows.length * width > 20_000) return null;
+        cells = [];
+      }
+    } else if (char === '"' && atStart) {
+      quoted = true;
+      atStart = false;
+    } else if (afterQuote) {
+      return null;
+    } else {
+      value += char;
+      atStart = false;
+    }
+  }
+  if (quoted) return null;
+  addCell();
+  width = Math.max(width, cells.length);
+  rows.push(cells);
+  return rows.length * width > 20_000 ? null : rows;
+}
+
+/** Paste a TSV rectangle into a rendered table while preserving untouched source rows. */
+export function pasteTableCells(source: readonly string[], row: number, column: number, clipboard: string): TablePaste | null {
+  if (source.length < 2 || row < 0 || column < 0 || clipboard.length > 1_000_000 || !/[\t\r\n]/.test(clipboard)) return null;
+  const text = clipboard.replace(/\r\n?/g, '\n').replace(/\n$/, '');
+  if (!text) return null;
+  const values = parseTableClipboard(text);
+  if (!values) return null;
+  const width = Math.max(...values.map((cells) => cells.length));
+  const result = [...source];
+  let columns = parseAlignments(result[1]!).length;
+  if (columns === 0 || column >= columns || row >= source.length - 1) return null;
+  const finalColumns = Math.max(columns, column + width);
+  const finalRows = Math.max(source.length - 1, row + values.length);
+  if (finalColumns * finalRows > 100_000) return null;
+  if (finalColumns > columns) {
+    const added = finalColumns - columns;
+    for (let i = 0; i < result.length; i++) result[i] = insertTableColumn(result[i]!, columns, columns, i === 1, added);
+    columns = finalColumns;
+  }
+  while (result.length - 1 < row + values.length) result.push(emptyTableRow(columns));
+  for (let r = 0; r < values.length; r++) {
+    const line = row + r === 0 ? 0 : row + r + 1;
+    const cells = splitRow(result[line]!).map(({ from, to }) => result[line]!.slice(from, to));
+    while (cells.length < columns) cells.push('');
+    for (let c = 0; c < values[r]!.length; c++) cells[column + c] = escapeCellPipes(values[r]![c]!);
+    result[line] = `| ${cells.join(' | ')} |`;
+  }
+  return { lines: result, lastRow: row + values.length - 1, lastColumn: column + values[values.length - 1]!.length - 1 };
+}
+
 /** Structural edits use a consistent pipe layout and keep each cell's Markdown. */
-export function insertTableColumn(row: string, at: number, columns: number, delimiter: boolean): string {
+export function insertTableColumn(row: string, at: number, columns: number, delimiter: boolean, count = 1): string {
   const values = splitRow(row).map(({ from, to }) => row.slice(from, to));
   while (values.length < columns) values.push('');
-  values.splice(at, 0, delimiter ? '---' : '');
+  values.splice(at, 0, ...Array(count).fill(delimiter ? '---' : ''));
   return `| ${values.join(' | ')} |`;
 }
 

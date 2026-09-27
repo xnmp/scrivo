@@ -1,6 +1,8 @@
 // In-memory Platform: backs unit tests, the browser dev build and the Playwright suite.
 // It mimics the Tauri adapter's contract, including stamp-based conflict detection.
 import { sameStamp, type FileStamp } from '../domain/document';
+import { displayName, documentDir } from '../domain/document';
+import { collisionName, safeAttachmentName } from '../domain/attachment';
 import { FileError, type Heading, type Platform, type RecoveryCopy, type StartupDocument, type ViewDocument } from '../app/ports';
 
 /** Markdown → HTML, as the backend's renderer does it. */
@@ -51,6 +53,9 @@ export interface MemoryPlatform extends Platform {
      */
     setWriteGate(gate: (() => Promise<void>) | null, phase?: 'before-landing' | 'after-landing'): void;
     readonly writes: ReadonlyArray<{ path: string; text: string }>;
+    getBytes(path: string): Uint8Array | undefined;
+    putBytes(path: string, bytes: Uint8Array): void;
+    failNextAttachmentImport(error: FileError): void;
   };
   readonly dialogAnswers: { open: Array<string | null>; save: Array<string | null> };
   readonly titles: string[];
@@ -73,11 +78,13 @@ export function createMemoryPlatform(options: {
   const renderFn = options.render ?? fakeRender;
   let clock = 1_000;
   const files = new Map<string, Entry>();
+  const binary = new Map<string, { bytes: Uint8Array; stamp: FileStamp }>();
   const stampFor = (): FileStamp => String(++clock);
   for (const [path, text] of Object.entries(options.files ?? {})) files.set(path, { text, stamp: stampFor() });
 
   const writes: Array<{ path: string; text: string }> = [];
   let pendingFailure: FileError | null = null;
+  let pendingImportFailure: FileError | null = null;
   let writeGate: (() => Promise<void>) | null = null;
   let gatePhase: 'before-landing' | 'after-landing' = 'before-landing';
   const titles: string[] = [];
@@ -106,6 +113,40 @@ export function createMemoryPlatform(options: {
   };
 
   const platform: MemoryPlatform = {
+    attachments: {
+      async importBytes(documentPath, requested, mimeType, bytes) {
+        if (pendingImportFailure) {
+          const error = pendingImportFailure;
+          pendingImportFailure = null;
+          throw error;
+        }
+        if (!files.has(documentPath)) throw new FileError('not-found', documentPath);
+        const dir = documentDir(documentPath)!;
+        const slash = dir.includes('\\') && !dir.includes('/') ? '\\' : '/';
+        const base = safeAttachmentName(requested, mimeType);
+        for (let attempt = 0; attempt < 10_000; attempt++) {
+          const fileName = collisionName(base, attempt);
+          const path = `${dir}${slash}assets${slash}${fileName}`;
+          if (binary.has(path) || files.has(path)) continue;
+          const stamp = stampFor();
+          binary.set(path, { bytes: bytes.slice(), stamp });
+          return { fileName, stamp };
+        }
+        throw new FileError('io', requested, 'Too many attachments with the same name');
+      },
+      async importPath(documentPath, sourcePath) {
+        const source = binary.get(sourcePath);
+        if (!source) throw new FileError('not-found', sourcePath);
+        return this.importBytes(documentPath, displayName(sourcePath), '', source.bytes);
+      },
+      async rollback(documentPath, imported) {
+        const dir = documentDir(documentPath)!;
+        const slash = dir.includes('\\') && !dir.includes('/') ? '\\' : '/';
+        const path = `${dir}${slash}assets${slash}${imported.fileName}`;
+        if (binary.get(path)?.stamp !== imported.stamp) throw new FileError('conflict', path);
+        binary.delete(path);
+      },
+    },
     recovery: {
       list: async () => [...copies.values()].sort((a, b) => b.updatedAt - a.updatedAt),
       put: async (copy) => void copies.set(copy.id, copy),
@@ -191,6 +232,9 @@ export function createMemoryPlatform(options: {
         gatePhase = phase;
       },
       writes,
+      getBytes: (path) => binary.get(path)?.bytes.slice(),
+      putBytes: (path, bytes) => void binary.set(path, { bytes: bytes.slice(), stamp: stampFor() }),
+      failNextAttachmentImport: (error) => void (pendingImportFailure = error),
     },
     dialogAnswers,
     titles,

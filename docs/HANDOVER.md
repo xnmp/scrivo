@@ -1,5 +1,84 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: natural table editing follow-up and I2 groundwork
+
+The user asked for table editing closer to Obsidian after the I1 checkpoint.
+This checkpoint completes that request while the broader
+`docs/FILE_EDITOR_PARITY.md` objective remains active. Existing tables already
+had direct cell editing, row/column actions, sorting, and alignment. This work
+adds spreadsheet-style paste, more continuous keyboard movement, and a safe
+failure path for grid paste. The editor opens in Reading view for named files;
+press `Ctrl+E` to switch to editing, then click a rendered table cell.
+
+### Table behavior and implementation
+
+- `src/domain/table.ts` parses tab/newline-separated clipboard cells, including
+  quoted TSV values and doubled quotes. A quoted field with an embedded tab or
+  newline is rejected because a GFM table cell cannot store it faithfully.
+  Pasted pipes are escaped. The operation grows columns and body rows, preserves
+  other source cells, and returns a complete Markdown table for one undoable
+  transaction. It bounds the clipboard at 1 MB/20,000 cells and the resulting
+  table at 100,000 cells. Column expansion is one pass over existing rows.
+- `src/editor/live-preview/widgets.ts` handles paste from an open cell input or
+  a selected rendered cell. Grid paste focuses its last cell. Plain text paste
+  into a selected cell writes to Markdown. `Tab` on a selected cell begins
+  editing the next cell; arrow keys at input text edges cross cells, and
+  `Shift+Enter` moves up except in the header. Invalid grid paste is consumed
+  without changing source and shows a toast through the existing prompter.
+- `src/editor/live-preview/index.ts` owns the Markdown transaction. The
+  `tablePasteNotice` facet carries only the notification callback; pure table
+  transforms remain in the domain module. README describes the controls.
+
+### Verification and installed app
+
+- TypeScript app and native E2E checks passed; 389/389 Vitest tests passed when
+  files ran sequentially. A parallel run had one timing-sensitive folding test
+  miss its pre-existing 20 ms budget; its focused rerun passed. Rust tests
+  passed 55/55, including the uncommitted I2 groundwork tests.
+- Chromium: 99/99 full E2E tests passed before the final quoted-TSV parser;
+  20/20 table E2E tests passed after it. Tests assert visible pasted cells,
+  escaped pipes, row/column growth, focus, undo/redo, saved bytes, reopen, and
+  rejection without source damage. The native WebKitGTK table spec passed
+  2/2 after the table interaction changes using a real X11 TSV clipboard and
+  checking saved Markdown. Playwright WebKit could not launch because host
+  `libicu74`, `libxml2`, and `libflite1` dependencies are absent; this is an
+  environment limitation, not a table test failure.
+- `tauri build --no-bundle` and the startup bundle gate passed (41/41 KiB
+  startup, 55/56 KiB known prepaint). The release binary was installed
+  atomically at `/home/chong/.local/bin/scrivo`. Release and installed SHA-256:
+  `26e879a76e5c39034e638b370b96dcf063478efc9d9f873d637365936719940b`.
+  An existing window was not restarted; the next launch uses this binary.
+
+### I2 attachment work present in this checkpoint
+
+The tree also contains **unfinished** attachment groundwork begun before the
+table request. `src-tauri/src/attachment_io.rs` copies bytes or a real source
+file into sibling `assets/` with collision-safe names, symlinked-directory
+rejection, sync, and stamp-checked rollback. `src-tauri/src/commands.rs` exposes
+byte/path import and rollback commands; `src/platform/{tauri,memory}.ts` and
+`src/app/ports.ts` provide the attachment port. `src/domain/attachment.ts`
+builds encoded relative Markdown links. `src/app/controller.ts` has a queued
+import operation that saves untitled documents first, imports each source,
+inserts links, and rolls back on failure. `src/editor/setup.ts` has a mapped
+insertion anchor. These compile and the Rust attachment tests pass, but there
+is no clipboard/drop UI wiring or I2 browser/native E2E yet. Do not describe
+I2 as complete or as installed user-facing functionality.
+
+### Resume
+
+1. Finish I2 by wiring clipboard file paste and browser/native file drops into
+   `controller.importAttachments`; keep a single mapped insertion point until
+   asynchronous copying completes. Handle Save As cancellation, import error,
+   and stale insertion anchors without leaving broken Markdown links. Make
+   native path drops explicit for folders and Markdown documents.
+2. Strengthen the native writer for byte-length-limited Unicode filenames,
+   cleanup on sync failure, and permission/error tests. Add controller unit
+   tests and browser/native E2E for actual attachment bytes, collisions,
+   encoded links, save/reopen, moved folders, and untitled Save As.
+3. Then complete W1 document tabs, D1 editor outline/properties, and remaining
+   E3 preferences. Keep the broader parity goal active until all release
+   criteria in `docs/FILE_EDITOR_PARITY.md` pass.
+
 ## 2026-09-28: rich clipboard paste (I1)
 
 The active objective is still `docs/FILE_EDITOR_PARITY.md`. This checkpoint
