@@ -1,0 +1,29 @@
+round 1 scrivo-before-windows-stamp: window=219 content=381 complete=381
+round 1 scrivo: window=211 content=339 complete=339
+round 2 scrivo: window=211 content=341 complete=341
+round 2 scrivo-before-windows-stamp: window=237 content=369 complete=369
+round 3 scrivo-before-windows-stamp: window=231 content=380 complete=380
+round 3 scrivo: window=217 content=362 complete=362
+round 4 scrivo: window=248 content=403 complete=403
+round 4 scrivo-before-windows-stamp: window=225 content=354 complete=354
+round 5 scrivo-before-windows-stamp: window=237 content=372 complete=372
+round 5 scrivo: window=216 content=347 complete=347
+round 6 scrivo: window=227 content=355 complete=355
+round 6 scrivo-before-windows-stamp: window=214 content=342 complete=342
+round 7 scrivo-before-windows-stamp: window=217 content=362 complete=362
+round 7 scrivo: window=209 content=339 complete=339
+round 8 scrivo: window=224 content=354 complete=354
+round 8 scrivo-before-windows-stamp: window=241 content=388 complete=388
+round 9 scrivo-before-windows-stamp: window=236 content=382 complete=382
+round 9 scrivo: window=228 content=374 complete=374
+round 10 scrivo: window=234 content=365 complete=365
+round 10 scrivo-before-windows-stamp: window=228 content=357 complete=357
+round 11 scrivo-before-windows-stamp: window=229 content=360 complete=360
+round 11 scrivo: window=227 content=356 complete=356
+round 12 scrivo: window=218 content=380 complete=380
+round 12 scrivo-before-windows-stamp: window=218 content=346 complete=346
+
+medium.md, 12 rounds
+  scrivo-before-windows-stamp n=12  window med=229  content med=366  complete med=366
+  scrivo           n=12  window med=221  content med=356  complete med=356
+  scrivo vs scrivo-before-windows-stamp: content -13 ms (paired median), faster in 8/12 rounds

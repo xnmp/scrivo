@@ -3,11 +3,11 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current checkpoint keeps early
-Find responsive while preserving complete-document search. The previous checkpoint
-reduced the time to finish inserting a large document without materially changing
-its first viewport time; the one before that extended bounded layout of giant code
-blocks to Unicode and tabbed lines. Earlier checkpoints fixed Find geometry in contained
+verified, and exceptionally fast at startup. The current checkpoint strengthens
+Windows file revision detection while retaining startup behavior. The previous
+checkpoint kept early Find responsive; the one before it reduced large-document
+insertion time without materially changing the first viewport. Earlier checkpoints
+extended bounded layout of giant Unicode code blocks and fixed Find geometry in contained
 code, false save conflicts from lossy timestamps, and conditional writes, and
 added renderer-supplied HTML chunk boundaries, viewer phase traces, batched
 postpaint code highlighting, reviewed
@@ -22,7 +22,70 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: responsive early Find
+## Current checkpoint: stronger Windows file revisions
+
+- The previous Windows `FileStamp` contained only size and modified time. A
+  same-size external edit with restored modified time could be missed, allowing
+  a conditional save to overwrite it. `src-tauri/src/document_io.rs` now queries
+  `GetFileInformationByHandleEx` for exact last-write/change times and 128-bit
+  file identity plus volume serial when supported. Rust's corresponding metadata
+  methods remain unstable; the Windows API is called through `windows-sys`.
+  [Microsoft's FILE_BASIC_INFO documentation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_basic_info)
+  explains change time; [FILE_ID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info)
+  defines the strong identity.
+- An independent review found that `FileIdInfo` can fail on FAT/exFAT and virtual
+  drives. Unsupported queries fall back to the older volume + 64-bit file ID, or
+  to stable metadata if neither ID query is supported. Fallback stamps include
+  SHA-256 of the file's content, as do stamps with no usable change time. Stat and
+  save checks hash through a fixed 64 KiB buffer; `read_document` hashes the bytes
+  it already read. Windows stat/save uses an attributes-only handle until the
+  content hash is actually needed, retaining access to files that disallow data
+  reads on strong-identity filesystems. Other API failures still surface as I/O
+  errors. [Microsoft's legacy file information documentation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/ns-fileapi-by_handle_file_information)
+  describes the 64-bit ID and FAT timestamp limitations.
+- The same stamp is used for read consistency, watcher/focus stat checks, both
+  checks around an unchanged or confirmed-overwrite save, and the post-save
+  result. Rust tests now cover same-size edits with restored mtime and atomic
+  replacement with copied mtime on both Unix and Windows. The Windows test code
+  cross-compiles but has **not run on Windows** here. An isolated Windows-target
+  Cargo harness compiled `document_io.rs` and its tests successfully; a full
+  Tauri Windows check stopped in `tauri-winres` because this host lacks
+  `x86_64-w64-mingw32-windres`, before checking app code. Runtime verification on
+  NTFS and a weak/virtual filesystem remains required.
+- The reviewer found no further introduced defect after the fallback and bounded
+  hashing fixes. Limitations remain: a concurrent writer can race the hash scan
+  on a coarse-timestamp filesystem, and any writer can race the final check →
+  rename gap. Some WinFsp-FUSE volumes also fail the pre-existing
+  `fs::canonicalize` call during save, even though opening them may work. The next
+  agent should test these paths on Windows rather than infer runtime behavior
+  from cross-compilation, and change symlink resolution only with safety tests.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| Rust workspace | 32 app + 35 renderer tests passed on Linux |
+| Windows cross-target module and tests | `cargo check --offline --tests --target x86_64-pc-windows-gnu` passed in isolated `/tmp/scrivo-windows-check` harness |
+| Full Tauri Windows cross-check | Build script blocked by missing `x86_64-w64-mingw32-windres`; no Windows runtime result |
+| Full native WebKitGTK suite | 12/12 specs, 15 tests passed on rebuilt debug binary |
+| Release build and web bundle gate | Pass; 37/40 KiB static, 51/56 KiB known prepaint JS/CSS |
+| Paired release startup checks | 12/12 valid pairs per fixture; −13 ms medium, +8 ms large paired median; no consistent effect |
+| Independent adversarial review | Found and drove fixes for unsupported IDs, read-access regression, and unbounded hashing; final review found no introduced defect |
+
+Paired raw rounds are in `bench/results/paired-windows-stamp-medium.txt` and
+`bench/results/paired-windows-stamp-large.txt`. Previous release binary SHA-256:
+`90871a3d4c398722b9fdb7b1cfc91ca4180682b70ba0261642bc1170317f5388`;
+candidate: `d9e3745d94f6f556d9b29f127f048af35f8a73bab2d8bc942d9280b304baadd3`.
+The candidate was faster in 8/12 medium and 6/12 large pairs. These results do
+not establish a startup speed gain or regression; they only check that the
+Linux refactor did not produce an obvious startup change on these fixtures.
+
+The full objective remains active. The highest-value follow-up is Windows runtime
+testing on NTFS and FAT/exFAT (or a virtual drive), including the new same-size
+conflict tests, native Save As and symlink behavior, and startup. Also retain the
+previous checkpoint's idle-starvation and final check → rename caveats below.
+
+## Previous checkpoint: responsive early Find (`0d638ba`)
 
 - Before this change, typing into Find immediately after the 443 KB fixture's first
   screen appeared paused the webview for about 444 ms. A split Chromium diagnostic
@@ -75,12 +138,11 @@ and the same command with `large.md`. Their logs are in
 reviewed viewport, but without paired baseline rounds they do not establish
 a startup time change.
 
-The broad startup and data-safety goal remains active. The next agent should
-inspect the `requestIdleCallback` starvation risk only if it can reproduce a
+The next agent should inspect the `requestIdleCallback` starvation risk only if it can reproduce a
 meaningful delayed Find under load, and should keep the complete-document result,
 150 ms input-path check, 250 ms insertion frame-gap gate, and startup reference
-checks when changing the scheduler. The Windows save-conflict behavior and final
-cross-process check → rename race remain data-safety follow-ups below.
+checks when changing the scheduler. The final cross-process check → rename race
+remains a data-safety follow-up below.
 
 ## Previous checkpoint: faster background insertion (`65d29fc`)
 
@@ -601,9 +663,10 @@ measure how long that takes. A prior single startup trace is in
   PNGs. The 0.3% tile threshold is strict by design; a new machine may need its
   own reviewed references. This is a first-viewport benchmark, not a Typora
   full-document completion test.
-- The Rust write path still has the unavoidable cross-process race between final
-  conflict check and rename. Windows stamps lack Unix metadata change time, so a
-  same-size edit that restores mtime may be missed. A writable file in a directory
+- The Rust write path still has the cross-process race between final conflict
+  check and rename. Windows stamps now include change time and file identity where
+  available, plus a bounded-memory content hash on weaker filesystems; runtime
+  Windows verification remains outstanding. A writable file in a directory
   that forbids temporary-file creation now fails safely and keeps the buffer dirty.
   See `docs/ARCHITECTURE.md` for the safety model.
 - The editor uses KaTeX for interactive preview while the Rust reader supplies

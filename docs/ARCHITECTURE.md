@@ -141,8 +141,12 @@ files it doesn't reference, start programs, or navigate the webview.
   Save As first requires an absent target and asks before replacing an existing file.
   No cross-process compare-and-rename is atomic, so a
   writer racing in the final gap before rename can still be overwritten. On Windows,
-  where the stamp has no metadata change time, a same-size edit that restores mtime
-  may also be missed.
+  the stamp includes the volume/file ID and metadata change time when supported.
+  FAT, exFAT, and some virtual filesystems may lack a strong ID or change time, so
+  their stamps also include a SHA-256 hash of the file content. Stat and save checks
+  stream that hash through a fixed 64 KiB buffer. An in-place concurrent writer can
+  still race a hash scan on a filesystem with coarse timestamps; these checks do
+  not provide an atomic filesystem transaction.
 - The saved snapshot is the text that was *sent* to disk, so edits typed during an
   in-flight save stay dirty.
 - Invalid UTF-8 is refused (never lossily decoded and re-saved).

@@ -6,7 +6,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 use std::time::UNIX_EPOCH;
 
 /// Opaque revision token. Keep exact filesystem integers inside a JSON string so
@@ -72,13 +72,14 @@ impl From<io::Error> for DocError {
     }
 }
 
+#[cfg(not(windows))]
 fn stamp_of(meta: &fs::Metadata) -> Result<FileStamp, DocError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         Ok(FileStamp(format!("v1:{}:{}:{}:{}:{}:{}:{}", meta.dev(), meta.ino(), meta.len(), meta.mtime(), meta.mtime_nsec(), meta.ctime(), meta.ctime_nsec())))
     }
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let time = match meta.modified()?.duration_since(UNIX_EPOCH) {
             Ok(d) => format!("after:{}:{}", d.as_secs(), d.subsec_nanos()),
@@ -88,15 +89,134 @@ fn stamp_of(meta: &fs::Metadata) -> Result<FileStamp, DocError> {
     }
 }
 
-fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        a.dev() == b.dev() && a.ino() == b.ino()
+/// Windows keeps a metadata change time separate from last write time. Include it
+/// and a file identity so common same-size rewrites and atomic replacements
+/// differ even when last-write time is copied. Weak filesystems also need a hash.
+#[cfg(windows)]
+fn unsupported_windows_query(error: &io::Error) -> bool {
+    use windows_sys::Win32::Foundation::{ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED};
+    matches!(error.raw_os_error().map(|code| code as u32),
+        Some(ERROR_INVALID_FUNCTION | ERROR_INVALID_PARAMETER | ERROR_NOT_SUPPORTED))
+}
+
+#[cfg(windows)]
+fn stamp_of_file(file: &File, meta: &fs::Metadata) -> Result<(FileStamp, bool), DocError> {
+    use std::mem::size_of;
+    use std::os::windows::fs::MetadataExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, FILE_BASIC_INFO, FILE_ID_INFO, FileBasicInfo, FileIdInfo,
+        GetFileInformationByHandle, GetFileInformationByHandleEx,
+    };
+
+    let handle = file.as_raw_handle();
+    let mut basic = FILE_BASIC_INFO::default();
+    let mut id = FILE_ID_INFO::default();
+    // SAFETY: both output buffers are correctly laid out Windows API structures,
+    // live for the calls, and their exact sizes are passed to the API.
+    let basic_ok = unsafe {
+        GetFileInformationByHandleEx(handle, FileBasicInfo, (&raw mut basic).cast(), size_of::<FILE_BASIC_INFO>() as u32)
+    };
+    let (last_write, change_time, missing_change_time) = if basic_ok != 0 {
+        (basic.LastWriteTime as u64, basic.ChangeTime as u64, basic.ChangeTime == 0)
+    } else {
+        let error = io::Error::last_os_error();
+        if !unsupported_windows_query(&error) { return Err(error.into()); }
+        // Stable metadata still exposes the exact FILETIME last-write value.
+        (meta.last_write_time(), 0, true)
+    };
+    let id_ok = unsafe {
+        GetFileInformationByHandleEx(handle, FileIdInfo, (&raw mut id).cast(), size_of::<FILE_ID_INFO>() as u32)
+    };
+    if id_ok != 0 {
+        let file_id = u128::from_le_bytes(id.FileId.Identifier);
+        return Ok((FileStamp(format!(
+            "v2:id128:{}:{file_id:032x}:{}:{}:{}",
+            id.VolumeSerialNumber, meta.len(), last_write, change_time,
+        )), missing_change_time));
     }
-    #[cfg(not(unix))]
+    let error = io::Error::last_os_error();
+    if !unsupported_windows_query(&error) { return Err(error.into()); }
+    // Some filesystems do not implement FileIdInfo. The older query still
+    // provides volume + 64-bit file identity on FAT/exFAT and many remote drives.
+    let mut legacy = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `legacy` is a live, correctly laid out output buffer.
+    let legacy_ok = unsafe { GetFileInformationByHandle(handle, &raw mut legacy) };
+    if legacy_ok == 0 {
+        let error = io::Error::last_os_error();
+        if !unsupported_windows_query(&error) { return Err(error.into()); }
+        // A few virtual filesystems expose no file ID at all. A content hash
+        // still protects conditional saves even when identity is unavailable.
+        return Ok((FileStamp(format!(
+            "v2:noid:{}:{}:{}:{}:{}",
+            meta.creation_time(), meta.file_attributes(), meta.len(), last_write, change_time,
+        )), true));
+    }
+    let file_id = (u64::from(legacy.nFileIndexHigh) << 32) | u64::from(legacy.nFileIndexLow);
+    Ok((FileStamp(format!(
+        "v2:id64:{}:{file_id:016x}:{}:{}:{}",
+        legacy.dwVolumeSerialNumber, meta.len(), last_write, change_time,
+    )), true))
+}
+
+#[cfg(windows)]
+fn with_content_digest(stamp: FileStamp, digest: impl std::fmt::LowerHex) -> FileStamp {
+    FileStamp(format!("{}:{digest:x}", stamp.0))
+}
+
+fn state_of_file(file: &File) -> Result<(fs::Metadata, FileStamp, bool), DocError> {
+    let meta = file.metadata()?;
+    #[cfg(windows)]
+    let (stamp, needs_hash) = stamp_of_file(file, &meta)?;
+    #[cfg(not(windows))]
+    let stamp = stamp_of(&meta)?;
+    #[cfg(not(windows))]
+    let needs_hash = false;
+    Ok((meta, stamp, needs_hash))
+}
+
+fn state_at_path(path: &Path) -> Result<Option<(fs::Metadata, FileStamp)>, DocError> {
+    let meta = match fs::metadata(path) {
+        Ok(meta) if meta.is_dir() => return Err(DocError::IsDirectory),
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    #[cfg(windows)]
     {
-        stamp_of(a).ok() == stamp_of(b).ok()
+        let _ = meta; // Directory classification above; the stamp uses handle metadata.
+        // Query the stamp through an open handle; Windows' stable MetadataExt
+        // does not expose change time or file ID.
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES;
+        let file = OpenOptions::new().access_mode(FILE_READ_ATTRIBUTES).open(path)?;
+        let (meta, stamp, needs_hash) = state_of_file(&file)?;
+        if meta.is_dir() { return Err(DocError::IsDirectory); }
+        if !needs_hash { return Ok(Some((meta, stamp))); }
+
+        // Some filesystems lack a strong ID or change time. Hash the actual bytes
+        // so a same-size edit within one timestamp tick still changes the token.
+        let mut data = File::open(path)?;
+        let (meta, before, _) = state_of_file(&data)?;
+        use sha2::{Digest, Sha256};
+        let mut digest = Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let n = data.read(&mut buffer)?;
+            if n == 0 { break; }
+            digest.update(&buffer[..n]);
+        }
+        let (_, after, _) = state_of_file(&data)?;
+        if before != after { return Err(DocError::Conflict); }
+        let at_path = OpenOptions::new().access_mode(FILE_READ_ATTRIBUTES).open(path)?;
+        let (_, current, _) = state_of_file(&at_path)?;
+        if after != current { return Err(DocError::Conflict); }
+        Ok(Some((meta, with_content_digest(after, digest.finalize()))))
+    }
+    #[cfg(not(windows))]
+    {
+        let stamp = stamp_of(&meta)?;
+        Ok(Some((meta, stamp)))
     }
 }
 
@@ -108,22 +228,25 @@ pub fn absolute(path: &Path) -> io::Result<PathBuf> {
 pub fn read_document(path: &Path) -> Result<ReadDocument, DocError> {
     let path = absolute(path)?;
     let mut file = File::open(&path)?;
-    let before = file.metadata()?;
+    let (before, before_stamp, before_hash) = state_of_file(&file)?;
     if before.is_dir() {
         return Err(DocError::IsDirectory);
     }
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
-    let after = file.metadata()?;
-    let at_path = fs::metadata(&path)?;
-    let before_stamp = stamp_of(&before)?;
-    let after_stamp = stamp_of(&after)?;
-    let path_stamp = stamp_of(&at_path)?;
+    let (_, after_stamp, after_hash) = state_of_file(&file)?;
+    if before_stamp != after_stamp || before_hash != after_hash {
+        return Err(DocError::Conflict);
+    }
+    #[cfg(windows)]
+    let after_stamp = if after_hash {
+        use sha2::{Digest, Sha256};
+        with_content_digest(after_stamp, Sha256::digest(&bytes))
+    } else { after_stamp };
+    let (_, path_stamp) = state_at_path(&path)?.ok_or(DocError::Conflict)?;
     // The bytes and stamp must describe the same version of the file. A path
     // lookup after reading alone can stamp old bytes with a replacement's metadata.
-    if !same_file(&before, &after) || !same_file(&after, &at_path)
-        || before_stamp != after_stamp || after_stamp != path_stamp
-    {
+    if after_stamp != path_stamp {
         return Err(DocError::Conflict);
     }
     let stamp = after_stamp;
@@ -132,12 +255,7 @@ pub fn read_document(path: &Path) -> Result<ReadDocument, DocError> {
 }
 
 pub fn stat_document(path: &Path) -> Result<Option<FileStamp>, DocError> {
-    match fs::metadata(path) {
-        Ok(meta) if meta.is_dir() => Err(DocError::IsDirectory),
-        Ok(meta) => Ok(Some(stamp_of(&meta)?)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
+    Ok(state_at_path(path)?.map(|(_, stamp)| stamp))
 }
 
 static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -167,15 +285,10 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
         },
         Err(e) => return Err(e.into()),
     };
-    let existing = match fs::metadata(&target) {
-        Ok(meta) if meta.is_dir() => return Err(DocError::IsDirectory),
-        Ok(meta) => Some(meta),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e.into()),
-    };
-    let existing_stamp = existing.as_ref().map(stamp_of).transpose()?;
+    let existing = state_at_path(&target)?;
+    let existing_stamp = existing.as_ref().map(|(_, stamp)| stamp);
     match (&condition, &existing_stamp) {
-        (WriteCondition::Unchanged { stamp }, Some(observed)) if observed == stamp => {}
+        (WriteCondition::Unchanged { stamp }, Some(observed)) if *observed == stamp => {}
         (WriteCondition::Absent, None) | (WriteCondition::Overwrite, _) => {}
         _ => return Err(DocError::Conflict),
     }
@@ -187,7 +300,7 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
 
     let result = (|| -> Result<(), DocError> {
         tmp.write_all(text.as_bytes())?;
-        if let Some(meta) = &existing {
+        if let Some((meta, _)) = &existing {
             fs::set_permissions(&tmp_path, meta.permissions())?;
         }
         tmp.sync_all()?;
@@ -197,14 +310,8 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
         // cross-process compare-and-rename atomic, but catches changes during it.
         match &condition {
             WriteCondition::Unchanged { stamp } => {
-                let current = match fs::metadata(&target) {
-                    Ok(meta) => meta,
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(DocError::Conflict),
-                    Err(e) => return Err(e.into()),
-                };
-                if stamp_of(&current)?.ne(stamp)
-                    || existing.as_ref().is_some_and(|old| !same_file(old, &current))
-                {
+                let (_, current_stamp) = state_at_path(&target)?.ok_or(DocError::Conflict)?;
+                if &current_stamp != stamp {
                     return Err(DocError::Conflict);
                 }
             }
@@ -225,15 +332,8 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
             WriteCondition::Overwrite => {
                 // Confirmation applies to the version observed when this write
                 // began, not to a later edit or replacement by another writer.
-                let current = match fs::metadata(&target) {
-                    Ok(meta) => meta,
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(DocError::Conflict),
-                    Err(e) => return Err(e.into()),
-                };
-                let current_stamp = stamp_of(&current)?;
-                if existing_stamp.as_ref() != Some(&current_stamp)
-                    || existing.as_ref().is_some_and(|old| !same_file(old, &current))
-                {
+                let (_, current_stamp) = state_at_path(&target)?.ok_or(DocError::Conflict)?;
+                if existing_stamp != Some(&current_stamp) {
                     return Err(DocError::Conflict);
                 }
             }
@@ -254,7 +354,7 @@ fn write_document_with(path: &Path, text: &str, condition: WriteCondition, befor
         let _ = fs::remove_file(&tmp_path);
         return Err(e);
     }
-    stamp_of(&fs::metadata(&target)?)
+    state_at_path(&target)?.map(|(_, stamp)| stamp).ok_or(DocError::NotFound)
 }
 
 fn create_temp(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
@@ -372,7 +472,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&p).unwrap(), "theirs");
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn detects_same_size_change_with_restored_mtime() {
         let d = tmp();
@@ -380,11 +480,30 @@ mod tests {
         let stale = write_document(&p, "mine", WriteCondition::Absent).unwrap();
         let modified = fs::metadata(&p).unwrap().modified().unwrap();
         fs::write(&p, "evil").unwrap();
-        File::open(&p).unwrap().set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
+        OpenOptions::new().write(true).open(&p).unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
         let observed = stat_document(&p).unwrap().unwrap();
         assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
         assert_eq!(fs::metadata(&p).unwrap().len(), 4);
         assert_ne!(stale, observed);
+        assert!(matches!(write_document(&p, "edit", WriteCondition::Unchanged { stamp: stale }), Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "evil");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn detects_atomic_replacement_with_copied_timestamp() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let replacement = d.path().join("replacement.md");
+        let stale = write_document(&p, "mine", WriteCondition::Absent).unwrap();
+        let modified = fs::metadata(&p).unwrap().modified().unwrap();
+        fs::write(&replacement, "evil").unwrap();
+        OpenOptions::new().write(true).open(&replacement).unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
+        fs::rename(&replacement, &p).unwrap();
+        assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
+        assert_ne!(stat_document(&p).unwrap(), Some(stale.clone()));
         assert!(matches!(write_document(&p, "edit", WriteCondition::Unchanged { stamp: stale }), Err(DocError::Conflict)));
         assert_eq!(fs::read_to_string(&p).unwrap(), "evil");
     }
