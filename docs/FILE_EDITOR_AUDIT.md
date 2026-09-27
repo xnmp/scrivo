@@ -16,7 +16,7 @@ check remain acceptance work for their milestone.
 | Source / live preview | `Ctrl+/` switches between CodeMirror source and live preview, with literal Markdown as the document text. | Browser `source-mode`, `live-preview`; native `reading-toggle`. |
 | Tables | Live preview edits rendered cells in place. Tab/Enter and arrows navigate cells; context actions add, delete, move, sort, and align rows or columns. Each structural action is a separate undo step. | Native `table` saves cell and alignment edits; browser `tables` covers save/reopen, undo/redo, escaped pipes, malformed delimiters, and a 20,000-character cell. |
 | Editing interactions | Lists continue or terminate with Enter, selections indent with Tab, paired characters can be skipped or deleted, and headings/nested lists fold without changing file bytes. | Native `list-editing` and `fold-editing`; browser `editing-interactions`; unit `editing`. |
-| Paste / drop | Plain text editing works. Rich HTML conversion and local attachment import are not implemented. | I1/I2 acceptance work. |
+| Paste / drop | Browser HTML paste converts supported structure to portable Markdown; plain text stays literal. Scripts and unsafe link targets do not enter the Markdown. Local attachment import remains open. | Native `rich-paste` checks real X11 clipboard HTML and saved bytes; browser `rich-paste` checks conversion, save/reopen, rendering, undo, and fallback. I2 attachment acceptance remains. |
 
 At this checkpoint the web startup bundle gate remains 41 KiB startup JS/CSS
 and 56 KiB known prepaint JS/CSS. The exact build output and full test counts

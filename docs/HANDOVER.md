@@ -1,5 +1,62 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: rich clipboard paste (I1)
+
+The active objective is still `docs/FILE_EDITOR_PARITY.md`. This checkpoint
+completes I1: browser HTML paste becomes portable Markdown in live preview and
+source mode, while a plain-text paste stays literal. I2 local attachments, W1
+document tabs, D1 editing outline/properties, and the E3 editor preferences
+remain. The prior editing/table checkpoint is `ba1fd43`.
+
+### Implementation and behavior
+
+- `src/domain/rich-paste.ts` is a pure HTML-fragment-to-Markdown transform built
+  on parse5's inert parser. It supports headings, paragraphs, lists (including
+  zero-based numbering), links, emphasis, strikeout, inline/fenced code,
+  blockquotes, and GFM tables. Safe unsupported elements contribute visible
+  text; active elements such as scripts and iframes are omitted. Links accept
+  `http`, `https`, `mailto`, and portable relative targets; unsafe schemes are
+  omitted while link labels survive. Entity-like text, math delimiters, and
+  thematic/setext-looking lines are escaped so rendering retains their visible
+  meaning. HTML input over 5 MB, over 10,000 tag starts, or beyond the nesting
+  guard falls back to `text/plain` when available.
+- `src/editor/clipboard.ts` handles rich paste within CodeMirror content as one
+  `input.paste` transaction. An unconvertible HTML fragment uses normal plain
+  paste, and paste into Find/Replace remains in its input. It ignores table
+  widget inputs. `src/editor/setup.ts` installs the adapter ahead of the
+  Markdown URL-paste extension.
+- `parse5` is a direct runtime dependency in `package.json`/`bun.lock`; the
+  frozen-lockfile dry run resolves it at 7.3.0. README and the parity/audit
+  docs describe the new behavior. This checkpoint does not import images or
+  files from the clipboard; I2 owns attachment creation and drop handling.
+
+### Verification
+
+- `bun run test`: 382/382. Converter tests cover malformed/unsafe markup,
+  entity and URL round trips, nested table-cell paragraphs, Markdown-like
+  prose, MathML/SVG visible text, zero-based lists, and large input fallback.
+- `bun run typecheck` and native E2E TypeScript check passed; Rust tests 51/51.
+- Chromium 96/96 passed. `e2e/rich-paste.spec.ts` checks saved Markdown,
+  reopen/render, plain fallback, one-step undo/redo, and Find/Replace focus.
+- Native 20/20 specs passed. `rich-paste.spec.ts` uses a real X11 HTML clipboard
+  and checks the bytes saved by WebKitGTK. Both native and release bundle gates
+  passed at 40/41 KiB startup JS/CSS and 54/56 KiB known prepaint.
+- `tauri build --no-bundle` passed. The release and installed binary at
+  `/home/chong/.local/bin/scrivo` both have SHA-256
+  `f64101d5088901316f78e2368323870b02476e51c4b0f8e8f52b17a36eeb6d8c`.
+  An already-running window was not restarted because it may hold unsaved work;
+  the new binary starts on the next launch.
+
+### Resume
+
+Start I2 with `docs/FILE_EDITOR_PARITY.md` and the app/platform ports. Keep
+attachment copying separate from Markdown insertion until both can succeed
+or a failed copy can be cleaned up. Test duplicate filenames, Unicode names,
+relative links after moving the containing folder, untitled Save As, rejected
+directory drops, errors, and actual native attachment bytes. Then tackle W1,
+D1, and E3. Do not mark the parity objective complete before every listed
+release criterion is verified.
+
 ## 2026-09-28: editing interactions and natural tables
 
 The active goal remains `docs/FILE_EDITOR_PARITY.md`: reach Obsidian-class

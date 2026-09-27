@@ -40,8 +40,9 @@ controls. Table changes remain ordinary undoable Markdown edits.
 
 Milestone 0's native behavior audit is in `docs/FILE_EDITOR_AUDIT.md`. Milestone 1
 (P1–P4) is implemented and verified in the 2026-09-28 checkpoint. E1 and E2
-editing interactions are implemented and verified in the current checkpoint;
-I1, I2, W1, D1, and editor preferences in E3 remain open.
+editing interactions are implemented and verified in the current checkpoint.
+I1 rich clipboard conversion is implemented and verified in the latest checkpoint;
+I2, W1, D1, and editor preferences in E3 remain open.
 
 At the start of each later milestone, verify the precise existing behavior in
 the native app before adding code.

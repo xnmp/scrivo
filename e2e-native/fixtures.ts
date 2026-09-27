@@ -115,6 +115,13 @@ export function foldEditingFixture(): Fixture {
   return { dir, docPath, launchArgs: EDIT };
 }
 
+export function richPasteFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '# Rich Paste\n\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
 export function recoveryFixture(): Fixture {
   const dir = freshDir();
   return { dir, docPath: path.join(dir, 'unused.md'), launchWithoutFile: true };
@@ -219,6 +226,7 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'table.spec.ts': tableFixture,
   'list-editing.spec.ts': listEditingFixture,
   'fold-editing.spec.ts': foldEditingFixture,
+  'rich-paste.spec.ts': richPasteFixture,
   'recovery.spec.ts': recoveryFixture,
   'autosave-conflict.spec.ts': autosaveConflictFixture,
   'recovery-named.spec.ts': recoveryNamedFixture,

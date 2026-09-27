@@ -7,6 +7,7 @@ import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '
 import { classHighlighter } from '@lezer/highlight';
 import type { EditorPort } from '../app/ports';
 import { documentDir } from '../domain/document';
+import { richPaste } from './clipboard';
 import { formattingKeymap } from './commands';
 import { markdownEditingKeymap } from './editing';
 import { accessibleFoldGutter } from './folding';
@@ -84,6 +85,7 @@ export function createEditor(options: EditorOptions): Editor {
   ];
 
   const extensions = (path: string | null): Extension => [
+    richPaste,
     markdownSupport(),
     EditorState.allowMultipleSelections.of(true),
     editorTheme,

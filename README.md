@@ -30,6 +30,8 @@ indentation. Brackets, quotes, and backticks pair as you type and a typed closer
 skips an automatically inserted one. Headings and nested lists have fold buttons
 in the editor gutter; `Ctrl+Alt+[` and `Ctrl+Alt+]` (or `⌘+Option` on macOS)
 fold and unfold at the caret. Folding never changes the Markdown file.
+Pasting formatted text from a browser converts headings, lists, links, emphasis,
+code, and tables into Markdown. Plain-text paste keeps its original text.
 
 Named files save automatically after 2 seconds without typing; `Ctrl+S` saves
 immediately. The editor shows Edited, Saving, Saved, or Action needed. A failed
