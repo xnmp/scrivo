@@ -33,6 +33,12 @@ in the editor gutter; `Ctrl+Alt+[` and `Ctrl+Alt+]` (or `⌘+Option` on macOS)
 fold and unfold at the caret. Folding never changes the Markdown file.
 Pasting formatted text from a browser converts headings, lists, links, emphasis,
 code, and tables into Markdown. Plain-text paste keeps its original text.
+Pasting an image or file, or dropping a file onto the editor, copies it into an
+`assets/` folder beside the Markdown file and inserts a relative link. A dropped
+Markdown file opens as a document. If the document has no saved path, Scrivo asks
+where to save it before importing. Existing asset names are never overwritten;
+the copy receives a numbered name instead. Clipboard files are limited to 64 MiB,
+and native clipboard images to 10 megapixels.
 
 Named files save automatically after 2 seconds without typing; `Ctrl+S` saves
 immediately. The editor shows Edited, Saving, Saved, or Action needed. A failed

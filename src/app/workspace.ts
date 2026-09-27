@@ -6,7 +6,7 @@
 // saving, conflicts) and the reading view shows the editor's current text.
 import { displayName, documentDir, sameStamp, windowTitle } from '../domain/document';
 import { linkAction } from '../domain/links';
-import type { DocumentController } from './controller';
+import type { DocumentController, ImportOutcome } from './controller';
 import { describeError } from './errors';
 import type { Platform, ViewDocument } from './ports';
 
@@ -33,6 +33,7 @@ export interface EditorHandle {
   /** Scroll so `line` is at the top and put the caret there. */
   revealLine(line: number): void;
   focus(): void;
+  importPaths(paths: readonly string[], at?: { readonly x: number; readonly y: number }): Promise<ImportOutcome>;
 }
 
 export type Mode = 'view' | 'edit';
@@ -41,6 +42,7 @@ export interface Workspace {
   /** Show the startup document (reading view) or start the editor. */
   start(): Promise<void>;
   mode(): Mode;
+  documentPath(): string | null;
   toggle(): Promise<void>;
   /** Switch to the editor, at `line` or where the reading view is scrolled. */
   edit(line?: number): Promise<void>;
@@ -281,6 +283,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         e.focus();
       }),
     mode: () => mode,
+    documentPath: () => (mode === 'view' ? shown?.path : editor?.controller.info().path) ?? null,
     toggle: () => serial(() => (mode === 'view' ? editNow() : viewNow())),
     edit: (line) => serial(() => editNow(line)),
     view: () => serial(viewNow),
@@ -318,8 +321,6 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
             return platform.shell
               .revealFile(action.path)
               .catch((err) => notify(`Could not show ${displayName(action.path)}: ${describeError(err)}`));
-          case 'none':
-            return;
         }
       }),
     checkDisk: () => serial(checkDiskNow),

@@ -87,6 +87,16 @@ export function imageFixture(): Fixture {
   return { dir, docPath, launchArgs: EDIT };
 }
 
+export function attachmentFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'note.md');
+  writeFileSync(docPath, '# Attachments\n\n');
+  writeFileSync(path.join(dir, 'source.png'), ONE_PIXEL_PNG);
+  mkdirSync(path.join(dir, 'assets'));
+  writeFileSync(path.join(dir, 'assets', 'image.png'), Buffer.from('old'));
+  return { dir, docPath, launchArgs: EDIT };
+}
+
 export function checkboxFixture(): Fixture {
   const dir = freshDir();
   const docPath = path.join(dir, 'doc.md');
@@ -222,6 +232,7 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'missing-file.spec.ts': missingFileFixture,
   'invalid-utf8.spec.ts': invalidUtf8Fixture,
   'image.spec.ts': imageFixture,
+  'attachments.spec.ts': attachmentFixture,
   'checkbox.spec.ts': checkboxFixture,
   'table.spec.ts': tableFixture,
   'list-editing.spec.ts': listEditingFixture,

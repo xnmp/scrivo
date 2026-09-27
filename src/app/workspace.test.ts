@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemoryPlatform, fakeRender, type MemoryPlatform, type RenderFn } from '../platform/memory';
 import { createDocumentController } from './controller';
+import { registerFileDrops } from './register-file-drops';
 import type { RecoveryCopy, ViewDocument } from './ports';
 import { fakeEditor, scriptedPrompter } from './testing';
 import { createWorkspace, type EditorHandle, type Mode, type Position } from './workspace';
@@ -51,6 +52,7 @@ async function setup(
   let failuresLeft = opts.failEditorLoads ?? 0;
   let idleTask: (() => void) | undefined;
   let workspace: ReturnType<typeof createWorkspace>;
+  let currentEditor: EditorHandle | null = null;
   workspace = createWorkspace({
     platform,
     viewer: viewer.port,
@@ -72,11 +74,17 @@ async function setup(
         topLine: () => editorTop,
         revealLine: (l) => void revealed.push(l),
         focus: () => {},
+        importPaths: (paths) => controller.importAttachments(paths.map((path) => ({ kind: 'path', path })), (markdown) => {
+          editorPort.type(markdown);
+          return true;
+        }),
       };
+      currentEditor = handle;
       return handle;
     },
   });
   await workspace.start();
+  registerFileDrops(platform.window, workspace, () => currentEditor, p.prompter.notify);
   return {
     platform,
     viewer,
@@ -156,6 +164,46 @@ describe('starting', () => {
     t.answers.unsaved.push('cancel');
     expect(await t.workspace.requestClose()).toBe(false);
     expect(t.asked).toContain('unsaved:a.md');
+  });
+});
+
+describe('native file drops', () => {
+  it('opens one Markdown file in the reading view', async () => {
+    const t = await setup({ files: { '/n/a.md': '# A', '/n/b.md': '# B' }, startupPath: '/n/a.md' });
+    await t.platform.dropPaths(['/n/b.md']);
+    expect(t.workspace.mode()).toBe('view');
+    expect(t.viewer.text()).toContain('B');
+    expect(t.loads()).toBe(0);
+  });
+
+  it('switches from reading to editing and imports a dropped file beside the document', async () => {
+    const t = await setup({ files: { '/n/a.md': 'Note\n' }, startupPath: '/n/a.md' });
+    t.platform.disk.putBytes('/drop/picture.png', Uint8Array.of(3, 4));
+    await t.platform.dropPaths(['/drop/picture.png']);
+    expect(t.workspace.mode()).toBe('edit');
+    expect(t.editorPort.value()).toContain('![picture](assets/picture.png)');
+    expect(t.platform.disk.getBytes('/n/assets/picture.png')).toEqual(Uint8Array.of(3, 4));
+  });
+
+  it('rejects mixed Markdown drops without changing the current document', async () => {
+    const t = await setup({ files: { '/n/a.md': 'A', '/n/b.md': 'B' }, startupPath: '/n/a.md' });
+    await t.platform.dropPaths(['/n/b.md', '/drop/picture.png']);
+    expect(t.workspace.mode()).toBe('view');
+    expect(t.viewer.text()).toContain('A');
+    expect(t.notices).toContain('Drop one Markdown file at a time to open it.');
+  });
+
+  it('does not attach to a different recovery document revealed during a drop', async () => {
+    const t = await setup({ files: { '/n/a.md': 'A' }, startupPath: '/n/a.md',
+      recoveryCopy: { id: crypto.randomUUID(), path: '/n/recovered.md', stamp: null,
+        format: { eol: '\n', bom: false, mixedEol: false }, text: 'Recovered', updatedAt: Date.now() } });
+    t.platform.disk.putBytes('/drop/picture.png', Uint8Array.of(3, 4));
+    t.answers.recovery.push('restore');
+    await t.platform.dropPaths(['/drop/picture.png']);
+    expect(t.workspace.documentPath()).toBe('/n/recovered.md');
+    expect(t.editorPort.value()).toBe('Recovered');
+    expect(t.platform.disk.getBytes('/n/assets/picture.png')).toBeUndefined();
+    expect(t.notices).toContain('The active document changed; drop the file again to attach it.');
   });
 });
 

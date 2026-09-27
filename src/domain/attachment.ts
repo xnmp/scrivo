@@ -1,6 +1,13 @@
 /** Portable Markdown links for files imported into a sibling assets/ directory. */
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg']);
-const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mkdn']);
+export const MAX_CLIPBOARD_FILE_BYTES = 64 * 1024 * 1024;
+
+export function checkClipboardFileSize(size: number): void {
+  if (!Number.isSafeInteger(size) || size < 0 || size > MAX_CLIPBOARD_FILE_BYTES) {
+    throw new Error('Clipboard file exceeds the 64 MiB import limit');
+  }
+}
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdwn', 'mdtxt', 'mdtext', 'txt']);
 const MIME_EXTENSIONS: Readonly<Record<string, string>> = {
   'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
   'image/avif': 'avif', 'image/bmp': 'bmp', 'image/svg+xml': 'svg', 'application/pdf': 'pdf',
@@ -16,11 +23,23 @@ export const isMarkdownFile = (name: string): boolean => MARKDOWN_EXTENSIONS.has
 /** Match the native writer's portable filename policy for the browser test adapter. */
 export function safeAttachmentName(requested: string, mimeType = ''): string {
   let name = [...requested].map((char) => /[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/.test(char) ? '_' : char)
-    .slice(0, 120).join('').trim().replace(/[. ]+$/, '');
+    .join('').trim().replace(/[. ]+$/, '');
   if (!name || name === '.' || name === '..') name = 'attachment';
   if (!name.includes('.') && MIME_EXTENSIONS[mimeType.toLowerCase()]) name += `.${MIME_EXTENSIONS[mimeType.toLowerCase()]}`;
   if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(name)) name = `_${name}`;
-  return name;
+  const encoder = new TextEncoder();
+  const dot = name.lastIndexOf('.');
+  const suffix = dot > 0 && encoder.encode(name.slice(dot)).length <= 24 ? name.slice(dot) : '';
+  const stem = suffix ? name.slice(0, dot) : name;
+  let remaining = 180 - encoder.encode(suffix).length;
+  let truncated = '';
+  for (const char of stem) {
+    const bytes = encoder.encode(char).length;
+    if (bytes > remaining) break;
+    truncated += char;
+    remaining -= bytes;
+  }
+  return truncated + suffix;
 }
 
 export function collisionName(base: string, attempt: number): string {

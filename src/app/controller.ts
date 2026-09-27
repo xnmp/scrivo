@@ -431,7 +431,9 @@ export function createDocumentController<S extends Snapshot>(deps: {
     if (sources.length === 0) return 'cancelled';
     // An untitled or not-yet-created file needs a real folder before assets can
     // be placed next to it. This uses the same conditional save path as Ctrl+S.
-    if ((doc.path === null || doc.stamp === null) && !(await saveNow())) return 'cancelled';
+    if ((doc.path === null || doc.stamp === null) && !(await saveNow())) {
+      return saveStatus.kind === 'action-needed' ? 'failed' : 'cancelled';
+    }
     const documentPath = doc.path!;
     const imported: ImportedAttachment[] = [];
     try {
@@ -500,7 +502,11 @@ export function createDocumentController<S extends Snapshot>(deps: {
 
     save: () => serial(saveNow),
     saveAs: () => serial(saveAsNow),
-    importAttachments: (sources, insert) => serial(() => importAttachmentsNow(sources, insert)),
+    importAttachments: (sources, insert) => {
+      const requestedGeneration = generation;
+      return serial(() => requestedGeneration === generation
+        ? importAttachmentsNow(sources, insert) : Promise.resolve('cancelled' as const));
+    },
 
     newDocument: () =>
       serial(async () => {

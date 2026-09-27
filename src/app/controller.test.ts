@@ -16,6 +16,69 @@ async function setup(files: Record<string, string> = {}, startupPath?: string) {
 
 const lastTitle = (p: MemoryPlatform) => p.titles.at(-1);
 
+describe('attachment imports', () => {
+  const image = { kind: 'bytes' as const, name: 'café.png', mimeType: 'image/png', read: async () => Uint8Array.of(1, 2, 3) };
+
+  it('saves an untitled document before creating a relative image link', async () => {
+    const { platform, controller, editor } = await setup();
+    platform.dialogAnswers.save.push('/n/Note.md');
+    const outcome = await controller.importAttachments([image], (markdown) => { editor.type(markdown); return true; });
+    expect(outcome).toBe('imported');
+    expect(platform.disk.get('/n/Note.md')).toBe('');
+    expect(platform.disk.getBytes('/n/assets/café.png')).toEqual(Uint8Array.of(1, 2, 3));
+    expect(editor.value()).toBe('![café](assets/caf%C3%A9.png)');
+  });
+
+  it('leaves the buffer and assets untouched when Save As is cancelled', async () => {
+    const { platform, controller, editor } = await setup();
+    editor.type('draft');
+    expect(await controller.importAttachments([image], () => true)).toBe('cancelled');
+    expect(editor.value()).toBe('draft');
+    expect(platform.disk.getBytes('/n/assets/café.png')).toBeUndefined();
+  });
+
+  it('reports a failed Save As as an import failure without creating an asset', async () => {
+    const { platform, controller, editor } = await setup();
+    platform.dialogAnswers.save.push('/n/Note.md');
+    platform.disk.failNextWrite(new FileError('permission-denied', '/n/Note.md'));
+    expect(await controller.importAttachments([image], () => true)).toBe('failed');
+    expect(editor.value()).toBe('');
+    expect(platform.disk.getBytes('/n/assets/café.png')).toBeUndefined();
+  });
+
+  it('rolls back earlier files when a later read or insertion fails', async () => {
+    const { platform, controller, editor, notices } = await setup({ '/n/Note.md': 'start' }, '/n/Note.md');
+    const broken = { kind: 'bytes' as const, name: 'bad.png', mimeType: 'image/png', read: async (): Promise<Uint8Array> => { throw new Error('read failed'); } };
+    expect(await controller.importAttachments([image, broken], () => true)).toBe('failed');
+    expect(platform.disk.getBytes('/n/assets/café.png')).toBeUndefined();
+    expect(editor.value()).toBe('start');
+    expect(notices.at(-1)).toContain('read failed');
+    expect(await controller.importAttachments([image], () => false)).toBe('failed');
+    expect(platform.disk.getBytes('/n/assets/café.png')).toBeUndefined();
+  });
+
+  it('does not import into a document opened while the import waited in the queue', async () => {
+    const { platform, controller, editor } = await setup({ '/n/a.md': 'A', '/n/b.md': 'B' }, '/n/a.md');
+    const read = platform.fs.read;
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => { release = resolve; });
+    let reading!: () => void;
+    const started = new Promise<void>((resolve) => { reading = resolve; });
+    Object.assign(platform.fs, { read: async (path: string) => {
+      if (path === '/n/b.md') { reading(); await waiting; }
+      return read(path);
+    } });
+    const opening = controller.open('/n/b.md');
+    await started;
+    const importing = controller.importAttachments([image], (markdown) => { editor.type(markdown); return true; });
+    release();
+    expect(await opening).toBe(true);
+    expect(await importing).toBe('cancelled');
+    expect(editor.value()).toBe('B');
+    expect(platform.disk.getBytes('/n/assets/café.png')).toBeUndefined();
+  });
+});
+
 describe('opening', () => {
   it('shows the startup file and a clean title', async () => {
     const { editor, controller, platform } = await setup({ '/n/a.md': '# A\n' }, '/n/a.md');

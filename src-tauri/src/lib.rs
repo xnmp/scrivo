@@ -1,5 +1,6 @@
 mod commands;
 mod attachment_io;
+mod file_drops;
 mod document_io;
 mod recovery;
 #[cfg(target_os = "linux")]
@@ -10,7 +11,7 @@ mod view;
 mod watch;
 
 use std::path::Path;
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// WebKitGTK's DMA-BUF renderer aborts with "Error 71 (Protocol error)" on several
 /// Wayland compositor + GPU driver combinations (reproduced on Hyprland + NVIDIA 610).
@@ -49,8 +50,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(startup)
         .manage(watch::WatchState::default())
+        .manage(file_drops::FileDropState::default())
         .invoke_handler(tauri::generate_handler![
             commands::read_document,
             commands::write_document,
@@ -58,6 +61,7 @@ pub fn run() {
             commands::import_attachment_bytes,
             commands::import_attachment_path,
             commands::rollback_attachment,
+            file_drops::activate_file_drops,
             commands::list_recovery,
             commands::put_recovery,
             commands::remove_recovery,
@@ -78,7 +82,8 @@ pub fn run() {
             if trace::enabled() {
                 window = window.initialization_script("window.__SCRIVO_TRACE__ = true;");
             }
-            window.build()?;
+            let window = window.build()?;
+            file_drops::observe(&window, app.state::<file_drops::FileDropState>().inner().clone());
             trace::mark("window built");
             Ok(())
         })

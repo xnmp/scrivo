@@ -136,6 +136,7 @@ export function createTauriPlatform(): Platform {
             if (focused) handler();
           }),
         ),
+      onFilesDropped: (handler) => import('./tauri-drop').then((module) => module.onFilesDropped(handler)),
       destroy: () => currentWindow().then((w) => w.destroy()),
     },
     render: {

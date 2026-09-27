@@ -11,6 +11,9 @@
     "core:window:allow-destroy",
     "dialog:allow-open",
     "dialog:allow-save",
-    "opener:default"
+    "opener:default",
+    "clipboard-manager:allow-read-image",
+    "core:image:allow-rgba",
+    "core:image:allow-size"
   ]
 }

@@ -46,6 +46,7 @@
     "@lezer/highlight": "^1.2.4",
     "@lezer/markdown": "^1.7.2",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "2.3.3",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2",
     "katex": "^0.18.9",

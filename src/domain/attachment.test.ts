@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentLink, isMarkdownFile } from './attachment';
+import { attachmentLink, checkClipboardFileSize, isMarkdownFile, MAX_CLIPBOARD_FILE_BYTES } from './attachment';
 
 describe('attachment link policy', () => {
   it('inserts image syntax and encodes filenames as one relative path segment', () => {
@@ -17,6 +17,15 @@ describe('attachment link policy', () => {
       expect(() => attachmentLink(invalid)).toThrow();
     }
     expect(isMarkdownFile('notes.MD')).toBe(true);
+    expect(isMarkdownFile('notes.mdwn')).toBe(true);
+    expect(isMarkdownFile('notes.txt')).toBe(true);
     expect(isMarkdownFile('report.pdf')).toBe(false);
+  });
+
+  it('rejects oversized and malformed clipboard files before reading their bytes', () => {
+    expect(() => checkClipboardFileSize(MAX_CLIPBOARD_FILE_BYTES)).not.toThrow();
+    for (const size of [MAX_CLIPBOARD_FILE_BYTES + 1, -1, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => checkClipboardFileSize(size)).toThrow('64 MiB');
+    }
   });
 });

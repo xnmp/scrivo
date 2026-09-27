@@ -15,7 +15,7 @@ const unwrap = (raw: string) => {
 
 const decode = (s: string) => {
   try {
-    return decodeURI(s);
+    return decodeURIComponent(s);
   } catch {
     return s; // malformed escapes: use as written
   }

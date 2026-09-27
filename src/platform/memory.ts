@@ -64,6 +64,8 @@ export interface MemoryPlatform extends Platform {
   /** Simulate the user closing the window; resolves whether it closed. */
   requestClose(): Promise<boolean>;
   focus(): void;
+  dropPaths(paths: readonly string[], position?: { readonly x: number; readonly y: number }): Promise<void>;
+  watchedPath(): string | null;
   readonly destroyed: boolean;
 }
 
@@ -93,6 +95,7 @@ export function createMemoryPlatform(options: {
   const dialogAnswers = { open: [] as Array<string | null>, save: [] as Array<string | null> };
   let closeHandler: (() => Promise<boolean>) | null = null;
   const focusHandlers: Array<() => void> = [];
+  let dropHandler: ((drop: { paths: readonly string[]; position: { x: number; y: number } }) => Promise<void>) | null = null;
   let destroyed = false;
   let watched: { path: string; onChange: () => void } | null = null;
 
@@ -191,6 +194,7 @@ export function createMemoryPlatform(options: {
       setTitle: (title) => void titles.push(title),
       onCloseRequested: (handler) => void (closeHandler = handler),
       onFocus: (handler) => void focusHandlers.push(handler),
+      async onFilesDropped(handler) { dropHandler = handler; },
       async destroy() {
         destroyed = true;
       },
@@ -245,6 +249,8 @@ export function createMemoryPlatform(options: {
       return ok;
     },
     focus: () => focusHandlers.forEach((h) => h()),
+    dropPaths: (paths, position = { x: 0, y: 0 }) => dropHandler?.({ paths, position }) ?? Promise.resolve(),
+    watchedPath: () => watched?.path ?? null,
     get destroyed() {
       return destroyed;
     },

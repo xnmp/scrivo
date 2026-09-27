@@ -1,5 +1,85 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: I2 local attachments checkpoint
+
+The active objective is still `docs/FILE_EDITOR_PARITY.md`. I2 is implemented:
+image/file paste and file drop copy into a sibling `assets/` directory and insert
+relative, path-encoded Markdown links. An untitled document goes through Save As
+first. A same-name file receives a numbered name; an import failure rolls back
+created files and preserves clipboard text. Pasted text accompanying an image is
+kept. Native Markdown drops open the document; directories and mixed Markdown
+drops report an error. The editor now handles file paste and browser file drop,
+while Tauri accepts native paths and reads image-only X11 clipboards through the
+official clipboard-manager plugin (pinned at 2.3.3 to match Tauri 2.11).
+
+### Implementation map
+
+- `src/editor/attachments.ts`, `src/editor/setup.ts`, and `src/editor-app.ts`
+  capture a CodeMirror insertion location before asynchronous reads or dialogs.
+  The location maps through edits and is invalidated on document reset/reload.
+  Imports are bound to the controller document generation, so an open/recovery
+  operation queued ahead cannot redirect a paste into another file. Clipboard
+  files over 64 MiB and native clipboard images over 10 megapixels fail visibly.
+- `src/app/file-drops.ts` decides whether a native drop opens one Markdown file
+  or imports attachment paths. It checks the active document before and after
+  switching from Reading to Editing, since accepting an unmatched recovery copy
+  can change the active path. `src/app/register-file-drops.ts` attaches the
+  deferred listener. `src-tauri/src/file_drops.rs` queues native drops from
+  window creation until the frontend listener is ready, so startup does not
+  load the webview drop API before first paint.
+- `src/platform/tauri-clipboard.ts` reads and PNG-encodes native clipboard
+  images when WebKitGTK's paste event exposes no `File` or MIME types. The
+  browser's own paste handler still handles normal file payloads. Errors other
+  than an empty/non-image clipboard are reported.
+- `src-tauri/src/attachment_io.rs` and `src/domain/attachment.ts` implement
+  byte-limited Unicode names, collision handling, relative link syntax,
+  streaming path copies, and cleanup on read/sync/stamp failures. Native path
+  imports reject FIFOs and other non-regular files before opening. Relative
+  link resolution now decodes encoded reserved characters, so image preview
+  and file reveal find names containing `&` or `#`.
+- `src/boot.ts` reports document paths changed by attachment Save As to the
+  existing file watcher. README documents paste/drop behavior and limits.
+
+### Verification
+
+- `bun run typecheck` and the native E2E TypeScript check passed. Unit suites
+  passed 401/401. Rust suites passed 59/59, including real copied
+  bytes, duplicate Unicode names, partial-copy cleanup, FIFO rejection, and the
+  early-drop queue.
+- Full Chromium E2E passed 107/107 before the final 64 MiB case; the focused
+  attachment suite passed 8/8 afterward. It checks duplicate bytes and links,
+  save/reopen, untitled Save As, file drop position, text preservation, watcher
+  registration, oversized rejection, and stale insertion cancellation.
+- Full native WebKitGTK E2E passed 21/21 spec files. The attachment spec uses
+  real X11 text and PNG clipboard data, checks exact saved link and copied PNG
+  signature/size, confirms the image displays, then copies the Markdown file
+  and `assets/` to a new directory and confirms the image still loads there.
+- `tauri build --debug --no-bundle` and the final release
+  `tauri build --no-bundle` passed. The startup bundle gate remained at
+  41/41 KiB; known prepaint was 55/56 KiB. The release binary was installed
+  atomically at `/home/chong/.local/bin/scrivo`; release and installed SHA-256
+  are `2fc5ad36afeb0060f9641d606a66add93bfb768e885fdf8edd7c1f7136c7f71a`.
+  An already-running window was not restarted, so its next launch picks up
+  the new executable.
+- A three-run private-compositor startup smoke on the final release matched the
+  reviewed screenshots: medium content median 355 ms, large 357 ms. These are
+  unpaired runs, so compare them cautiously with the historical 12-run medians
+  of 340 ms and 356 ms in README; they show no large launch regression.
+
+### Remaining work and limits
+
+1. Start W1 multi-document sessions and tabs. The present controller and
+   workspace own one active document; this is the main architectural change.
+   Then implement D1 editing outline/properties and E3 preferences. The
+   broader parity goal remains active until those and release criteria pass.
+2. Native OS file-drop routing has unit and queue tests, and browser file-drop
+   E2E exercises insertion; the native E2E currently exercises native image
+   paste rather than driving an OS drag gesture. Same-user hostile replacement
+   of `assets/` or a just-copied file between pathname checks is a residual
+   filesystem race in `attachment_io.rs`; do not claim atomic protection against
+   a concurrent adversarial process. The writer never overwrites an existing
+   name during ordinary imports.
+
 ## 2026-09-28: natural table editing follow-up and I2 groundwork
 
 The user asked for table editing closer to Obsidian after the I1 checkpoint.

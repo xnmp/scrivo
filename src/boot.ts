@@ -93,26 +93,26 @@ viewer.onShown((doc) => {
   });
 });
 
+const reportPath = (path: string | null) => {
+  const version = ++watchVersion;
+  requestIdleCallback(() => {
+    if (version !== watchVersion) return;
+    watchTail = watchTail
+      .then(async () => {
+        if (version !== watchVersion) return;
+        await platform.fs.watch(path, () => void workspace.checkDisk());
+        if (version === watchVersion && path !== null) await workspace.checkDisk();
+      })
+      .catch(() => undefined);
+  }, { timeout: 2000 });
+};
+
 const workspace = createWorkspace({
   platform,
   viewer,
   notify: prompter.notify,
   scheduleIdle: (run) => void requestIdleCallback(run),
-  onPathChanged(path) {
-    const version = ++watchVersion;
-    requestIdleCallback(() => {
-      if (version !== watchVersion) return;
-      watchTail = watchTail
-        .then(async () => {
-          if (version !== watchVersion) return;
-          await platform.fs.watch(path, () => void workspace.checkDisk());
-          // Catch a write that landed after the document was read but before the
-          // watcher was installed; such a write has no event for this watcher.
-          if (version === watchVersion && path !== null) await workspace.checkDisk();
-        })
-        .catch(() => undefined); // focus still checks disk if a watcher is unavailable
-    }, { timeout: 2000 });
-  },
+  onPathChanged: reportPath,
   showSurface(mode) {
     document.body.dataset.mode = mode;
     if (mode === 'view') {
@@ -137,6 +137,8 @@ const workspace = createWorkspace({
       status,
       parent: byId('editor'),
       fileUrl: tauri ? fileUrl : (path) => path,
+      domFileDrop: !tauri,
+      onDocumentPathChanged: reportPath,
       commands: {
         toggleReading: () => void workspace.toggle(),
         save: () => void workspace.save(),
@@ -186,8 +188,9 @@ platform.window.onCloseRequested(workspace.requestClose);
 platform.window.onFocus(() => void workspace.checkDisk());
 requestAnimationFrame(() => requestAnimationFrame(() => traceMark('first frame with document')));
 
-// Warm the editor so the first switch is instant; idle so reading isn't disturbed.
-requestIdleCallback(() => void loadEditorModule(), { timeout: 3000 });
+// The native window queues drops until this deferred listener is ready.
+requestIdleCallback(() => void import('./app/register-file-drops').then((module) =>
+  module.registerFileDrops(platform.window, workspace, () => editorApp, prompter.notify)), { timeout: 3000 });
 
 if (!tauri) {
   Object.assign(window, {

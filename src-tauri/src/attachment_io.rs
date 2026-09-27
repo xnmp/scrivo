@@ -8,6 +8,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 const MAX_ATTEMPTS: usize = 10_000;
+const MAX_BASE_NAME_BYTES: usize = 180;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +51,6 @@ fn mime_extension(mime: &str) -> Option<&'static str> {
 fn safe_name(requested: &str, mime: &str) -> String {
     let cleaned: String = requested.chars()
         .map(|ch| if ch.is_control() || "<>:\"/\\|?*".contains(ch) { '_' } else { ch })
-        .take(120)
         .collect();
     let mut name = cleaned.trim().trim_end_matches(['.', ' ']).to_string();
     if name.is_empty() || name == "." || name == ".." { name = "attachment".into(); }
@@ -63,7 +63,14 @@ fn safe_name(requested: &str, mime: &str) -> String {
     if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9" | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9") {
         name.insert(0, '_');
     }
-    name
+    let split = name.rfind('.').filter(|&i| i > 0 && name.len() - i <= 24).unwrap_or(name.len());
+    let (base, extension) = name.split_at(split);
+    let budget = MAX_BASE_NAME_BYTES - extension.len();
+    let truncated: String = base.chars().scan(0, |bytes, ch| {
+        *bytes += ch.len_utf8();
+        (*bytes <= budget).then_some(ch)
+    }).collect();
+    format!("{truncated}{extension}")
 }
 
 fn candidate_name(base: &str, attempt: usize) -> String {
@@ -74,6 +81,13 @@ fn candidate_name(base: &str, attempt: usize) -> String {
 }
 
 fn import_reader(document: &Path, name: &str, mime: &str, mut source: impl Read) -> Result<ImportedAttachment, DocError> {
+    import_reader_with_stat(document, name, mime, &mut source, document_io::stat_document)
+}
+
+fn import_reader_with_stat(
+    document: &Path, name: &str, mime: &str, mut source: impl Read,
+    stat: impl Fn(&Path) -> Result<Option<FileStamp>, DocError>,
+) -> Result<ImportedAttachment, DocError> {
     let dir = assets_dir(document)?;
     let base = safe_name(name, mime);
     for attempt in 0..MAX_ATTEMPTS {
@@ -88,6 +102,8 @@ fn import_reader(document: &Path, name: &str, mime: &str, mut source: impl Read)
             io::copy(&mut source, &mut output)?;
             output.flush()?;
             output.sync_all()?;
+            #[cfg(unix)]
+            File::open(&dir)?.sync_all()?;
             Ok(())
         })();
         drop(output);
@@ -95,9 +111,17 @@ fn import_reader(document: &Path, name: &str, mime: &str, mut source: impl Read)
             let _ = fs::remove_file(&path);
             return Err(error.into());
         }
-        #[cfg(unix)]
-        File::open(&dir)?.sync_all()?;
-        let stamp = document_io::stat_document(&path)?.ok_or(DocError::Conflict)?;
+        let stamp = match stat(&path) {
+            Ok(Some(stamp)) => stamp,
+            Ok(None) => {
+                let _ = fs::remove_file(&path);
+                return Err(DocError::Conflict);
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&path);
+                return Err(error);
+            }
+        };
         return Ok(ImportedAttachment { file_name, stamp });
     }
     Err(DocError::Io(io::Error::other("too many attachments with the same name")))
@@ -108,7 +132,17 @@ pub fn import_bytes(document: &Path, name: &str, mime: &str, bytes: &[u8]) -> Re
 }
 
 pub fn import_path(document: &Path, source: &Path) -> Result<ImportedAttachment, DocError> {
-    let file = File::open(source)?;
+    let kind = fs::symlink_metadata(source)?.file_type();
+    if kind.is_dir() { return Err(DocError::IsDirectory); }
+    if !kind.is_file() { return Err(DocError::Io(io::Error::other("source is not a regular file"))); }
+    let mut open = OpenOptions::new();
+    open.read(true);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    }
+    let file = open.open(source)?;
     if !file.metadata()?.is_file() { return Err(DocError::IsDirectory); }
     let name = source.file_name().ok_or(DocError::NotFound)?.to_string_lossy();
     import_reader(document, &name, "", file)
@@ -174,10 +208,62 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn rejects_a_named_pipe_without_waiting_for_a_writer() {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempdir().unwrap();
+        let doc = dir.path().join("note.md");
+        let pipe = dir.path().join("pipe");
+        fs::write(&doc, b"").unwrap();
+        let path = CString::new(pipe.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        assert!(import_path(&doc, &pipe).is_err());
+        assert!(!dir.path().join("assets").exists());
+    }
+
     #[test]
     fn sanitizes_untrusted_clipboard_filenames() {
         assert_eq!(safe_name("../CON?.png", "image/png"), ".._CON_.png");
         assert_eq!(safe_name("", "image/png"), "attachment.png");
         assert_eq!(safe_name("image", "image/jpeg"), "image.jpg");
+        let long = format!("{}.png", "é".repeat(200));
+        let name = safe_name(&long, "image/png");
+        assert!(name.len() <= MAX_BASE_NAME_BYTES);
+        assert!(name.ends_with(".png"));
+        let second = candidate_name(&name, 9_999);
+        assert!(second.len() < 255);
+        assert!(second.ends_with("-10000.png"));
+    }
+
+    #[test]
+    fn removes_partial_copy_when_source_read_fails() {
+        struct BrokenReader(bool);
+        impl Read for BrokenReader {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if self.0 { return Err(io::Error::other("source failed")); }
+                self.0 = true;
+                buffer[..4].copy_from_slice(b"part");
+                Ok(4)
+            }
+        }
+        let dir = tempdir().unwrap();
+        let doc = dir.path().join("note.md");
+        fs::write(&doc, b"").unwrap();
+        assert!(import_reader(&doc, "partial.bin", "", BrokenReader(false)).is_err());
+        assert_eq!(fs::read_dir(dir.path().join("assets")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn removes_a_copy_when_post_copy_stamp_fails() {
+        let dir = tempdir().unwrap();
+        let doc = dir.path().join("note.md");
+        fs::write(&doc, b"").unwrap();
+        let result = import_reader_with_stat(&doc, "image.png", "image/png", &b"bytes"[..], |_| {
+            Err(DocError::Io(io::Error::other("stat failed")))
+        });
+        assert!(result.is_err());
+        assert_eq!(fs::read_dir(dir.path().join("assets")).unwrap().count(), 0);
     }
 }

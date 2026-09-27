@@ -7,6 +7,7 @@ import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '
 import { classHighlighter } from '@lezer/highlight';
 import type { EditorPort } from '../app/ports';
 import { documentDir } from '../domain/document';
+import { attachmentEvents, type FileTransfer, type Insertion } from './attachments';
 import { richPaste } from './clipboard';
 import { formattingKeymap } from './commands';
 import { markdownEditingKeymap } from './editing';
@@ -32,6 +33,9 @@ export interface EditorOptions {
   readonly onDocChanged: () => void;
   readonly onSelectionChanged?: () => void;
   readonly onTablePasteRejected?: (message: string) => void;
+  readonly onFileTransfer?: (transfer: FileTransfer) => void;
+  readonly onNativeImagePaste?: (insertion: Insertion) => void;
+  readonly domFileDrop?: boolean;
 }
 
 export interface Editor {
@@ -46,10 +50,7 @@ export interface Editor {
   beginInsertion(at?: { readonly x: number; readonly y: number }): EditorInsertion | null;
 }
 
-export interface EditorInsertion {
-  insert(markdown: string): boolean;
-  cancel(): void;
-}
+export type EditorInsertion = Insertion;
 
 /** Start typing after a leading heading marker rather than in front of it. */
 export function initialCursor(text: string): number {
@@ -75,6 +76,10 @@ export function createEditor(options: EditorOptions): Editor {
   let source = false;
   interface PendingInsertion { ranges: Array<{ from: number; to: number }>; valid: boolean }
   const pendingInsertions = new Set<PendingInsertion>();
+  const invalidateInsertions = () => {
+    for (const pending of pendingInsertions) pending.valid = false;
+    pendingInsertions.clear();
+  };
 
   const envFor = (path: string | null) => previewEnv.of({ docDir: documentDir(path), fileUrl: options.fileUrl });
   const modeExtension = () => (source ? EditorView.editorAttributes.of({ class: 'cm-source-mode' }) : livePreview());
@@ -94,6 +99,7 @@ export function createEditor(options: EditorOptions): Editor {
   ];
 
   const extensions = (path: string | null): Extension => [
+    ...(options.onFileTransfer ? [attachmentEvents((at) => beginInsertion(at), options.onFileTransfer, options.domFileDrop ?? true, options.onNativeImagePaste)] : []),
     richPaste,
     markdownSupport(),
     EditorState.allowMultipleSelections.of(true),
@@ -165,11 +171,13 @@ export function createEditor(options: EditorOptions): Editor {
     snapshot: () => view.state.doc,
     toText: (doc) => doc.toString(),
     reset(text, path) {
+      invalidateInsertions();
       view.setState(stateFor(text, path));
       exposeFoldGutter(view);
       return view.state.doc;
     },
     replace(text) {
+      invalidateInsertions();
       const { main } = view.state.selection;
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
