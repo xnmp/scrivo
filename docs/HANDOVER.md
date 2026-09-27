@@ -18,6 +18,13 @@ HTML chunk boundaries, viewer phase traces, batched postpaint code highlighting,
 reviewed startup benchmarks, and a manifest-based bundle gate. The broader goal
 is ongoing; there is no release or deployment.
 
+**Resume point (`fb7ed11` plus this documentation checkpoint):** the working
+startup path remains the JSON `startup_view` response. A raw binary Tauri response
+was implemented and tested, then reverted after paired startup results failed to
+show a consistent first-viewport gain. The release binary was restored to the
+`fb7ed11` build (SHA-256 below); no startup or product code from that experiment
+remains. The raw measurements and a reproducible 5 MB visual reference are kept.
+
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
 `docs/CONVENTIONS.md` for coding and testing rules. Key code entry points are
@@ -27,6 +34,57 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
 ## Latest startup investigation (after `eec536a`)
+
+- **Raw binary IPC experiment, reverted.** Tauri [documents raw `Response`
+  bytes](https://v2.tauri.app/develop/calling-rust/) as a way to avoid slow JSON
+  serialization of large command responses. An experimental `startup_view`
+  response used a little-endian header length, JSON metadata, and raw UTF-8 HTML;
+  a TypeScript decoder reconstructed the existing view contract. The code handled
+  both `ArrayBuffer` and Tauri's number-array postMessage fallback. Rust and
+  TypeScript contract tests, typechecks, release build, bundle gate, and the full
+  rebuilt native WebKitGTK suite passed (12 specs, 16 tests). The giant-code
+  native fixture temporarily included an astral character before the first
+  renderer chunk boundary; that test change was also reverted with the codec.
+- **Paired release outcomes:** 12/12 valid visual-reference pairs per fixture.
+  Candidate minus baseline first-viewport median was **−11 ms** for medium
+  (8/12 faster), **+5 ms** for the 1.12 MB large fixture (4/12 faster), and
+  **−13 ms** for a synthetic 5.17 MB rendered payload (9/12 faster). Raw rounds:
+  `bench/results/paired-binary-ipc-{medium,large,5mb}.txt`. A separate verified
+  three-run 5 MB trace in `bench/results/diagnostic-binary-ipc-5mb.txt` showed
+  Rust delivery→raw JavaScript receipt of 16–22 ms and another 4–13 ms to decode;
+  the earlier JSON delivery→JavaScript interval was 32–39 ms. Those separate
+  trace sessions ran under varying host load, so use the paired outcomes for
+  first-viewport claims. The custom protocol added maintenance and could be
+  costly in Tauri's number-array fallback, which the startup pairs did not cover.
+  An independent review recommended reverting it; no reliable user-visible
+  startup gain was established.
+- **5 MB fixture/reference for follow-up:** `bench/references/scrivo-scrivo-startup-5mb.json`
+  is a visually inspected baseline reference bound to fixture SHA-256
+  `311f3ca19187aa4342ec4766bfa58daf5f03b7f3ca804fc08bc42c1ea03228ea`.
+  Recreate `/tmp/scrivo-startup-5mb.md` with the exact recipe below, then run
+  `node bench/bench.mjs scrivo /tmp/scrivo-startup-5mb.md 3` or the paired A/B
+  tool. The fixture is intentionally generated outside the repo to avoid checking
+  in 5 MB of repeated text. The paired baseline binary was
+  `/tmp/scrivo-before-binary-ipc`, SHA-256
+  `58a918392ba6e77418e76690e7c2c1969c8b5d5cd0908c6c0279ff686c7d74ba`.
+
+  ```sh
+  node <<'NODE'
+  const fs = require('fs');
+  const medium = fs.readFileSync('bench/fixtures/medium.md', 'utf8');
+  const tail = '\n# Large tail\n\n```text\n' + ('0123456789abcdef'.repeat(20) + '\n').repeat(16000) + '```\n';
+  fs.writeFileSync('/tmp/scrivo-startup-5mb.md', medium + tail);
+  NODE
+  ```
+
+- **Next startup work:** first compare a fresh release build against the
+  `fb7ed11` baseline under a stable host using visual references and paired
+  launches. The remaining measured cost is mainly window/web-process startup;
+  reducing the full-document prepaint IPC cost more substantially would require
+  a correct first-chunk/tail-loading contract for early Find, anchors, scroll,
+  cancellation, and editor handoff. Keep the existing native and Chromium outcome
+  gates when trying that design. Windows runtime checks and the existing-target
+  final save check→rename race also remain open from the I/O work below.
 
 - A later trace split the time between Rust's `startup_view` return and the
   viewer's first HTML parse. Temporary marks at JavaScript receipt and viewer

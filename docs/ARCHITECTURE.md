@@ -240,6 +240,7 @@ Rejected (measured, then reverted):
 | `content-visibility: auto` on blocks | large.md layout 521 → 967 ms |
 | Reduce first-screen insertion batch from 24 to 16 blocks | medium.md first-viewport paired median +1 ms in 12 pairs; no reliable gain |
 | Start math-font loading before parsing the first HTML chunk | 12-pair release runs gave +5 ms medium and −1 ms large first viewport; no reliable gain |
+| Raw binary `startup_view` IPC with JSON metadata and UTF-8 HTML | 12-pair release runs gave −11 ms medium, +5 ms large, and −13 ms for a synthetic 5 MB fixture; the mixed first-viewport result did not justify a custom Rust/TypeScript protocol or its postMessage number-array fallback cost |
 | Targeted `content-visibility: auto` on a 5 MB code block | background insertion became fast, but scrolling into it caused a 350 ms frame gap |
 | Streaming a 5 MB code block into one `<pre>` in idle slices | cumulative layout grew and a full-suite run still had a 383 ms frame gap |
 | First blocks prerendered into `index.html` (via `on_web_resource_request`) | +58 ms: WebKitGTK doesn't paint parser-inserted content before the first script-driven layout, and parsing it first delays the script |
@@ -253,6 +254,7 @@ The full rendered startup document crosses Tauri IPC before the first viewport;
 temporary phase marks measured about 1 ms for a 22 KB payload, 8–12 ms for a
 1.12 MB payload, and 32–39 ms for a synthetic 5.17 MB payload. First-chunk HTML
 parsing itself stayed under 1 ms. See the diagnostic IPC traces in the handover.
+The current `startup_view` command therefore still returns its JSON view contract.
 
 ## Testing
 

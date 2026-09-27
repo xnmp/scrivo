@@ -1,0 +1,29 @@
+round 1 scrivo-before-binary-ipc: window=219 content=405 complete=405
+round 1 scrivo: window=221 content=386 complete=386
+round 2 scrivo: window=220 content=380 complete=380
+round 2 scrivo-before-binary-ipc: window=233 content=393 complete=393
+round 3 scrivo-before-binary-ipc: window=237 content=406 complete=406
+round 3 scrivo: window=225 content=374 complete=374
+round 4 scrivo: window=259 content=412 complete=412
+round 4 scrivo-before-binary-ipc: window=232 content=411 complete=411
+round 5 scrivo-before-binary-ipc: window=223 content=386 complete=386
+round 5 scrivo: window=215 content=380 complete=380
+round 6 scrivo: window=228 content=374 complete=374
+round 6 scrivo-before-binary-ipc: window=240 content=392 complete=392
+round 7 scrivo-before-binary-ipc: window=236 content=402 complete=402
+round 7 scrivo: window=221 content=399 complete=399
+round 8 scrivo: window=243 content=424 complete=424
+round 8 scrivo-before-binary-ipc: window=221 content=384 complete=384
+round 9 scrivo-before-binary-ipc: window=236 content=414 complete=414
+round 9 scrivo: window=230 content=394 complete=394
+round 10 scrivo: window=232 content=395 complete=395
+round 10 scrivo-before-binary-ipc: window=228 content=408 complete=408
+round 11 scrivo-before-binary-ipc: window=232 content=396 complete=396
+round 11 scrivo: window=247 content=397 complete=397
+round 12 scrivo: window=235 content=386 complete=386
+round 12 scrivo-before-binary-ipc: window=227 content=404 complete=404
+
+scrivo-startup-5mb.md, 12 rounds
+  scrivo-before-binary-ipc n=12  window med=232  content med=403  complete med=403
+  scrivo           n=12  window med=229  content med=390  complete med=390
+  scrivo vs scrivo-before-binary-ipc: content -13 ms (paired median), faster in 9/12 rounds
