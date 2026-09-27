@@ -296,18 +296,34 @@ fn write_document_with_hooks(path: &Path, text: &str, condition: WriteCondition,
         (WriteCondition::Absent, None) | (WriteCondition::Overwrite, _) => {}
         _ => return Err(DocError::Conflict),
     }
+    #[cfg(target_os = "linux")]
+    let existing_snapshot = if let Some(stamp) = &existing_stamp {
+        let snapshot = snapshot_file(&target)?;
+        if &snapshot.stamp != *stamp { return Err(DocError::Conflict); }
+        Some(snapshot)
+    } else { None };
 
     let dir = target.parent().ok_or_else(|| DocError::Io(io::Error::other("path has no parent directory")))?;
     let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
 
     let (tmp_path, mut tmp) = create_temp(dir, &name)?;
+    #[cfg(target_os = "linux")]
+    let temp_identity = {
+        use std::os::unix::fs::MetadataExt;
+        let meta = tmp.metadata()?;
+        (meta.dev(), meta.ino())
+    };
 
+    let mut cleanup_tmp = true;
+    let mut installed_stamp: Option<FileStamp> = None;
     let result = (|| -> Result<(), DocError> {
         tmp.write_all(text.as_bytes())?;
         if let Some((meta, _)) = &existing {
-            fs::set_permissions(&tmp_path, meta.permissions())?;
+            tmp.set_permissions(meta.permissions())?;
         }
         tmp.sync_all()?;
+        #[cfg(target_os = "linux")]
+        let prepared_meta = tmp.metadata()?;
         drop(tmp);
         before_replace();
         // Check again after the potentially slow write. This cannot make a
@@ -354,16 +370,167 @@ fn write_document_with_hooks(path: &Path, text: &str, condition: WriteCondition,
         if existing.is_none() {
             install_new_target(&tmp_path, &target)?;
         } else {
+            #[cfg(target_os = "linux")]
+            { installed_stamp = Some(replace_existing_checked(&tmp_path, &path, &target, existing_snapshot.as_ref().unwrap(), &prepared_meta, text.as_bytes(), &mut cleanup_tmp)?); }
+            #[cfg(not(target_os = "linux"))]
             fs::rename(&tmp_path, &target)?;
         }
         sync_dir(dir);
         Ok(())
     })();
     if let Err(e) = result {
-        let _ = fs::remove_file(&tmp_path);
+        if cleanup_tmp {
+            #[cfg(target_os = "linux")]
+            remove_temp_if_owned(&tmp_path, temp_identity);
+            #[cfg(not(target_os = "linux"))]
+            let _ = fs::remove_file(&tmp_path);
+        }
         return Err(e);
     }
+    if let Some(stamp) = installed_stamp { return Ok(stamp); }
     state_at_path(&target)?.map(|(_, stamp)| stamp).ok_or(DocError::NotFound)
+}
+
+#[cfg(target_os = "linux")]
+fn remove_temp_if_owned(path: &Path, identity: (u64, u64)) {
+    use std::os::unix::fs::MetadataExt;
+    if fs::symlink_metadata(path).is_ok_and(|meta|
+        (meta.dev(), meta.ino()) == identity && meta.file_type().is_file()) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct FileSnapshot {
+    meta: fs::Metadata,
+    stamp: FileStamp,
+    digest: [u8; 32],
+}
+
+/// Pin the file identity while hashing, then verify that the pathname still
+/// names that inode. The digest catches a same-size edit with restored mtime.
+#[cfg(target_os = "linux")]
+fn snapshot_file(path: &Path) -> Result<FileSnapshot, DocError> {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::MetadataExt;
+
+    if !fs::symlink_metadata(path)?.file_type().is_file() { return Err(DocError::Conflict); }
+    let mut file = File::open(path)?;
+    let before = file.metadata()?;
+    let stamp = stamp_of(&before)?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 { break; }
+        hash.update(&buffer[..n]);
+    }
+    let after = file.metadata()?;
+    if stamp_of(&after)? != stamp { return Err(DocError::Conflict); }
+    let at_path = fs::symlink_metadata(path)?;
+    if !at_path.file_type().is_file() || at_path.dev() != before.dev() || at_path.ino() != before.ino() {
+        return Err(DocError::Conflict);
+    }
+    Ok(FileSnapshot { meta: after, stamp, digest: hash.finalize().into() })
+}
+
+#[cfg(target_os = "linux")]
+fn same_snapshot_ignoring_rename_ctime(a: &FileSnapshot, b: &FileSnapshot) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    a.meta.dev() == b.meta.dev()
+        && a.meta.ino() == b.meta.ino()
+        && a.meta.len() == b.meta.len()
+        && a.meta.mtime() == b.meta.mtime()
+        && a.meta.mtime_nsec() == b.meta.mtime_nsec()
+        && a.meta.mode() == b.meta.mode()
+        && a.digest == b.digest
+}
+
+/// Linux has no compare-and-rename syscall for an existing name. Exchange the
+/// prepared file with the target, then inspect the displaced inode. A late edit
+/// can be restored without discarding its bytes. If another writer changes the
+/// namespace during recovery, retain the displaced file for manual recovery.
+#[cfg(target_os = "linux")]
+fn replace_existing_checked(source: &Path, opened_path: &Path, target: &Path, expected: &FileSnapshot, prepared_meta: &fs::Metadata, intended: &[u8], cleanup_tmp: &mut bool) -> Result<FileStamp, DocError> {
+    replace_existing_checked_with(source, opened_path, target, expected, prepared_meta, intended, cleanup_tmp, || {})
+}
+
+#[cfg(target_os = "linux")]
+fn replace_existing_checked_with(source: &Path, opened_path: &Path, target: &Path, expected: &FileSnapshot, prepared_meta: &fs::Metadata, intended: &[u8], cleanup_tmp: &mut bool, after_exchange: impl FnOnce()) -> Result<FileStamp, DocError> {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::MetadataExt;
+
+    let prepared = snapshot_file(source)?;
+    if prepared.meta.dev() != prepared_meta.dev() || prepared.meta.ino() != prepared_meta.ino() {
+        *cleanup_tmp = false;
+        return Err(recovery_error(source, "prepared file was replaced during save"));
+    }
+    if prepared.meta.mode() != prepared_meta.mode() || prepared.meta.len() != intended.len() as u64
+        || prepared.digest != <[u8; 32]>::from(Sha256::digest(intended)) {
+        return Err(DocError::Conflict);
+    }
+    let same_inode = |meta: &fs::Metadata| meta.dev() == prepared.meta.dev() && meta.ino() == prepared.meta.ino();
+    if let Err(error) = exchange_existing(source, target) {
+        if matches!(error, DocError::NotFound) { return Err(DocError::Conflict); }
+        return Err(error);
+    }
+    after_exchange();
+    let displaced_matches = snapshot_file(source).is_ok_and(|displaced|
+        same_snapshot_ignoring_rename_ctime(&displaced, expected))
+        && fs::canonicalize(opened_path).is_ok_and(|current| current == target);
+    if displaced_matches {
+        if !fs::symlink_metadata(target).is_ok_and(|meta| same_inode(&meta)) {
+            *cleanup_tmp = false;
+            return Err(recovery_error(source, "document changed after save exchange"));
+        }
+        let stamp = match snapshot_file(target) {
+            Ok(installed) if same_snapshot_ignoring_rename_ctime(&installed, &prepared) => installed.stamp,
+            _ => {
+                *cleanup_tmp = false;
+                return Err(recovery_error(source, "document changed while verifying save"));
+            }
+        };
+        if fs::remove_file(source).is_err() {
+            *cleanup_tmp = false;
+            return Err(recovery_error(source, "save installed but old version could not be removed"));
+        }
+        if !fs::symlink_metadata(target).is_ok_and(|meta| same_inode(&meta)) {
+            return Err(DocError::Conflict);
+        }
+        return Ok(stamp);
+    }
+
+    // A changed target is no longer ours to swap back. The displaced file is
+    // retained at `source`; do not let the caller's temp cleanup remove it.
+    if !fs::symlink_metadata(target).is_ok_and(|meta| same_inode(&meta)) {
+        *cleanup_tmp = false;
+        return Err(recovery_error(source, "document changed during save"));
+    }
+    if exchange_existing(source, target).is_err() {
+        *cleanup_tmp = false;
+        return Err(recovery_error(source, "could not restore document after save conflict"));
+    }
+    if !fs::symlink_metadata(source).is_ok_and(|meta| same_inode(&meta)) {
+        *cleanup_tmp = false;
+        return Err(recovery_error(source, "document changed while restoring save conflict"));
+    }
+    Err(DocError::Conflict)
+}
+
+#[cfg(target_os = "linux")]
+fn exchange_existing(source: &Path, target: &Path) -> Result<(), DocError> {
+    match rename_with_flag(source, target, libc::RENAME_EXCHANGE) {
+        Ok(()) => Ok(()),
+        Err(error) if matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)) =>
+            Err(DocError::Io(io::Error::new(io::ErrorKind::Unsupported,
+                "filesystem cannot safely replace an existing document"))),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn recovery_error(source: &Path, reason: &str) -> DocError {
+    DocError::Io(io::Error::other(format!("{reason}; competing version retained at {}", source.display())))
 }
 
 /// Install a prepared new document without replacing a path another writer
@@ -382,6 +549,15 @@ fn install_new_target(source: &Path, target: &Path) -> Result<(), DocError> {
 
 #[cfg(target_os = "linux")]
 fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+    let result = rename_with_flag(source, target, libc::RENAME_NOREPLACE);
+    if result.as_ref().is_err_and(|error| matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP))) {
+        return Err(atomic_new_file_unsupported());
+    }
+    result
+}
+
+#[cfg(target_os = "linux")]
+fn rename_with_flag(source: &Path, target: &Path, flag: u32) -> io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
 
@@ -389,14 +565,10 @@ fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     let target_c = CString::new(target.as_os_str().as_bytes())?;
     // SAFETY: both NUL-terminated path buffers live through the syscall.
     let result = unsafe {
-        libc::renameat2(libc::AT_FDCWD, source_c.as_ptr(), libc::AT_FDCWD, target_c.as_ptr(), libc::RENAME_NOREPLACE)
+        libc::renameat2(libc::AT_FDCWD, source_c.as_ptr(), libc::AT_FDCWD, target_c.as_ptr(), flag)
     };
     if result == 0 { return Ok(()); }
-    let error = io::Error::last_os_error();
-    if matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EINVAL | libc::EOPNOTSUPP)) {
-        return Err(atomic_new_file_unsupported());
-    }
-    Err(error)
+    Err(io::Error::last_os_error())
 }
 
 #[cfg(target_os = "macos")]
@@ -580,6 +752,185 @@ mod tests {
         });
         assert!(matches!(result, Err(DocError::Conflict)));
         assert_eq!(fs::read_to_string(&p).unwrap(), "their newer edit");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unchanged_save_preserves_edit_after_final_check() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let stamp = write_document(&p, "original", WriteCondition::Absent).unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Unchanged { stamp }, || {}, || {
+            fs::write(&p, "their late edit").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "their late edit");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn confirmed_overwrite_preserves_edit_after_final_check() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        fs::write(&p, "original").unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Overwrite, || {}, || {
+            fs::write(&p, "their late edit").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "their late edit");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unchanged_save_preserves_replacement_after_final_check() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let replacement = d.path().join("replacement.md");
+        let stamp = write_document(&p, "original", WriteCondition::Absent).unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Unchanged { stamp }, || {}, || {
+            fs::write(&replacement, "their replacement").unwrap();
+            fs::rename(&replacement, &p).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "their replacement");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn same_size_late_edit_with_restored_mtime_is_not_lost() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let stamp = write_document(&p, "original", WriteCondition::Absent).unwrap();
+        let modified = fs::metadata(&p).unwrap().modified().unwrap();
+        let result = write_document_with_hooks(&p, "my edit!", WriteCondition::Unchanged { stamp }, || {}, || {
+            fs::write(&p, "external").unwrap();
+            File::options().write(true).open(&p).unwrap().set_modified(modified).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "external");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn late_permission_change_is_not_lost() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let stamp = write_document(&p, "original", WriteCondition::Absent).unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Unchanged { stamp }, || {}, || {
+            fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "original");
+        assert_eq!(fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_writer_replacing_the_target_after_exchange_is_not_reported_as_our_save() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let prepared = d.path().join("prepared.tmp");
+        let replacement = d.path().join("replacement.md");
+        fs::write(&p, "original").unwrap();
+        fs::write(&prepared, "mine").unwrap();
+        fs::write(&replacement, "their newer replacement").unwrap();
+        let snapshot = snapshot_file(&p).unwrap();
+        let mut cleanup = true;
+        let prepared_meta = fs::metadata(&prepared).unwrap();
+        let result = replace_existing_checked_with(&prepared, &p, &p, &snapshot, &prepared_meta, b"mine", &mut cleanup, || {
+            fs::rename(&replacement, &p).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Io(_))));
+        assert!(!cleanup);
+        assert_eq!(fs::read_to_string(&p).unwrap(), "their newer replacement");
+        assert_eq!(fs::read_to_string(&prepared).unwrap(), "original");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_writer_editing_the_installed_inode_after_exchange_is_not_reported_as_our_save() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let prepared = d.path().join("prepared.tmp");
+        fs::write(&p, "original").unwrap();
+        fs::write(&prepared, "mine").unwrap();
+        let snapshot = snapshot_file(&p).unwrap();
+        let mut cleanup = true;
+        let prepared_meta = fs::metadata(&prepared).unwrap();
+        let result = replace_existing_checked_with(&prepared, &p, &p, &snapshot, &prepared_meta, b"mine", &mut cleanup, || {
+            fs::write(&p, "their edit").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Io(_))));
+        assert!(!cleanup);
+        assert_eq!(fs::read_to_string(&p).unwrap(), "their edit");
+        assert_eq!(fs::read_to_string(&prepared).unwrap(), "original");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tampered_prepared_file_is_not_reported_as_a_successful_save() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let stamp = write_document(&p, "original", WriteCondition::Absent).unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Unchanged { stamp }, || {}, || {
+            let temp = fs::read_dir(d.path()).unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| path.file_name().unwrap().to_string_lossy().ends_with(".tmp"))
+                .unwrap();
+            fs::write(temp, "evil").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "original");
+        assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn replaced_prepared_path_is_retained_for_recovery() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let replacement = d.path().join("replacement.md");
+        let stamp = write_document(&p, "original", WriteCondition::Absent).unwrap();
+        let result = write_document_with_hooks(&p, "mine", WriteCondition::Unchanged { stamp }, || {}, || {
+            let temp = fs::read_dir(d.path()).unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| path.file_name().unwrap().to_string_lossy().ends_with(".tmp"))
+                .unwrap();
+            fs::write(&replacement, "external temp").unwrap();
+            fs::rename(&replacement, &temp).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Io(_))));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "original");
+        let temp = fs::read_dir(d.path()).unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.file_name().unwrap().to_string_lossy().ends_with(".tmp"))
+            .unwrap();
+        assert_eq!(fs::read_to_string(temp).unwrap(), "external temp");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn retargeted_symlink_after_final_check_is_restored() {
+        let d = tmp();
+        let old = d.path().join("old.md");
+        let new = d.path().join("new.md");
+        let link = d.path().join("link.md");
+        fs::write(&old, "old content").unwrap();
+        fs::write(&new, "new content").unwrap();
+        std::os::unix::fs::symlink(&old, &link).unwrap();
+        let stamp = read_document(&link).unwrap().stamp;
+        let result = write_document_with_hooks(&link, "mine", WriteCondition::Unchanged { stamp }, || {}, || {
+            fs::remove_file(&link).unwrap();
+            std::os::unix::fs::symlink(&new, &link).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&old).unwrap(), "old content");
+        assert_eq!(fs::read_to_string(&new).unwrap(), "new content");
+        assert_eq!(fs::canonicalize(&link).unwrap(), new);
     }
 
     #[test]

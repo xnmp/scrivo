@@ -132,8 +132,8 @@ files it doesn't reference, start programs, or navigate the webview.
 
 ## Data safety rules
 
-- Writes are atomic: temp file in the same directory → fsync → rename. Existing file
-  permissions are preserved. A failed write never truncates the original. Saving a
+- Writes prepare a temp file in the same directory, sync it, and install it with
+  an atomic rename operation. Existing file permissions are preserved. Saving a
   writable file in a directory where a temp file cannot be created fails safely.
 - Every read/write returns an opaque `FileStamp` string. Rust builds it from exact
   filesystem integers, including device, inode, size, mtime and ctime on Unix;
@@ -150,8 +150,18 @@ files it doesn't reference, start programs, or navigate the webview.
   `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`), so a file or symlink created
   after the final check is not overwritten. If that operation is unavailable on
   the filesystem, creating a new document fails rather than risking another
-  writer's file. Replacing an existing target still has a cross-process race
-  between the final stamp check and rename; it is not an atomic compare-and-swap.
+  writer's file. On Linux, replacing an existing target exchanges it with the
+  prepared file using `renameat2(RENAME_EXCHANGE)`. The displaced file is checked
+  against a pre-save inode/metadata/content snapshot. A late conflicting edit is
+  exchanged back; if recovery cannot safely restore the namespace, the displaced
+  version is retained at the temp path and the save reports an I/O error. The
+  installed file is also verified before success is reported. Filesystems without
+  exchange support fail closed for existing-target saves. This is not a filesystem
+  compare-and-swap: a writer retaining an open descriptor can still modify the
+  displaced inode after verification and before cleanup. Temp-path cleanup also
+  has a check→unlink race if another process replaces that hidden pathname at
+  the same moment. Other platforms retain
+  the final stamp check followed by rename; their existing-target race remains.
   On Windows,
   the stamp includes the volume/file ID and metadata change time when supported.
   FAT, exFAT, and some virtual filesystems may lack a strong ID or change time, so

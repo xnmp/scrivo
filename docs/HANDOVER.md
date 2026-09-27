@@ -1,6 +1,85 @@
 # Handover — 2026-09-27
 
-## Objective and current state
+## Current Linux checkpoint: existing-file save race
+
+The active request was to commit the two-phase startup preview, fix the known
+existing-target save race, run the Linux verification suites, and leave a
+complete handover. Startup preview is committed as `ff434f3` (`WIP: Load large
+startup documents in two phases`). This checkpoint changes only document saving,
+its tests/dependency, and documentation. No further performance experiment was
+run. Windows runtime verification is explicitly deferred to a separate goal.
+
+### Save behavior and evidence
+
+`src-tauri/src/document_io.rs` previously checked the target's `FileStamp`
+after writing the temp file, then used `fs::rename(temp, target)`. Another process
+could edit or replace the target between those steps; the save then reported
+success while discarding that change. Two deterministic tests injected a late
+edit after the last check for both `Unchanged` and confirmed `Overwrite`. Both
+failed against the old implementation, establishing the regression before the
+fix.
+
+On Linux, an existing-target save now snapshots the initial target's inode,
+metadata, and streamed SHA-256 content; verifies the prepared temp file belongs
+to this save and contains the requested bytes; and exchanges the temp with the
+target using `renameat2(RENAME_EXCHANGE)`. It checks the displaced inode against
+the initial snapshot (ignoring ctime changed by the exchange). If it differs,
+Scrivo exchanges the files back and reports a conflict. It also checks the
+installed inode/content before reporting success. If namespace contention
+prevents safe recovery, the competing version is retained at the temp path and
+the I/O error names that path. A temp pathname replaced before failure cleanup's
+identity check is retained. The original file's permissions are copied through
+the open temp handle. `sha2` is now a Linux dependency; it was
+already a Windows dependency.
+
+The tests cover late in-place edits for both conditions, replacement, same-size
+content with restored mtime, permission change, symlink retargeting, another
+replacement/edit after exchange, prepared-file tampering, and temp pathname
+replacement. Review found and corrected several false-success paths during this
+work. The focused Linux document I/O suite passes **35/35** tests.
+
+This is a fail-closed recovery protocol, not a filesystem transaction. Linux's
+[documented rename flags](https://man7.org/linux/man-pages/man2/rename.2.html)
+provide exchange and no-replace, but no compare-and-replace for an existing
+pathname. A competing writer with
+an already-open descriptor can still edit the displaced inode after its final
+scan and before cleanup. A namespace change between recovery's identity check
+and exchange can also leave a competing file at the temp path for manual
+recovery. Review also identified a temp-path check→unlink race in both normal
+success and error cleanup: another process replacing that hidden path in the
+window can have its replacement unlinked. A stat-before-unlink guard narrows but
+does not close this race. Filesystems that do not support `RENAME_EXCHANGE` return an unsupported
+I/O error for existing-target saves. Non-Linux platforms still use their prior
+final-check then rename path; Windows runtime behavior remains unverified here.
+Do not describe this as an absolute guarantee against uncooperative concurrent
+writers. The Linux path hashes the existing file and installed copy with a
+fixed 64 KiB buffer, so saving now adds I/O proportional to document size; save
+latency was not benchmarked under this goal. See `docs/ARCHITECTURE.md` for the
+safety contract.
+
+### Verification and current work
+
+- Rust focused document I/O: **35/35 passed** after the final temp cleanup test.
+- Chromium: the first 12-worker full run missed a 250 ms frame-gap threshold in
+  the giant Unicode block test (observed 266.6 ms); the isolated test passed at
+  83.3 ms. A full four-worker rerun passed **65/65** in 18.2 seconds.
+- Native WebKitGTK suite: **12/12 specs, 16/16 tests passed**, including byte
+  preservation and external-change save behavior.
+- Rust app suite: **48/48 passed**. Rust renderer suite: **35/35 passed**.
+- TypeScript app and native typechecks: passed. Vitest: **309/309 passed**.
+- Release build: passed (`bunx tauri build --no-bundle`). The bundle gate passed
+  at 41/41 KiB startup JS/CSS and 55/56 KiB known prepaint JS/CSS.
+- The final native rerun after the open-handle permission change also passed
+  **12/12 specs, 16/16 tests**.
+
+The next agent should inspect the final commit and `git status`, review any
+remaining native failures if present, and keep Windows runtime verification as
+a separate goal. For future Linux save work, address the residual held-descriptor
+window only with a design that can give a stronger contract; avoid treating an
+extra stamp check as atomic compare-and-swap. Do not restart startup performance
+experiments under this goal.
+
+## Previous startup checkpoint (`ff434f3`)
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
 verified, and exceptionally fast at startup. The broader goal remains open; there
@@ -61,11 +140,10 @@ anchor replay after a newer successful jump; a dedicated unit test covers it.
 The release build and bundle gate passed: 41/41 KiB
 startup, 55/56 KiB known prepaint.
 
-**Next work:** assess whether the 5 MB gain and
-small medium post-window cost justify the extra tail lifecycle over time. The
-remaining broader issues from earlier handovers are Windows runtime verification
-and the existing-target final save check→rename race. The old raw binary IPC and
-first-layout experiments below were reverted; they are history, not active code.
+**At that checkpoint:** the existing-target final save check→rename race and
+Windows runtime verification remained. The save work is described above; the
+old raw binary IPC and first-layout experiments below were reverted and remain
+history, not active code.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
