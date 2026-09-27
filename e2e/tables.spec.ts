@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { diskGet, docText, openApp, setCaret } from './helpers';
+import { controllerOpen, diskGet, docText, openApp, setCaret } from './helpers';
 
 test.describe('tables', () => {
   const text = [
@@ -36,6 +36,51 @@ test.describe('tables', () => {
     await expect(page.locator('.cm-lp-table td').nth(1).locator('input')).toBeFocused();
     await page.keyboard.type('25');
     expect(await docText(page)).toContain('| Ana\\|Maria  | 25    |');
+  });
+
+  test('clicking within a cell places a text caret instead of selecting its contents', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    const cell = page.locator('.cm-lp-table td').first();
+    const box = await cell.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(box!.x + box!.width - 5, box!.y + box!.height / 2);
+    const input = page.locator('.cm-lp-table-input');
+    await expect(input).toBeFocused();
+    expect(await input.evaluate((element: HTMLInputElement) => [element.selectionStart, element.selectionEnd]))
+      .toEqual([3, 3]);
+    await page.keyboard.type('!');
+    expect(await docText(page)).toContain('| Ann!  | 10');
+  });
+
+  test('clicking formatted cell text does not place the caret inside hidden Markdown syntax', async ({ page }) => {
+    const linked = '| Name | Score |\n| --- | --- |\n| [click me](https://example.com/long/path) | 10 |\n\nEnd';
+    await openApp(page, { text: linked });
+    await setCaret(page, linked.length);
+    const cell = page.locator('.cm-lp-table td').first();
+    const box = await cell.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(box!.x + box!.width - 5, box!.y + box!.height / 2);
+    await page.keyboard.type('!');
+    expect(await docText(page)).toContain('| [click me](https://example.com/long/path)! | 10 |');
+  });
+
+  test('arrow keys and typing move through focused cells while Escape leaves the cell selected', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    const first = page.locator('.cm-lp-table tbody tr').first().locator('td').first();
+    await first.focus();
+    await page.keyboard.press('ArrowRight');
+    const score = page.locator('.cm-lp-table tbody tr').first().locator('td').nth(1);
+    await expect(score).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    const nextScore = page.locator('.cm-lp-table tbody tr').nth(1).locator('td').nth(1);
+    await expect(nextScore).toBeFocused();
+    await page.keyboard.type('3');
+    expect(await docText(page)).toContain('| Bo   | 3    |');
+    await page.keyboard.press('Escape');
+    await expect(nextScore).toBeFocused();
+    await expect(page.locator('.cm-lp-table-input')).toHaveCount(0);
   });
 
   test('Tab and Enter traverse cells and add a row at the end', async ({ page }) => {
@@ -75,6 +120,48 @@ test.describe('tables', () => {
     await expect(page.locator('.cm-lp-table th')).toHaveCount(3);
   });
 
+  test('table actions move rows and columns, sort numbers, and align a column', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    const rows = page.locator('.cm-lp-table tbody tr');
+    await rows.nth(1).locator('td').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Move row up' }).click();
+    expect(await docText(page)).toContain('| Bo   | 20    |\n| Ann  | 10    |');
+
+    await page.locator('.cm-lp-table th').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Move column right' }).click();
+    expect(await docText(page)).toContain('| Score | Name |\n| ----: | :--- |');
+
+    await page.locator('.cm-lp-table th').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Align center' }).click();
+    expect(await docText(page)).toContain('| Score | Name |\n| :----: | :--- |');
+
+    await page.locator('.cm-lp-table th').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Sort ascending' }).click();
+    expect(await docText(page)).toContain('| 10 | Ann |\n| 20 | Bo |');
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await docText(page)).toContain('| 20 | Bo |\n| 10 | Ann |');
+    expect(await docText(page)).toContain('| :----: | :--- |');
+    await page.keyboard.press('ControlOrMeta+Shift+Z');
+    expect(await docText(page)).toContain('| 10 | Ann |\n| 20 | Bo |');
+    const saved = await docText(page);
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect.poll(() => diskGet(page, '/sample/inline.md')).toBe(saved);
+    await controllerOpen(page, '/sample/inline.md');
+    await setCaret(page, saved.length);
+    expect(await page.locator('.cm-lp-table tbody td').allInnerTexts()).toEqual(['10', 'Ann', '20', 'Bo']);
+  });
+
+  test('sorting an already sorted table does not mark the document edited', async ({ page }) => {
+    await openApp(page, { text });
+    await setCaret(page, text.length);
+    await expect(page.locator('.save-status')).toContainText('Saved');
+    await page.locator('.cm-lp-table th').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Sort ascending' }).click();
+    await expect(page.locator('.save-status')).toContainText('Saved');
+    expect(await docText(page)).toBe(text);
+  });
+
   test('save and undo work while a cell input has focus', async ({ page }) => {
     await openApp(page, { text });
     await setCaret(page, text.length);
@@ -109,6 +196,33 @@ test.describe('tables', () => {
     await page.locator('.cm-lp-table-input').fill('abc\\');
     await expect(page.locator('.cm-lp-table td')).toHaveCount(2);
     expect(await docText(page)).toContain('|abc\\ |10|');
+  });
+
+  test('a long cell remains editable and saves without changing adjacent cells', async ({ page }) => {
+    const long = 'a'.repeat(20_000);
+    const source = `| Name | Score |\n| --- | --- |\n| ${long} | 10 |\n\nEnd`;
+    await openApp(page, { text });
+    await page.evaluate((value) => {
+      const view = (window as any).__scrivo.editor.view;
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    }, source);
+    await setCaret(page, source.length);
+    await page.locator('.cm-lp-table td').first().click({ position: { x: 10, y: 10 } });
+    await page.keyboard.type('!');
+    const edited = await docText(page);
+    expect(edited.length).toBe(source.length + 1);
+    expect(edited).toContain('| 10 |');
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect.poll(() => diskGet(page, '/sample/inline.md')).toBe(edited);
+  });
+
+  test('a malformed delimiter stays editable as Markdown source', async ({ page }) => {
+    const malformed = '| A | B |\n| --- | broken |\n| one | two |\n\nEnd';
+    await openApp(page, { text: malformed });
+    await setCaret(page, malformed.length);
+    await expect(page.locator('.cm-lp-table')).toHaveCount(0);
+    await page.keyboard.press('ControlOrMeta+s');
+    await expect.poll(() => diskGet(page, '/sample/inline.md')).toBe(malformed);
   });
 
   test('a keyboard menu action returns focus to the table', async ({ page }) => {

@@ -98,3 +98,57 @@ export function deleteTableColumn(row: string, at: number, columns: number): str
   values.splice(at, 1);
   return `| ${values.join(' | ')} |`;
 }
+
+/** Move a column without discarding extra source cells in irregular body rows. */
+export function moveTableColumn(row: string, from: number, to: number, columns: number): string {
+  const values = splitRow(row).map(({ from: start, to: end }) => row.slice(start, end));
+  while (values.length < columns) values.push('');
+  if (from < 0 || from >= columns || to < 0 || to >= columns || from === to) return row;
+  values.splice(to, 0, values.splice(from, 1)[0]!);
+  return `| ${values.join(' | ')} |`;
+}
+
+/** Change only one delimiter cell, retaining its dash count and surrounding layout. */
+export function setColumnAlignment(row: string, column: number, alignment: Align): string {
+  const cell = splitRow(row)[column];
+  if (!cell) return row;
+  const width = Math.max(3, (row.slice(cell.from, cell.to).match(/-+/)?.[0].length ?? 0));
+  const dashes = '-'.repeat(width);
+  const marker = alignment === 'left' ? `:${dashes}`
+    : alignment === 'center' ? `:${dashes}:`
+      : alignment === 'right' ? `${dashes}:` : dashes;
+  return row.slice(0, cell.from) + marker + row.slice(cell.to);
+}
+
+/** Stable, human-friendly sort of body rows by the selected source cell. */
+export function sortTableRows(rows: readonly string[], column: number, descending = false): string[] {
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base', ignorePunctuation: true });
+  const keyOf = (source: string): string => {
+    const cell = splitRow(source)[column];
+    if (!cell) return '';
+    return source.slice(cell.from, cell.to)
+      .replace(/\\([\\|*_~`\[\]])/g, '$1')
+      .replace(/!?\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[*_~`]/g, '')
+      .trim();
+  };
+  const numberOf = (key: string): number | null => {
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(key)) return null;
+    const value = Number(key);
+    return Number.isFinite(value) ? value : null;
+  };
+  return rows.map((source, index) => ({
+    source,
+    index,
+    key: keyOf(source),
+  })).sort((a, b) => {
+    if (!a.key) return b.key ? 1 : a.index - b.index;
+    if (!b.key) return -1;
+    const left = numberOf(a.key);
+    const right = numberOf(b.key);
+    const order = left !== null && right !== null
+      ? Math.sign(left - right)
+      : collator.compare(a.key, b.key);
+    return (descending ? -1 : 1) * order || a.index - b.index;
+  }).map(({ source }) => source);
+}

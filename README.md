@@ -19,11 +19,17 @@ fenced code is highlighted after the document appears. `Ctrl+O` opens a file;
 `Ctrl+N` starts a new document. Changes made by another program are detected while
 the window stays open; a dirty editor asks before replacing its text.
 The editor supports fenced code, tables, task lists, math, images, and YAML front
-matter. In a rendered table, click a cell to edit it, use `Tab`/`Shift+Tab` to
-move between cells, and use `Enter` to move down; moving beyond the last row adds
-one. Right-click a cell (or press `Shift+F10`) to add or delete rows and columns.
+matter. In a rendered table, click a cell to place the text caret; `Tab`/`Shift+Tab`
+move between cells, `Enter` moves down, and arrow keys move between focused cells.
+Moving past the last row adds one. Right-click a cell (or press `Shift+F10`) to
+add, delete, or move rows and columns, sort a column, or change its alignment.
 Table edits remain Markdown and can be undone. Local image paths resolve relative
 to the document.
+Enter continues a list, or ends an empty item; Tab and Shift+Tab adjust its
+indentation. Brackets, quotes, and backticks pair as you type and a typed closer
+skips an automatically inserted one. Headings and nested lists have fold buttons
+in the editor gutter; `Ctrl+Alt+[` and `Ctrl+Alt+]` (or `⌘+Option` on macOS)
+fold and unfold at the caret. Folding never changes the Markdown file.
 
 Named files save automatically after 2 seconds without typing; `Ctrl+S` saves
 immediately. The editor shows Edited, Saving, Saved, or Action needed. A failed

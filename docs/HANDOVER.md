@@ -1,5 +1,81 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: editing interactions and natural tables
+
+The active goal remains `docs/FILE_EDITOR_PARITY.md`: reach Obsidian-class
+editing for local Markdown files and test it extensively. Milestone 1 P1–P4 is
+committed as `33c626d` (details below). This checkpoint completes E1 list,
+pairing, and folding interactions, and E2 rendered-table interactions. It also
+delivers the table sort, move, and alignment part of E3. The parity goal is
+**still active**: I1 rich paste, I2 local attachments, W1 document tabs, D1
+editing outline/properties, and E3 editor preferences remain.
+
+### Implementation map
+
+- `src/editor/editing.ts` uses CodeMirror Markdown commands for list Enter and
+  Backspace, and composes mixed-cursor edits into one undoable transaction when
+  one cursor is inside a list and another is not. Tab/Shift+Tab adjust list
+  indentation. `src/editor/setup.ts` installs bracket/quote/backtick pairing and
+  the editing bindings. Native and browser tests exercise actual saved Markdown
+  in live preview and source mode.
+- `src/editor/syntax.ts` supplies heading section folds. CodeMirror's syntax
+  tree can cover only the visible prefix of a large document. The fallback
+  locates source lines that could be peer headings, then asks CodeMirror's
+  Markdown parser whether each is really a top-level heading. This avoids
+  mistaking code, HTML, rules, or list children for section boundaries. Nested
+  headings use their parsed container boundary. The scan stops after 2,500
+  lines or a 20 ms budget and offers no fold if the boundary is unknown,
+  avoiding a truncated fold or long main-thread pause. A 1.1 MB pure-state
+  probe takes about 1.3 ms here and safely offers no fold. `src/editor/folding.ts` renders
+  named, keyboard-focusable gutter buttons and preserves focus after toggling.
+- `src/editor/live-preview/widgets.ts` keeps rendered tables visible while
+  editing a cell. A click places the caret near the clicked text for plain
+  cells; formatted cells place it at the end of the Markdown source so a click
+  cannot land inside hidden link/emphasis syntax. Grapheme-aware hit testing
+  avoids splitting emoji or combining characters. Long-cell hit testing uses
+  bounded measurement. Tab/Shift+Tab and Enter navigate/add rows; arrows move
+  among focused cells, typing replaces a focused value, and Escape leaves the
+  cell selected. The context menu has insert/delete/move row and column,
+  numeric-aware sort, and alignment actions. It returns focus immediately.
+- `src/domain/table.ts` holds pure cell, sort, move, and alignment transforms.
+  `src/editor/live-preview/index.ts` applies them as Markdown transactions;
+  structural actions isolate history so each has its own undo step. No-op
+  sorts and moves do not mark a document edited. `README.md` documents use.
+
+### Acceptance evidence
+
+- Unit tests cover lists, multiple cursors, code fences, folding partial trees,
+  HTML blocks, nested lists, escaped pipes, malformed/extra table cells, sort
+  order, alignment, and no data loss in column moves.
+- Browser `e2e/editing-interactions.spec.ts` and `e2e/tables.spec.ts` assert
+  source bytes, undo/redo, save/reopen, keyboard focus, malformed delimiters,
+  and a 20,000-character table cell. Native `list-editing`, `fold-editing`, and
+  `table` specs assert actual file bytes and visible actions in WebKitGTK.
+- Final gates passed: 372/372 Vitest tests, TypeScript checks for the app and
+  native E2E, 51/51 Rust tests, 89/89 Chromium E2E tests, 19/19 native E2E
+  specs, and `tauri build --no-bundle`. The startup bundle gate passed at
+  40/41 KiB and the prepaint gate at 54/56 KiB. The release binary and installed
+  `/home/chong/.local/bin/scrivo` both have SHA-256
+  `300ecc4ddd31869b739c93a53380ff0ecd5bc08bfb0f6b4e4829cb737b108def`.
+  The running window was left open to preserve possible unsaved work; the new
+  binary runs on its next launch. Earlier checkpoint numbers below are
+  historical and do not supersede this section.
+
+### Resume order
+
+1. Start with `docs/FILE_EDITOR_PARITY.md` and `docs/FILE_EDITOR_AUDIT.md`.
+   Do not restart an already-running Scrivo window if it may contain unsaved
+   work; the installed executable takes effect on next launch.
+2. Implement I1 HTML-to-Markdown paste as a pure conversion plus a small
+   clipboard adapter. Test unsafe HTML/URLs, plain-text fallback, formatting,
+   tables, save/reopen, and native clipboard behavior.
+3. Implement I2 local attachments and drop handling, then W1 independent
+   document tabs, D1 editor outline/properties, and remaining E3 preferences.
+   Keep the startup bundle gate and native behavior tests on each milestone.
+
+Do not mark the active parity goal complete until the remaining IDs and release
+criteria in `FILE_EDITOR_PARITY.md` pass.
+
 ## 2026-09-28: file editor parity, durable editing checkpoint
 
 The active goal is `docs/FILE_EDITOR_PARITY.md`: make Scrivo an Obsidian-class

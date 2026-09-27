@@ -1,13 +1,15 @@
 // Editor composition: builds the CodeMirror view and exposes it through EditorPort.
-import { defaultKeymap, history, historyKeymap, indentLess, indentMore, redo, undo } from '@codemirror/commands';
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { defaultKeymap, history, historyKeymap, redo, undo } from '@codemirror/commands';
 import { syntaxHighlighting } from '@codemirror/language';
-import { markdownKeymap } from '@codemirror/lang-markdown';
 import { Compartment, EditorSelection, EditorState, Transaction, type Extension, type Text } from '@codemirror/state';
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import type { EditorPort } from '../app/ports';
 import { documentDir } from '../domain/document';
 import { formattingKeymap } from './commands';
+import { markdownEditingKeymap } from './editing';
+import { accessibleFoldGutter } from './folding';
 import { livePreview, previewEnv } from './live-preview';
 import { markdownSupport } from './syntax';
 import { editorTheme } from './theme';
@@ -66,6 +68,9 @@ export function createEditor(options: EditorOptions): Editor {
 
   const envFor = (path: string | null) => previewEnv.of({ docDir: documentDir(path), fileUrl: options.fileUrl });
   const modeExtension = () => (source ? EditorView.editorAttributes.of({ class: 'cm-source-mode' }) : livePreview());
+  // CodeMirror hides gutters from assistive technology by default. This gutter
+  // contains named buttons, so expose them after view construction and updates.
+  const exposeFoldGutter = (view: EditorView) => view.dom.querySelector('.cm-gutters')?.removeAttribute('aria-hidden');
 
   const appKeys: KeyBinding[] = [
     { key: 'Mod-s', run: () => (options.commands.save(), true), preventDefault: true },
@@ -76,7 +81,6 @@ export function createEditor(options: EditorOptions): Editor {
     { key: 'Mod-/', run: () => (toggleSourceMode(), true), preventDefault: true },
     { key: 'Mod-f', run: (v) => (void openSearch(v, false), true), preventDefault: true },
     { key: 'Mod-h', run: (v) => (void openSearch(v, true), true), preventDefault: true },
-    { key: 'Tab', run: indentMore, shift: indentLess },
   ];
 
   const extensions = (path: string | null): Extension => [
@@ -86,14 +90,17 @@ export function createEditor(options: EditorOptions): Editor {
     history(),
     drawSelection(),
     dropCursor(),
+    closeBrackets(),
+    accessibleFoldGutter(),
     EditorView.lineWrapping,
     syntaxHighlighting(classHighlighter),
-    keymap.of([...appKeys, ...formattingKeymap, ...markdownKeymap, ...defaultKeymap, ...historyKeymap]),
+    keymap.of([...appKeys, ...closeBracketsKeymap, ...formattingKeymap, ...markdownEditingKeymap, ...defaultKeymap, ...historyKeymap]),
     searchCompartment.of([]),
     mode.of(modeExtension()),
     env.of(envFor(path)),
     EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'off', autocapitalize: 'off', 'aria-label': 'Document' }),
     EditorView.updateListener.of((u) => {
+      exposeFoldGutter(u.view);
       if (u.docChanged) options.onDocChanged();
       if (u.selectionSet || u.docChanged) options.onSelectionChanged?.();
     }),
@@ -103,6 +110,7 @@ export function createEditor(options: EditorOptions): Editor {
     EditorState.create({ doc: text, selection: EditorSelection.cursor(initialCursor(text)), extensions: extensions(path) });
 
   const view = new EditorView({ parent: options.parent, state: stateFor('', null) });
+  exposeFoldGutter(view);
 
   // Table cells live inside a CodeMirror widget, so its keymap does not receive
   // their events. Keep document shortcuts available while the table has focus.
@@ -137,6 +145,7 @@ export function createEditor(options: EditorOptions): Editor {
     toText: (doc) => doc.toString(),
     reset(text, path) {
       view.setState(stateFor(text, path));
+      exposeFoldGutter(view);
       return view.state.doc;
     },
     replace(text) {

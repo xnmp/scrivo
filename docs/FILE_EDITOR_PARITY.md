@@ -34,13 +34,14 @@ footnotes, math, images, and YAML front matter. See `README.md`,
 `docs/ARCHITECTURE.md`, and `src/editor/setup.ts`.
 
 Natural rendered-table cell editing and row/column insertion and deletion were
-integrated in commit `3298091` and verified in the native app. Table sorting,
-moving, and alignment controls remain open.
+integrated in commit `3298091`. The current checkpoint adds click caret placement,
+keyboard cell movement, row/column moves, numeric-aware sorting, and alignment
+controls. Table changes remain ordinary undoable Markdown edits.
 
 Milestone 0's native behavior audit is in `docs/FILE_EDITOR_AUDIT.md`. Milestone 1
-(P1–P4) is implemented and verified in the 2026-09-28 checkpoint. E1, I1, I2,
-W1, D1, and E3 remain open; E2 needs its broader
-malformed/large-table acceptance gate before it can be considered complete.
+(P1–P4) is implemented and verified in the 2026-09-28 checkpoint. E1 and E2
+editing interactions are implemented and verified in the current checkpoint;
+I1, I2, W1, D1, and editor preferences in E3 remain open.
 
 At the start of each later milestone, verify the precise existing behavior in
 the native app before adding code.

@@ -22,5 +22,15 @@ describe('live table editing', () => {
       timeout: 10_000,
       timeoutMsg: 'edited table cell was not saved to Markdown',
     });
+    await browser.keys(['Escape']);
+    await browser.keys(['Shift', 'F10']);
+    const align = $('button=Align center');
+    await align.waitForDisplayed();
+    await align.click();
+    await browser.keys(['Control', 's']);
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8').includes('| :---: | ---: |'), {
+      timeout: 10_000,
+      timeoutMsg: 'table alignment was not saved to Markdown',
+    });
   });
 });

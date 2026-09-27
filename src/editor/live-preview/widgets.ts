@@ -117,13 +117,54 @@ export interface TableModel {
 
 export type TableAction =
   | 'insert-row-above' | 'insert-row-below' | 'delete-row'
-  | 'insert-column-left' | 'insert-column-right' | 'delete-column';
+  | 'move-row-up' | 'move-row-down' | 'sort-ascending' | 'sort-descending'
+  | 'insert-column-left' | 'insert-column-right' | 'delete-column'
+  | 'move-column-left' | 'move-column-right'
+  | 'align-left' | 'align-center' | 'align-right' | 'align-default';
 
 const renderedTables = new WeakMap<HTMLElement, TableWidget>();
 const tableMenus = new WeakMap<HTMLElement, () => void>();
 const tableAt = (view: EditorView, from: number) =>
   [...view.dom.querySelectorAll<HTMLElement>('.cm-lp-table-wrap')]
     .find((candidate) => view.posAtDOM(candidate) === from);
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** Find the source-text caret nearest a click in a rendered cell. */
+function caretAtClick(input: HTMLInputElement, clientX: number): number {
+  const rect = input.getBoundingClientRect();
+  if (input.value.length > 2048) {
+    // Measuring many long prefixes on the UI thread makes large cells feel frozen.
+    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    const estimate = Math.round(input.value.length * fraction);
+    const segment = graphemes.segment(input.value).containing(Math.min(estimate, input.value.length - 1));
+    if (!segment) return input.value.length;
+    return estimate - segment.index < segment.segment.length / 2
+      ? segment.index : segment.index + segment.segment.length;
+  }
+  const style = getComputedStyle(input);
+  const context = document.createElement('canvas').getContext('2d');
+  if (!context) return input.value.length;
+  context.font = style.font;
+  const width = context.measureText(input.value).width;
+  const alignment = style.textAlign;
+  const left = alignment === 'right' || alignment === 'end'
+    ? rect.width - width
+    : alignment === 'center' ? (rect.width - width) / 2 : 0;
+  const x = clientX - rect.left - left + input.scrollLeft;
+  const boundaries = [0];
+  let offset = 0;
+  for (const { segment } of graphemes.segment(input.value)) boundaries.push(offset += segment.length);
+  let low = 0;
+  let high = boundaries.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const midpoint = (context.measureText(input.value.slice(0, boundaries[middle]!)).width
+      + context.measureText(input.value.slice(0, boundaries[middle + 1]!)).width) / 2;
+    if (x < midpoint) high = middle;
+    else low = middle + 1;
+  }
+  return boundaries[low]!;
+}
 
 /**
  * Rendered GFM table. The model is built lazily — only tables scrolled into view pay
@@ -152,11 +193,12 @@ export class TableWidget extends WidgetType {
     this.renderInline(nodes, cell, view);
   }
 
-  private activateCell(wrap: HTMLElement, cell: HTMLElement, view: EditorView) {
+  private activateCell(wrap: HTMLElement, cell: HTMLElement, view: EditorView, activation: 'select' | 'end' | number = 'select') {
     if (cell.querySelector('input')) return;
     const current = renderedTables.get(wrap) ?? this;
     const row = Number(cell.dataset.row);
     const col = Number(cell.dataset.col);
+    const rendered = cell.textContent ?? '';
     const input = document.createElement('input');
     input.className = 'cm-lp-table-input';
     input.type = 'text';
@@ -175,20 +217,25 @@ export class TableWidget extends WidgetType {
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        view.focus();
+        cell.focus();
         return;
       }
-      if (event.key !== 'Tab' && event.key !== 'Enter') return;
+      if (event.key !== 'Tab' && event.key !== 'Enter' && event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return;
       const { sourceCells: rows, align } = (renderedTables.get(wrap) ?? this).currentModel();
       if (align.length === 0) return;
       const backwards = event.key === 'Tab' && event.shiftKey;
       if (backwards && row === 0 && col === 0) return;
+      if (event.key === 'ArrowUp' && row === 0) return;
+      if (event.key === 'ArrowDown' && row + 1 >= rows.length) return;
       event.preventDefault();
-      const target = event.key === 'Enter'
-        ? { row: row + 1, col }
-        : backwards
-          ? { row: col === 0 ? row - 1 : row, col: col === 0 ? align.length - 1 : col - 1 }
-          : { row: col + 1 === align.length ? row + 1 : row, col: col + 1 === align.length ? 0 : col + 1 };
+      const target = event.key === 'ArrowUp' || event.key === 'ArrowDown'
+        ? { row: row + (event.key === 'ArrowDown' ? 1 : -1), col }
+        : event.key === 'Enter'
+          ? { row: row + 1, col }
+          : backwards
+            ? { row: col === 0 ? row - 1 : row, col: col === 0 ? align.length - 1 : col - 1 }
+            : { row: col + 1 === align.length ? row + 1 : row, col: col + 1 === align.length ? 0 : col + 1 };
       const tableFrom = view.posAtDOM(wrap);
       if (target.row >= rows.length) this.onAppendRow(view, tableFrom, rows.length, align.length);
       requestAnimationFrame(() => {
@@ -198,7 +245,14 @@ export class TableWidget extends WidgetType {
       });
     });
     input.focus();
-    input.select();
+    if (typeof activation === 'number') {
+      // Rendered links and emphasis hide Markdown punctuation. A pixel offset in
+      // rendered text cannot safely identify a source position in those cells.
+      const offset = rendered === input.value ? caretAtClick(input, activation) : input.value.length;
+      input.setSelectionRange(offset, offset);
+    } else if (activation === 'end') {
+      input.setSelectionRange(input.value.length, input.value.length);
+    } else input.select();
   }
 
   private openMenu(wrap: HTMLElement, cell: HTMLElement, view: EditorView, x: number, y: number) {
@@ -211,8 +265,8 @@ export class TableWidget extends WidgetType {
     menu.className = 'cm-lp-table-menu';
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', 'Table actions');
-    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 190))}px`;
-    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - 250))}px`;
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 210))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - Math.min(window.innerHeight * 0.7, 480) - 8))}px`;
     const controller = new AbortController();
     let closed = false;
     const close = () => {
@@ -223,37 +277,65 @@ export class TableWidget extends WidgetType {
       tableMenus.delete(wrap);
     };
     tableMenus.set(wrap, close);
-    const actions: readonly [TableAction, string, boolean][] = [
-      ['insert-row-above', 'Insert row above', row === 0],
-      ['insert-row-below', 'Insert row below', false],
-      ['delete-row', 'Delete row', row === 0],
-      ['insert-column-left', 'Insert column left', false],
-      ['insert-column-right', 'Insert column right', false],
-      ['delete-column', 'Delete column', align.length <= 1],
+    const groups: readonly (readonly (readonly [TableAction, string, boolean])[])[] = [
+      [
+        ['insert-row-above', 'Insert row above', row === 0],
+        ['insert-row-below', 'Insert row below', false],
+        ['delete-row', 'Delete row', row === 0],
+        ['move-row-up', 'Move row up', row <= 1],
+        ['move-row-down', 'Move row down', row === 0 || row + 1 >= rows.length],
+      ],
+      [
+        ['insert-column-left', 'Insert column left', false],
+        ['insert-column-right', 'Insert column right', false],
+        ['delete-column', 'Delete column', align.length <= 1],
+        ['move-column-left', 'Move column left', col === 0],
+        ['move-column-right', 'Move column right', col + 1 >= align.length],
+      ],
+      [
+        ['align-left', 'Align left', align[col] === 'left'],
+        ['align-center', 'Align center', align[col] === 'center'],
+        ['align-right', 'Align right', align[col] === 'right'],
+        ['align-default', 'Clear alignment', align[col] === null],
+      ],
+      [
+        ['sort-ascending', 'Sort ascending', rows.length <= 2],
+        ['sort-descending', 'Sort descending', rows.length <= 2],
+      ],
     ];
-    for (const [action, label, disabled] of actions) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.setAttribute('role', 'menuitem');
-      button.textContent = label;
-      button.disabled = disabled;
-      button.addEventListener('click', () => {
-        const tableFrom = view.posAtDOM(wrap);
-        close();
-        (renderedTables.get(wrap) ?? this).onAction(view, tableFrom, row, col, rows.length, align.length, action);
-        const targetRow = action === 'insert-row-below' ? row + 1
-          : action === 'delete-row' ? Math.min(row, rows.length - 2) : row;
-        const targetCol = action === 'insert-column-right' ? col + 1
-          : action === 'delete-column' ? Math.min(col, align.length - 2) : col;
-        requestAnimationFrame(() => {
-          const currentWrap = tableAt(view, tableFrom);
-          const target = currentWrap?.querySelector<HTMLElement>(`[data-row="${Math.max(0, targetRow)}"][data-col="${Math.max(0, targetCol)}"]`);
-          if (target) target.focus();
-          else view.focus();
+    groups.forEach((actions, group) => {
+      if (group > 0) {
+        const separator = document.createElement('div');
+        separator.setAttribute('role', 'separator');
+        menu.appendChild(separator);
+      }
+      for (const [action, label, disabled] of actions) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('role', 'menuitem');
+        button.textContent = label;
+        button.disabled = disabled;
+        button.addEventListener('click', () => {
+          const tableFrom = view.posAtDOM(wrap);
+          close();
+          (renderedTables.get(wrap) ?? this).onAction(view, tableFrom, row, col, rows.length, align.length, action);
+          const targetRow = action === 'insert-row-below' || action === 'move-row-down' ? row + 1
+            : action === 'move-row-up' ? row - 1
+              : action === 'delete-row' ? Math.min(row, rows.length - 2) : row;
+          const targetCol = action === 'insert-column-right' || action === 'move-column-right' ? col + 1
+            : action === 'move-column-left' ? col - 1
+              : action === 'delete-column' ? Math.min(col, align.length - 2) : col;
+          const restoreFocus = () => {
+            const currentWrap = tableAt(view, tableFrom);
+            const target = currentWrap?.querySelector<HTMLElement>(`[data-row="${Math.max(0, targetRow)}"][data-col="${Math.max(0, targetCol)}"]`);
+            if (target) { target.focus(); return true; }
+            return false;
+          };
+          if (!restoreFocus()) requestAnimationFrame(() => { if (!restoreFocus()) view.focus(); });
         });
-      });
-      menu.appendChild(button);
-    }
+        menu.appendChild(button);
+      }
+    });
     menu.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { event.preventDefault(); close(); cell.focus(); return; }
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -301,7 +383,7 @@ export class TableWidget extends WidgetType {
       const cell = (e.target as HTMLElement).closest<HTMLElement>('th,td');
       if (!cell || (e.target as HTMLElement).closest('a,input')) return;
       e.preventDefault();
-      (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view);
+      (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, e.clientX);
     });
     table.addEventListener('keydown', (e) => {
       if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
@@ -313,11 +395,37 @@ export class TableWidget extends WidgetType {
         }
         return;
       }
-      if (e.target instanceof HTMLInputElement || (e.key !== 'Enter' && e.key !== ' ')) return;
+      if (e.target instanceof HTMLInputElement) return;
       const cell = (e.target as HTMLElement).closest<HTMLElement>('th,td');
       if (!cell) return;
+      if (e.key.startsWith('Arrow') && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const row = Number(cell.dataset.row);
+        const col = Number(cell.dataset.col);
+        const targetRow = row + (e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0);
+        const targetCol = col + (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0);
+        const next = table.querySelector<HTMLElement>(`[data-row="${targetRow}"][data-col="${targetCol}"]`);
+        if (next) { e.preventDefault(); next.focus(); }
+        return;
+      }
+      if (e.key === 'Process' || e.isComposing) {
+        (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, 'end');
+        return;
+      }
+      if ([...e.key].length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const current = renderedTables.get(wrap) ?? this;
+        current.activateCell(wrap, cell, view);
+        const input = cell.querySelector<HTMLInputElement>('input');
+        if (input) {
+          input.value = e.key;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
+        return;
+      }
+      if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
-      (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view);
+      (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, 'end');
     });
     table.addEventListener('contextmenu', (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>('th,td');

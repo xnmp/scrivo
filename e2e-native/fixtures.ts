@@ -101,6 +101,20 @@ export function tableFixture(): Fixture {
   return { dir, docPath, launchArgs: EDIT };
 }
 
+export function listEditingFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '- first\n- ');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
+export function foldEditingFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '# First\nbody\n## Child\ninside\n# Next\nend\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
 export function recoveryFixture(): Fixture {
   const dir = freshDir();
   return { dir, docPath: path.join(dir, 'unused.md'), launchWithoutFile: true };
@@ -203,6 +217,8 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'image.spec.ts': imageFixture,
   'checkbox.spec.ts': checkboxFixture,
   'table.spec.ts': tableFixture,
+  'list-editing.spec.ts': listEditingFixture,
+  'fold-editing.spec.ts': foldEditingFixture,
   'recovery.spec.ts': recoveryFixture,
   'autosave-conflict.spec.ts': autosaveConflictFixture,
   'recovery-named.spec.ts': recoveryNamedFixture,
