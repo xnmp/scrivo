@@ -92,7 +92,9 @@ pub async fn startup_document(app: AppHandle, startup: State<'_, Startup>) -> Re
 /// What to show first: the prefetched, rendered document or "start the editor".
 #[tauri::command]
 pub async fn startup_view(app: AppHandle, startup: State<'_, Startup>) -> Result<StartupView, CommandError> {
+    trace::mark("startup view command entered");
     let view = startup.view();
+    trace::mark("startup view cloned");
     trace::mark("startup view delivered");
     if let StartupView::View { document } = &view {
         allow_images(&app, document);

@@ -18,12 +18,14 @@ HTML chunk boundaries, viewer phase traces, batched postpaint code highlighting,
 reviewed startup benchmarks, and a manifest-based bundle gate. The broader goal
 is ongoing; there is no release or deployment.
 
-**Resume point (`fb7ed11` plus this documentation checkpoint):** the working
+**Resume point (this trace checkpoint):** the working
 startup path remains the JSON `startup_view` response. A raw binary Tauri response
 was implemented and tested, then reverted after paired startup results failed to
 show a consistent first-viewport gain. The release binary was restored to the
-`fb7ed11` build (SHA-256 below); no startup or product code from that experiment
-remains. The raw measurements and a reproducible 5 MB visual reference are kept.
+`fb7ed11` build before the latest trace-only marks were added; no product code from
+the binary experiment remains. The latest release binary includes only Rust
+startup timing marks. The raw measurements and a reproducible 5 MB visual
+reference are kept.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -35,6 +37,21 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
 
 ## Latest startup investigation (after `eec536a`)
 
+- **Prefetch/clone phase split.** Temporary Rust marks, retained because they
+  are inert unless `SCRIVO_TRACE=1`, show that the worker completes reading and
+  rendering before the web page asks for the view. Three verified release runs
+  per fixture measured process start→prefetch ready at **0.6–0.8 ms** for medium,
+  **12–15 ms** for large, and **15–19 ms** for the synthetic 5 MB document. The
+  cached view clone at command entry took **≤0.1 ms**, **0.5–1.0 ms**, and
+  **1.5–1.9 ms**, respectively. Window-built→JavaScript-start was roughly
+  **110–147 ms** across these runs; the prefetched result was already ready well
+  before it. There is no current evidence that optimizing file read, Markdown
+  rendering, or clone will improve the reviewed first viewport on these fixtures.
+  Raw captures: `bench/results/diagnostic-prefetch-{medium,large,5mb}.txt`.
+  They are trace diagnostics under changing host load, not paired speed claims.
+  The release build, web bundle gate, and three visual-reference matches for
+  each fixture passed; Rust app tests passed 36/36. The next candidate should
+  address measured post-window startup work or a verified first-viewport cost.
 - **Raw binary IPC experiment, reverted.** Tauri [documents raw `Response`
   bytes](https://v2.tauri.app/develop/calling-rust/) as a way to avoid slow JSON
   serialization of large command responses. An experimental `startup_view`

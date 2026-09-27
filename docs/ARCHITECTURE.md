@@ -195,6 +195,11 @@ These are phase observations from one launch, not a paired performance claim.
 The viewer also marks first-chunk HTML parsing, math-font readiness, and first-block layout.
 Three-run medium and large traces are retained in `bench/results/diagnostic-viewer-*.txt`;
 the latest phase breakdown and its limits are in `docs/HANDOVER.md`.
+The prefetch worker additionally marks completion of document read and rendering;
+`startup_view` marks command entry and cloning. Three-run traces show prefetch
+ready by 19 ms even for the synthetic 5 MB fixture, more than 250 ms before
+JavaScript asks for it. Cloning that view takes under 2 ms. These phases are
+not the limiting startup path for the reviewed fixtures.
 
 When returning from edit mode, the workspace renders the editor's latest text,
 then gives the hidden reader a measurable viewport using `visibility: hidden`

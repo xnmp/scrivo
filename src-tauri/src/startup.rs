@@ -3,6 +3,7 @@
 //! it's ready when the page asks.
 
 use crate::document_io::{self, DocError, ReadDocument};
+use crate::trace;
 use crate::view::{self, ViewDocument};
 use serde::Serialize;
 use std::ffi::OsString;
@@ -67,10 +68,12 @@ struct Prefetched {
 
 fn prefetch(args: &LaunchArgs) -> Prefetched {
     let document = load(args.path.as_deref());
+    trace::mark("startup document read");
     let view = match &document {
         StartupDocument::File { file } if !args.edit => StartupView::View { document: view::render_document(file) },
         _ => StartupView::Edit,
     };
+    trace::mark("startup view prefetched");
     Prefetched { document, view }
 }
 
