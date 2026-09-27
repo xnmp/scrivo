@@ -1,0 +1,48 @@
+run 1: window=222 content=334 complete=334 ms  pss=173 MiB  (102 frames @ 18 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE     32.1 ms  tauri setup
+SCRIVO_TRACE     32.9 ms  egl-warm: done
+SCRIVO_TRACE     51.5 ms  image-warm: done
+SCRIVO_TRACE    142.6 ms  window built
+SCRIVO_TRACE    233.0 ms  js start
+SCRIVO_TRACE    233.9 ms  startup view delivered
+SCRIVO_TRACE    235.9 ms  viewer HTML parsed
+SCRIVO_TRACE    246.7 ms  viewer math font ready
+SCRIVO_TRACE    269.4 ms  viewer first blocks laid out
+SCRIVO_TRACE    272.5 ms  document shown
+SCRIVO_TRACE    291.2 ms  first frame with document
+SCRIVO_TRACE    295.2 ms  document settled
+run 2: window=216 content=346 complete=346 ms  pss=174 MiB  (99 frames @ 19 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE     34.0 ms  tauri setup
+SCRIVO_TRACE     35.0 ms  egl-warm: done
+SCRIVO_TRACE     54.3 ms  image-warm: done
+SCRIVO_TRACE    139.8 ms  window built
+SCRIVO_TRACE    224.1 ms  js start
+SCRIVO_TRACE    224.6 ms  startup view delivered
+SCRIVO_TRACE    226.3 ms  viewer HTML parsed
+SCRIVO_TRACE    237.0 ms  viewer math font ready
+SCRIVO_TRACE    261.1 ms  viewer first blocks laid out
+SCRIVO_TRACE    264.1 ms  document shown
+SCRIVO_TRACE    281.9 ms  first frame with document
+SCRIVO_TRACE    286.6 ms  document settled
+run 3: window=271 content=389 complete=389 ms  pss=134 MiB  (97 frames @ 20 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE     34.1 ms  tauri setup
+SCRIVO_TRACE     35.3 ms  egl-warm: done
+SCRIVO_TRACE     55.0 ms  image-warm: done
+SCRIVO_TRACE    184.2 ms  window built
+SCRIVO_TRACE    276.1 ms  js start
+SCRIVO_TRACE    276.9 ms  startup view delivered
+SCRIVO_TRACE    278.8 ms  viewer HTML parsed
+SCRIVO_TRACE    290.7 ms  viewer math font ready
+SCRIVO_TRACE    313.6 ms  viewer first blocks laid out
+SCRIVO_TRACE    317.5 ms  document shown
+SCRIVO_TRACE    336.6 ms  first frame with document
+SCRIVO_TRACE    340.8 ms  document settled
+
+scrivo medium.md runs=3 on cage (headless, 1280x720)
+  window   ms  : min=216 median=222 p90=271 max=271
+  content  ms  : min=334 median=346 p90=389 max=389
+  complete ms  : min=334 median=346 p90=389 max=389
+  pss      MiB : min=134 median=173 p90=174 max=174

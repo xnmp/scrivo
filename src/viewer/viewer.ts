@@ -47,7 +47,12 @@ function mathFontReady(html: string): Promise<unknown> {
  * `scroller` scrolls; `article` receives the document. `onLink` gets the raw `href` of
  * a clicked link: the page itself never navigates.
  */
-export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink: (href: string) => void): Viewer {
+export function createViewer(
+  scroller: HTMLElement,
+  article: HTMLElement,
+  onLink: (href: string) => void,
+  trace: (label: string) => void = () => undefined,
+): Viewer {
   scroller.tabIndex = -1; // focusable, so arrow keys and Page Up/Down scroll it
 
   const linkFrom = (event: Event): HTMLAnchorElement | null => {
@@ -171,7 +176,9 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
       const gen = ++generation;
       const template = document.createElement('template');
       template.innerHTML = doc.html; // parsed but inert: nothing loads or lays out yet
+      trace('viewer HTML parsed');
       await mathFontReady(doc.html);
+      trace('viewer math font ready');
       if (gen !== generation) return;
 
       pending = template.content;
@@ -181,6 +188,7 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
       scroller.scrollTop = 0;
       // The first screenful (and a bit) now; checking the height lays it out.
       appendUntil(() => article.scrollHeight > scroller.clientHeight * 1.5);
+      trace('viewer first blocks laid out');
       if (at && 'anchor' in at) {
         if (!scrollToAnchor(at.anchor)) scroller.scrollTop = 0;
       } else if (at) {

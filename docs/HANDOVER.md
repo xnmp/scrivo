@@ -3,12 +3,13 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. This checkpoint batches postpaint
-code highlighting, keeps Find responsive during it, and verifies the change in
-native WebKitGTK. Previous commit `2101010` added a reviewed editor-startup
+verified, and exceptionally fast at startup. The previous checkpoint (`1dec5d8`)
+batched postpaint code highlighting, kept Find responsive during it, and verified
+the change in native WebKitGTK. Commit `2101010` added a reviewed editor-startup
 benchmark and measured when large documents finish progressive insertion. Earlier
 commit `425cd77` made the build gate use Vite's manifest and count known prepaint
-imports. The broader goal is ongoing; there is no release or deployment.
+imports. This continuation adds finer startup phase traces. The broader goal is
+ongoing; there is no release or deployment.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -128,12 +129,49 @@ and the budget omitted a conditional 1 MB math font.
 | `node bench/bench.mjs scrivo bench/fixtures/large.md 5` | 5/5 verified reference matches; first viewport median 388 ms |
 | `git diff --check` | Pass before commit |
 
-Rust source did not change in this checkpoint. The previous native suite initially
-had 10 pass and one new test fail from its stale handle, then passed 11/11 after
-the test correction; the current suite passes both large-file tests. Playwright
-WebKit cannot start on this host because
-`libicu74`, `libxml2`, and `libflite1` are missing; native WebKitGTK was exercised.
-Repository-wide `cargo fmt --check` still reports broad preexisting formatting drift.
+Rust source did not change in the prior highlighting checkpoint. The previous native
+suite initially had 10 pass and one new test fail from its stale handle, then passed
+11/11 after the test correction; the current suite passes both large-file tests.
+Playwright WebKit cannot start on this host because `libicu74`, `libxml2`, and
+`libflite1` are missing; native WebKitGTK was exercised. Repository-wide
+`cargo fmt --check` still reports broad preexisting formatting drift.
+
+## Latest continuation: startup phase trace
+
+`src/viewer/viewer.ts` now accepts an optional trace callback, supplied by the
+composition root. It marks inert HTML parsing, math-font readiness, and first-block
+layout during `show()`. The callback checks `__SCRIVO_TRACE__`; normal launches do
+not invoke the backend. The rounded bundle gate still reports 34/40 KiB static and
+48/56 KiB known prepaint JS/CSS.
+
+Fresh three-run release traces are retained in
+`bench/results/diagnostic-viewer-medium.txt` and
+`bench/results/diagnostic-viewer-large.txt`. All six launches matched their
+reviewed first-viewport references. Approximate phase durations from trace marks:
+
+| Phase | Medium | Large |
+|---|---:|---:|
+| Process start → window built | 140–184 ms | 137–167 ms |
+| Window built → JS start | 84–92 ms | 82–88 ms |
+| Startup view delivered → HTML parsed | 1.7–2.0 ms | 30.5–33.9 ms |
+| HTML parsed → math font ready | 10.7–11.9 ms | 8.8–9.5 ms |
+| Math font ready → first blocks laid out | 22.7–24.1 ms | 24.3–27.5 ms |
+| First viewport screenshot | 334–389 ms | 356–419 ms |
+
+These are diagnostic runs on this host, not a paired comparison. JavaScript marks
+pass through a Tauri IPC call, so small per-phase differences include IPC scheduling.
+The native window and webview account for most elapsed time before JavaScript.
+The large document's complete HTML parsing adds roughly 30 ms before its first
+viewport; changing that path would require a safe way to split HTML at block
+boundaries. The math-font wait is around 9–12 ms in these runs, smaller than the
+first-block layout cost. The large document finished progressive insertion at
+1,062–1,544 ms in these traces; first viewport was already visible.
+
+This continuation passed `bun run typecheck`, all 294 Vitest tests, all 52 Chromium
+E2E tests, the release build and bundle gate, and all six reviewed startup
+reference checks. The first Chromium attempt could not bind the local dev server
+inside the restricted sandbox (`listen EPERM`); the same command passed with local
+networking permitted. No native feature behavior or Rust source changed.
 
 ## Editor startup and full-document timing (this continuation)
 
@@ -226,6 +264,7 @@ bunx tauri build --no-bundle
 node bench/ab.mjs bench/fixtures/medium.md 12 typora src-tauri/target/release/scrivo
 node bench/ab.mjs bench/fixtures/large.md 12 typora src-tauri/target/release/scrivo
 node bench/bench.mjs scrivo bench/fixtures/medium.md 1 --trace
+node bench/bench.mjs scrivo bench/fixtures/large.md 3 --trace
 node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit
 ```
 

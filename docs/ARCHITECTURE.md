@@ -156,6 +156,9 @@ release diagnostic run under load, Tauri setup was at 76 ms, the window built at
 430 ms, JavaScript started at 680 ms, the document was shown at 767 ms, and its first
 frame was marked at 805 ms; the screenshot sampler observed stable content at 926 ms.
 These are phase observations from one launch, not a paired performance claim.
+The viewer also marks full HTML parsing, math-font readiness, and first-block layout.
+Three-run medium and large traces are retained in `bench/results/diagnostic-viewer-*.txt`;
+the latest phase breakdown and its limits are in `docs/HANDOVER.md`.
 
 ## Performance decisions
 
