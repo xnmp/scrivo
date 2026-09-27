@@ -3,45 +3,69 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The latest product-code checkpoint
-closes the late-creation overwrite race when saving to a previously absent path.
-The latest test checkpoint checks Unicode text across a real native renderer chunk
-boundary. Earlier work makes the
-edit-to-reader transition progressive for large documents and keeps edits typed
-during rendering. The previous checkpoint bounded large-document insertion under
-continuous main-thread activity; the one before it strengthened Windows file
-revision detection. Earlier checkpoints kept early Find responsive, reduced
-large-document insertion time without materially changing the first viewport,
-bounded layout of giant
-Unicode code blocks, fixed Find geometry in contained code and false save
-conflicts from lossy timestamps, and added conditional writes, renderer-supplied
-HTML chunk boundaries, viewer phase traces, batched postpaint code highlighting,
-reviewed startup benchmarks, and a manifest-based bundle gate. The broader goal
-is ongoing; there is no release or deployment.
+verified, and exceptionally fast at startup. The broader goal remains open; there
+is no release or deployment. The current product checkpoint implements a complete
+two-phase startup response for large rendered documents. Earlier checkpoints
+include atomic conditional saves, native Unicode boundary coverage, progressive
+reading and edit-to-reading transitions, early Find, giant code-block containment,
+code highlighting after paint, and reviewed startup benchmarks.
 
-**Resume point (Unicode boundary test checkpoint):** the working
-startup path remains the JSON `startup_view` response. A raw binary Tauri response
-was implemented and tested, then reverted after paired startup results failed to
-show a consistent first-viewport gain. The release binary was restored to the
-`fb7ed11` build before the latest trace-only marks were added; no product code from
-the binary experiment remains. The latest release binary includes only Rust
-startup timing marks. The raw measurements and a reproducible 5 MB visual
-reference are kept. A later first-layout experiment was also reverted after a
-paired large-file regression; the product path still matches this checkpoint.
-The restored release binary currently has SHA-256
-`60d13b8e46171297babc0397397f5ba456132582e4d94ae8d81f486958e7570f`.
+**Current resume point:** `startup_preview` sends the first complete renderer
+chunk when the rest of the HTML is at least 64 KiB. The original cached
+`startup_view` response supplies the full document after the preview reaches the
+screen. The reader preserves its visible prefix and appends later chunks; Find
+waits for completion, anchors requested early are queued, and stale tails are
+ignored after navigation or edit handoff. A first chunk too short to fill 1.5
+screens waits for the tail before claiming the first screen is ready. A failed
+tail rejects completion, displays a persistent warning with Retry, and leaves
+the prefix readable. Successful Retry restores focus, Find, and highlighting.
+The failure view loads only on demand. The startup bundle gate is now 41 KiB
+static JS/CSS and remains 56 KiB including the known prepaint window import.
 
-The native giant-document fixture now places `😀` before the first renderer
-chunk boundary. A direct `scrivo-render` inspection put paragraphs 0–31 in the
-first chunk and paragraph 32 in the next. The WebKitGTK test checks all 40
-opening paragraphs after the tail appears, as well as its existing exact code
-text, Find, scroll, and tail outcomes. Native typecheck and the rebuilt full
-native suite passed: 12/12 specs, 16/16 tests. This is a regression guard for
-the current JSON startup response and any future transport change.
+Key code: `src-tauri/src/commands.rs` selects a UTF-16-safe preview boundary
+without an extra full-document clone; `src/platform/tauri.ts` supplies the full
+cached tail; `src/viewer/viewer.ts` owns the tail lifecycle; `src/viewer/tail-failure.ts`
+and `src/styles/tail-failure.css` provide the deferred warning; `src/boot.ts`
+connects completion to Find/highlighting. `src/app/workspace.ts` passes the
+optional tail loader through the existing startup flow.
 
-An intentionally incomplete preview-only release probe established a measurable
-upper bound for deferring the startup tail. It was restored immediately after
-the paired run; the working app still receives and renders the whole document.
+**Release A/B results against the preserved baseline:** every launch passed its
+reviewed first-viewport reference. In 12 paired rounds each, candidate minus
+baseline first-viewport medians were large.md **−9 ms** (8/12 faster) and the
+synthetic 5 MB fixture **−38 ms** (11/12 faster). Medium.md was **+7 ms** (4/12
+faster), and a second 12-pair medium run was **+6 ms** (5/12 faster). Paired
+content-after-window medians for these four runs were −8, −35, +1, and +1.5 ms,
+respectively. The medium first-viewport deltas largely tracked window timing;
+these runs do not prove a medium startup improvement. They also do not establish
+a statistically robust gain for large.md. The 5 MB gain is the clearest result.
+Raw logs: `bench/results/paired-complete-preview-{large,5mb,medium,medium-repeat}.txt`.
+Baseline binary `/tmp/scrivo-before-preview-probe` has SHA-256
+`60d13b8e46171297babc0397397f5ba456132582e4d94ae8d81f486958e7570f`;
+measured candidate binary had SHA-256
+`9caf3baad909070addea99606f837dcc5559a979c0405d2db26a391114950029`.
+After the anchor-only navigation fix, the final release binary at
+`src-tauri/target/release/scrivo` has SHA-256
+`17e42a87a77e91cd7406c8d77251d04a42eebff58795293a41fcb6a03eb5043d`.
+That final fix was not part of the A/B runs; it does not touch the first viewport.
+The 5 MB fixture is `/tmp/scrivo-startup-5mb.md`, SHA-256
+`311f3ca19187aa4342ec4766bfa58daf5f03b7f3ca804fc08bc42c1ea03228ea`;
+its recipe and reference are below.
+
+**Verification for this checkpoint:** TypeScript typecheck, 309/309 Vitest tests,
+38/38 Rust app tests, 35/35 renderer tests, 64/64 existing Chromium E2E tests,
+and the final 12/12 native WebKitGTK specs (16/16 tests) passed. The additional
+browser regression `e2e/reading-tail-retry.spec.ts` passed:
+failed tail → persistent warning → Retry → full-document Find and code highlighting,
+with reader focus restored. An adversarial review found and fixed a stale queued
+anchor replay after a newer successful jump; a dedicated unit test covers it.
+The release build and bundle gate passed: 41/41 KiB
+startup, 55/56 KiB known prepaint.
+
+**Next work:** assess whether the 5 MB gain and
+small medium post-window cost justify the extra tail lifecycle over time. The
+remaining broader issues from earlier handovers are Windows runtime verification
+and the existing-target final save check→rename race. The old raw binary IPC and
+first-layout experiments below were reverted; they are history, not active code.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -150,7 +174,7 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
   NODE
   ```
 
-- **Next startup work:** first compare a fresh release build against the
+- **Earlier preview plan, now implemented:** first compare a fresh release build against the
   `fb7ed11` baseline under a stable host using visual references and paired
   launches. The remaining measured cost is mainly window/web-process startup;
   reducing the full-document prepaint IPC cost more substantially would require
@@ -170,8 +194,8 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
   complete renderer block. [Tauri Channels](https://v2.tauri.app/develop/calling-frontend/)
   provide ordered streaming if more than a two-command preview/tail exchange is
   needed; a simple two-command design may have less maintenance cost. Neither
-  design is implemented yet. The existing medium, large, and synthetic 5 MB
-  visual references and early Find/anchor/native tests should gate it.
+  design was implemented at that point. The existing medium, large, and synthetic 5 MB
+  visual references and early Find/anchor/native tests became its gates.
   A low-complexity first attempt would retain `startup_view` as the full result,
   add `startup_preview` for large documents only, and fetch the full cached view
   after first paint. The preview should end at the renderer's first complete

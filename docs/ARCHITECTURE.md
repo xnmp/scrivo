@@ -182,7 +182,7 @@ Timeline for `scrivo medium.md` (headless cage, trace marks, ms after process st
 | 0 | argv; spawn prefetch + warm-up threads | prefetch: read + render the file |
 | ~1–35 | Tauri/GTK init | `prewarm`: EGL vendor libs, image loader process |
 | ~150 | window built, page requested | WebKit web + network processes start |
-| ~250 | `boot.ts` runs; `startup_view` IPC returns the rendered document | |
+| ~250 | `boot.ts` runs; `startup_preview` IPC returns the first renderer chunk for large files | |
 | ~300 | first 1.5 screens inserted and laid out; rest appended in idle slices | |
 | ~320 | first frame with the document | editor chunk preloads when idle |
 
@@ -200,6 +200,14 @@ The prefetch worker additionally marks completion of document read and rendering
 ready by 19 ms even for the synthetic 5 MB fixture, more than 250 ms before
 JavaScript asks for it. Cloning that view takes under 2 ms. These phases are
 not the limiting startup path for the reviewed fixtures.
+
+For a large startup file, `startup_preview` returns a UTF-16-safe first renderer
+chunk and the reader requests the complete cached `startup_view` after the first
+screen is available. Small files receive the complete view in one response.
+The reader waits for the full tail before reporting settlement to Find or code
+highlighting. An incomplete document has a persistent Retry warning; retry
+completion refreshes the reading view's dependent features. The warning UI is a
+deferred chunk and does not enter the normal startup graph.
 
 When returning from edit mode, the workspace renders the editor's latest text,
 then gives the hidden reader a measurable viewport using `visibility: hidden`
@@ -230,6 +238,7 @@ Adopted:
 | Render in Rust on the prefetch thread, in parallel with window creation | HTML ready before the page asks |
 | Progressive insertion (first 1.5 screens, rest in idle slices) | large.md first frame 1285 → ~400 ms |
 | Parse only the first safe HTML chunk before paint | −20 ms paired median on large.md, faster in 10/12 release pairs (see README) |
+| Send the first renderer chunk before the full cached startup response | −38 ms first viewport on a synthetic 5 MB file (11/12 paired rounds faster); −9 ms on large.md (8/12); medium.md +6–7 ms across two 12-pair runs, mainly window timing. See handover. |
 | Insert up to two HTML chunks per 12 ms slice after initial screen insertion | −419 ms paired median to full large-document insertion (12/12 pairs faster); first-viewport differences stayed within a few ms across separate 12-pair runs |
 | Bound insertion under continuous animation; prioritize and cancel early Find waits | Real 800-code-block Find completes while animation leaves no idle time; startup comparison in current handover |
 | Keep the reader measurable while switching from edit mode | The 443 KB document returns with its first screen instead of inserting all 800 code blocks synchronously; isolated Chromium diagnostic 561 → 145 ms; paired startup check in current handover |
@@ -256,17 +265,17 @@ Rejected (measured, then reverted):
 Known costs we don't control: the WebKit web process start (~100 ms: launch, EGL,
 fontconfig), GTK's client-side title bar icons (11 SVG decodes through glycin, ~20 ms
 after warm-up), NVIDIA's EGL init (Mesa's is ~35 ms faster on the same machine).
-The full rendered startup document crosses Tauri IPC before the first viewport;
+Previously, the full rendered startup document crossed Tauri IPC before the first viewport;
 temporary phase marks measured about 1 ms for a 22 KB payload, 8–12 ms for a
 1.12 MB payload, and 32–39 ms for a synthetic 5.17 MB payload. First-chunk HTML
 parsing itself stayed under 1 ms. See the diagnostic IPC traces in the handover.
-The current `startup_view` command therefore still returns its JSON view contract.
+`startup_view` still returns its JSON view contract, but large files now receive
+a `startup_preview` response before the full cached view is requested.
 An incomplete first-chunk-only probe matched reviewed first viewports and showed
 an upper bound of −60 ms on large.md and −32 ms on a synthetic 5 MB fixture in
 12 paired release rounds each. It omitted all content after the first chunk, so
-these numbers are not a usable application result. A complete preview/tail path
-must keep the viewer's settled, Find, anchor, cancellation, and error contracts;
-the handover records the probe and proposed gates.
+these numbers were an upper bound. The complete preview/tail path and its paired
+release outcomes are recorded in the handover.
 
 ## Testing
 
@@ -280,4 +289,4 @@ the handover records the probe and proposed gates.
 | app in a browser | Playwright (chromium) | what the user sees, with the real renderer via the `scrivo-render` CLI |
 | native app | tauri-driver + WebKitWebDriver (`e2e-native/`) | real binary opens, edits and saves real files; giant-document test checks Unicode text across the first renderer chunk boundary |
 | performance | `bench/bench.mjs`, `bench/ab.mjs` | window / content / complete / PSS; paired A/B |
-| startup bundle | Vite manifest + `scripts/check-bundle.mjs` + Vitest fixture | 40 KiB static JS/CSS budget, 56 KiB budget including known prepaint window import; shims first; manifest/CSS assets and deferred graph validated and reported |
+| startup bundle | Vite manifest + `scripts/check-bundle.mjs` + Vitest fixture | 41 KiB static JS/CSS budget, 56 KiB budget including known prepaint window import; shims first; manifest/CSS assets and deferred graph validated and reported |

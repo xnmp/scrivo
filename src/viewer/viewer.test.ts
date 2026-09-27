@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewDocument } from '../app/ports';
 import { createViewer, type Viewer } from './viewer';
 
@@ -7,6 +7,13 @@ const para = (line: number, text = `Paragraph ${line}`) => `<p data-line="${line
 const doc = (html: string): ViewDocument => ({ path: '/d/a.md', stamp: null, html, headings: [] });
 const docOf = (count: number, text?: (line: number) => string) =>
   doc(Array.from({ length: count }, (_, i) => para(i + 1, text?.(i + 1))).join(''));
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+};
 
 /** Idle callbacks run only when the test says so. */
 let idleQueue: Array<{ id: number; callback: IdleRequestCallback; timeout?: number }> = [];
@@ -161,6 +168,125 @@ describe('showing a document', () => {
     expect(viewer.scrollToAnchor('end')).toBe(true);
     expect(viewer.scrollToAnchor('END')).toBe(true); // GitHub anchors are lowercase
     expect(viewer.scrollToAnchor('missing')).toBe(false);
+  });
+});
+
+describe('deferred startup tail', () => {
+  const prefix = Array.from({ length: 32 }, (_, i) => para(i + 1, i === 0 ? '😀 first' : `Paragraph ${i + 1}`)).join('');
+  const full = doc(prefix + Array.from({ length: 68 }, (_, i) => para(i + 33)).join(''));
+  const complete = { ...full, chunkEnds: [prefix.length] };
+
+  it('keeps Find waiting until the complete document is present', async () => {
+    const tail = deferred<ViewDocument>();
+    await viewer.show(doc(prefix), undefined, () => tail.promise);
+    let settled = false;
+    void viewer.settled().then(() => { settled = true; });
+    runIdle();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    const searchReady = viewer.settled(new AbortController().signal);
+    tail.resolve(complete);
+    await Promise.resolve();
+    await Promise.resolve();
+    runIdle();
+    await searchReady;
+    expect(texts()).toEqual(['😀 first', ...Array.from({ length: 99 }, (_, i) => `Paragraph ${i + 2}`)]);
+  });
+
+  it('waits for the tail before showing a sparse first viewport', async () => {
+    const tail = deferred<ViewDocument>();
+    const first = para(1);
+    let shown = false;
+    const showing = viewer.show(doc(first), undefined, () => tail.promise).then(() => { shown = true; });
+    await Promise.resolve();
+    expect(shown).toBe(false);
+    tail.resolve({ ...docOf(50), chunkEnds: [first.length] });
+    await showing;
+    expect(article.children.length).toBeGreaterThanOrEqual(15);
+  });
+
+  it('honors an anchor requested before the tail arrives', async () => {
+    const tail = deferred<ViewDocument>();
+    await viewer.show(doc(prefix), undefined, () => tail.promise);
+    expect(viewer.scrollToAnchor('end')).toBe(true);
+    tail.resolve({ ...doc(`${full.html}<h2 id="end" data-line="101">End</h2>\n`), chunkEnds: [prefix.length] });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(article.querySelector('#end')?.textContent).toBe('End');
+  });
+
+  it('does not replay a queued anchor after a newer successful jump', async () => {
+    const tail = deferred<ViewDocument>();
+    const first = `<h2 id="early" data-line="1">Early</h2>\n${prefix}`;
+    await viewer.show(doc(first), undefined, () => tail.promise);
+    expect(viewer.scrollToAnchor('late')).toBe(true);
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView');
+    try {
+      expect(viewer.scrollToAnchor('early')).toBe(true);
+      tail.resolve({ ...doc(`${first}<h2 id="late" data-line="101">Late</h2>\n`), chunkEnds: [first.length] });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(scrolled.mock.instances.map((element) => (element as Element).id)).toEqual(['early']);
+    } finally {
+      scrolled.mockRestore();
+    }
+  });
+
+  it('keeps a failed tail visible and completes the document when retried', async () => {
+    const first = deferred<ViewDocument>();
+    const second = deferred<ViewDocument>();
+    const errors: Error[] = [];
+    const shown: ViewDocument[] = [];
+    let attempts = 0;
+    viewer = createViewer(scroller, article, () => undefined, () => undefined, (error) => errors.push(error));
+    viewer.onShown((document) => shown.push(document));
+    await viewer.show(doc(prefix), undefined, () => ++attempts === 1 ? first.promise : second.promise);
+    const settled = viewer.settled(new AbortController().signal);
+    first.reject(new Error('tail failed'));
+    await expect(settled).rejects.toThrow('tail failed');
+    expect(errors.map((error) => error.message)).toEqual(['tail failed']);
+    await vi.waitFor(() => expect(scroller.querySelector('[role="alert"]')?.textContent).toContain('document is incomplete'));
+    expect(texts().length).toBeGreaterThan(0);
+    expect(texts().length).toBeLessThan(100);
+    await expect(viewer.settled()).rejects.toThrow('tail failed');
+    const retry = scroller.querySelector('.document-load-error button') as HTMLButtonElement;
+    retry.focus();
+    retry.click();
+    expect(attempts).toBe(2);
+    second.resolve(complete);
+    await Promise.resolve();
+    await Promise.resolve();
+    runIdle();
+    await viewer.settled();
+    expect(attempts).toBe(2);
+    expect(scroller.querySelector('[role="alert"]')).toBeNull();
+    expect(document.activeElement).toBe(scroller);
+    expect(texts()).toHaveLength(100);
+    expect(shown).toEqual([doc(prefix), complete]);
+  });
+
+  it('clears a failed tail when a new document is shown', async () => {
+    const tail = deferred<ViewDocument>();
+    await viewer.show(doc(prefix), undefined, () => tail.promise);
+    const settled = viewer.settled(new AbortController().signal);
+    tail.reject(new Error('tail failed'));
+    await expect(settled).rejects.toThrow('tail failed');
+    await vi.waitFor(() => expect(scroller.querySelector('[role="alert"]')).not.toBeNull());
+    await viewer.show(docOf(3));
+    await expect(viewer.settled()).resolves.toBeUndefined();
+    expect(scroller.querySelector('[role="alert"]')).toBeNull();
+    expect(texts()).toEqual(['Paragraph 1', 'Paragraph 2', 'Paragraph 3']);
+  });
+
+  it('ignores an old tail after the reader is replaced', async () => {
+    const tail = deferred<ViewDocument>();
+    await viewer.show(doc(prefix), undefined, () => tail.promise);
+    const waiting = viewer.settled(new AbortController().signal);
+    await viewer.show(docOf(3, (line) => `new ${line}`));
+    tail.resolve(complete);
+    await waiting;
+    runIdle();
+    expect(texts()).toEqual(['new 1', 'new 2', 'new 3']);
   });
 });
 

@@ -36,6 +36,10 @@ type RawStartup =
   | { kind: 'new'; path: string }
   | { kind: 'error'; path: string; code: FileErrorCode; message: string };
 
+type RawStartupPreview =
+  | { kind: 'view'; document: ViewDocument; hasTail: boolean }
+  | { kind: 'edit' };
+
 const MARKDOWN_FILTER = [
   { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'txt'] },
   { name: 'All files', extensions: ['*'] },
@@ -113,7 +117,15 @@ export function createTauriPlatform(): Platform {
       destroy: () => currentWindow().then((w) => w.destroy()),
     },
     render: {
-      startupView: () => invoke<StartupView>('startup_view'),
+      async startupView() {
+        const preview = await invoke<RawStartupPreview>('startup_preview');
+        if (preview.kind === 'edit' || !preview.hasTail) return preview;
+        return { kind: 'view', document: preview.document, loadTail: async () => {
+          const full = await invoke<StartupView>('startup_view');
+          if (full.kind !== 'view') throw new Error('startup tail is missing');
+          return full.document;
+        } };
+      },
       renderFile: (path) => call<ViewDocument>('render_file', path, { path }),
       renderText: (text, path) => call<ViewDocument>('render_markdown', path ?? '', { text, path }),
     },

@@ -84,12 +84,21 @@ check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
-The current web build gate counts 39 KiB of linked static startup JS/CSS against a 40 KiB
-budget. Tauri's window API loads during boot; including it gives 52 KiB of known
+The current web build gate counts 41 KiB of linked static startup JS/CSS against a 41 KiB
+budget. Tauri's window API loads during boot; including it gives 55 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
-1,060 KiB math font referenced by the reading-view stylesheet and a 2,517 KiB
+1,060 KiB math font referenced by the reading-view stylesheet and a 2,518 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
 features loaded later.
+
+Large startup documents receive the first complete renderer chunk before the
+cached full document. The reading view inserts that preview for the first viewport,
+then loads the rest while preserving Find and anchor behavior. A tail-load failure
+leaves a persistent warning with Retry. In reviewed 12-pair release launches, the
+complete path reached the first viewport 38 ms sooner on a synthetic 5 MB document
+(11/12 faster) and 9 ms sooner on large.md (8/12). Medium.md took 6–7 ms longer
+across two 12-pair runs, mostly alongside window timing; its post-window difference
+was about 1–1.5 ms. [Raw rounds and verification](docs/HANDOVER.md) are retained.
 
 The current release inserts up to two rendered HTML chunks per idle slice after
 the initial screen is inserted. Against commit `8fea444`, a 12-pair large-file run

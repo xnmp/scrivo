@@ -54,6 +54,7 @@ pub fn run() {
             commands::write_document,
             commands::stat_document,
             commands::startup_document,
+            commands::startup_preview,
             commands::startup_view,
             commands::render_file,
             commands::render_markdown,

@@ -31,7 +31,8 @@ const FIND_REFRESH_MS = 250;
 const byId = (id: string) => document.getElementById(id)!;
 const prompter = createPrompter(document.body);
 const status = createStatusBar(document.body);
-const viewer = createViewer(byId('viewer'), byId('document'), (href) => void workspace.followLink(href), traceMark);
+const viewer = createViewer(byId('viewer'), byId('document'), (href) => void workspace.followLink(href), traceMark,
+  (error) => prompter.notify(`Could not finish loading the document: ${error.message}`));
 const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 let editorApp: EditorApp | null = null;
 let outline: Outline | null = null;
@@ -178,7 +179,7 @@ window.addEventListener('keydown', (event) => {
 
 await workspace.start();
 traceMark('document shown');
-void viewer.settled().then(() => traceMark('document settled'));
+void viewer.settled().then(() => traceMark('document settled'), () => undefined);
 
 platform.window.onCloseRequested(workspace.requestClose);
 platform.window.onFocus(() => void workspace.checkDisk());

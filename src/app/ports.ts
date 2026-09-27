@@ -98,7 +98,9 @@ export interface ViewDocument {
 
 /** What the window shows first. */
 export type StartupView =
-  | { readonly kind: 'view'; readonly document: ViewDocument }
+  | { readonly kind: 'view'; readonly document: ViewDocument;
+      /** Complete cached view, loaded after the preview reaches the screen. */
+      readonly loadTail?: () => Promise<ViewDocument> }
   /** No document, a new or unreadable file, or the editor was asked for. */
   | { readonly kind: 'edit' };
 

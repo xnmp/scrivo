@@ -15,12 +15,12 @@ export type Position = { readonly line: number } | { readonly anchor: string };
 /** The reading view, as the workspace sees it. */
 export interface ViewerPort {
   /** Resolves once the document is on screen (long documents keep loading after). */
-  show(doc: ViewDocument, at?: Position): Promise<void>;
+  show(doc: ViewDocument, at?: Position, loadTail?: () => Promise<ViewDocument>): Promise<void>;
   /** Stop background work for a document that will no longer be shown. */
   suspend(): void;
   /** 1-based source line of the block at the top of the viewport. */
   topLine(): number;
-  /** Scroll to the element with this id; false when there is none. */
+  /** Scroll to this id, or queue it while the startup tail loads. */
   scrollToAnchor(id: string): boolean;
 }
 
@@ -117,10 +117,10 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
     showSurface(next);
   };
 
-  const display = async (doc: ViewDocument, at?: Position) => {
+  const display = async (doc: ViewDocument, at?: Position, loadTail?: () => Promise<ViewDocument>) => {
     const titleChanged = doc.path !== shown?.path;
     shown = doc;
-    await viewer.show(doc, at);
+    await viewer.show(doc, at, loadTail);
     // Once the editor exists its controller owns the title (it tracks dirtiness).
     if (!editor && titleChanged) platform.window.setTitle(windowTitle(doc.path, false));
   };
@@ -256,7 +256,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       serial(async () => {
         const startup = await platform.render.startupView().catch(() => ({ kind: 'edit' }) as const);
         if (startup.kind === 'view') {
-          await display(startup.document);
+          await display(startup.document, undefined, startup.loadTail);
           setMode('view');
           return;
         }

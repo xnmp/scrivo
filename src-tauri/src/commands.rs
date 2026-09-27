@@ -52,6 +52,38 @@ fn allow_images(app: &AppHandle, doc: &ViewDocument) {
     }
 }
 
+/// Keep the first safe renderer chunk in the initial response. Small tails stay
+/// in one response; a second IPC would cost more than it saves for them.
+fn preview_document(mut document: ViewDocument) -> (ViewDocument, bool) {
+    const MIN_TAIL_BYTES: usize = 64 * 1024;
+    let Some(end) = document.chunk_ends.first().and_then(|&offset| byte_at_utf16(&document.html, offset)) else {
+        return (document, false);
+    };
+    if document.html.len() - end < MIN_TAIL_BYTES {
+        return (document, false);
+    }
+    document.html.truncate(end);
+    document.chunk_ends.clear();
+    (document, true)
+}
+
+fn byte_at_utf16(text: &str, offset: usize) -> Option<usize> {
+    let mut units = 0;
+    for (byte, ch) in text.char_indices() {
+        if units == offset { return Some(byte); }
+        units += ch.len_utf16();
+        if units > offset { return None; }
+    }
+    (units == offset).then_some(text.len())
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StartupPreview {
+    View { document: ViewDocument, #[serde(rename = "hasTail")] has_tail: bool },
+    Edit,
+}
+
 #[tauri::command]
 pub async fn read_document(app: AppHandle, path: String) -> Result<ReadDocument, CommandError> {
     let doc = blocking(move || document_io::read_document(Path::new(&path))).await?;
@@ -102,6 +134,20 @@ pub async fn startup_view(app: AppHandle, startup: State<'_, Startup>) -> Result
     Ok(view)
 }
 
+/// The first complete renderer chunk, with a later full response for large files.
+#[tauri::command]
+pub async fn startup_preview(app: AppHandle, startup: State<'_, Startup>) -> Result<StartupPreview, CommandError> {
+    let view = startup.view();
+    match view {
+        StartupView::View { document } => {
+            allow_images(&app, &document);
+            let (document, has_tail) = preview_document(document);
+            Ok(StartupPreview::View { document, has_tail })
+        }
+        StartupView::Edit => Ok(StartupPreview::Edit),
+    }
+}
+
 /// Read and render a file for the reading view.
 #[tauri::command]
 pub async fn render_file(app: AppHandle, path: String) -> Result<ViewDocument, CommandError> {
@@ -122,4 +168,41 @@ pub async fn render_markdown(app: AppHandle, text: String, path: Option<String>)
 #[tauri::command]
 pub fn trace_mark(label: String) {
     trace::mark(&label);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_ends_at_a_unicode_safe_chunk_boundary_and_keeps_metadata() {
+        let first = "<p>😀 café</p>";
+        let doc = ViewDocument {
+            path: Some("/notes/😀.md".into()), stamp: None,
+            html: format!("{first}{}", "x".repeat(70_000)),
+            chunk_ends: vec![first.encode_utf16().count()],
+            headings: vec![], local_images: vec![],
+        };
+        let (preview, has_tail) = preview_document(doc.clone());
+        assert!(has_tail);
+        assert_eq!(preview.html, first);
+        assert!(preview.chunk_ends.is_empty());
+        assert_eq!(preview.path, doc.path);
+        assert_eq!(doc.html.len(), first.len() + 70_000);
+    }
+
+    #[test]
+    fn short_or_invalid_chunk_boundaries_keep_the_complete_document() {
+        let doc = ViewDocument {
+            path: None, stamp: None, html: "<p>😀</p>".into(),
+            chunk_ends: vec![4], headings: vec![], local_images: vec![],
+        };
+        let (preview, has_tail) = preview_document(doc.clone());
+        assert!(!has_tail);
+        assert_eq!(preview.html, doc.html);
+        let invalid = ViewDocument { html: format!("{}{}", doc.html, "x".repeat(70_000)), chunk_ends: vec![4], ..doc };
+        let (preview, has_tail) = preview_document(invalid.clone());
+        assert!(!has_tail);
+        assert_eq!(preview.html, invalid.html);
+    }
 }

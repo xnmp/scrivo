@@ -1,0 +1,29 @@
+round 1 scrivo-before-preview-probe: window=227 content=373 complete=373
+round 1 scrivo: window=246 content=363 complete=363
+round 2 scrivo: window=262 content=414 complete=414
+round 2 scrivo-before-preview-probe: window=262 content=411 complete=411
+round 3 scrivo-before-preview-probe: window=251 content=384 complete=384
+round 3 scrivo: window=235 content=364 complete=364
+round 4 scrivo: window=254 content=405 complete=405
+round 4 scrivo-before-preview-probe: window=245 content=408 complete=408
+round 5 scrivo-before-preview-probe: window=257 content=394 complete=394
+round 5 scrivo: window=246 content=379 complete=379
+round 6 scrivo: window=254 content=390 complete=390
+round 6 scrivo-before-preview-probe: window=254 content=383 complete=383
+round 7 scrivo-before-preview-probe: window=224 content=389 complete=389
+round 7 scrivo: window=299 content=434 complete=434
+round 8 scrivo: window=230 content=378 complete=378
+round 8 scrivo-before-preview-probe: window=217 content=366 complete=366
+round 9 scrivo-before-preview-probe: window=228 content=374 complete=374
+round 9 scrivo: window=235 content=366 complete=366
+round 10 scrivo: window=245 content=375 complete=375
+round 10 scrivo-before-preview-probe: window=253 content=417 complete=417
+round 11 scrivo-before-preview-probe: window=255 content=404 complete=404
+round 11 scrivo: window=237 content=366 complete=366
+round 12 scrivo: window=217 content=363 complete=363
+round 12 scrivo-before-preview-probe: window=253 content=389 complete=389
+
+large.md, 12 rounds
+  scrivo-before-preview-probe n=12  window med=252  content med=389  complete med=389
+  scrivo           n=12  window med=246  content med=377  complete med=377
+  scrivo vs scrivo-before-preview-probe: content -9 ms (paired median), faster in 8/12 rounds

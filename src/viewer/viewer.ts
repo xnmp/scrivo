@@ -23,7 +23,7 @@ export interface Viewer extends ViewerPort {
   /** Changes when text nodes are replaced without changing the document. */
   textVersion(): number;
   invalidateTextNodes(): void;
-  /** Called after each show() has put its content in the page. */
+  /** Called after show() and when a failed startup tail is recovered. */
   onShown(listener: (doc: ViewDocument) => void): void;
 }
 
@@ -183,6 +183,7 @@ export function createViewer(
   article: HTMLElement,
   onLink: (href: string) => void,
   trace: (label: string) => void = () => undefined,
+  onTailError: (error: Error) => void = () => undefined,
 ): Viewer {
   scroller.tabIndex = -1; // focusable, so arrow keys and Page Up/Down scroll it
 
@@ -213,15 +214,49 @@ export function createViewer(
   let contentVersion = 0;
   let textRevision = 0;
   const shownListeners: Array<(doc: ViewDocument) => void> = [];
-  let settledWaiters: Array<{ resolve: () => void; signal?: AbortSignal; abort?: () => void }> = [];
+  let settledWaiters: Array<{ resolve: () => void; reject: (error: Error) => void;
+    signal?: AbortSignal; abort?: () => void }> = [];
   let interactiveCompletion = false;
   let rescheduleBackground: (() => void) | null = null;
   let cancelBackground: (() => void) | null = null;
+  let tail: { gen: number; preview: ViewDocument; load: () => Promise<ViewDocument>; promise: Promise<void> | null } | null = null;
+  let tailError: Error | null = null;
+  let queuedAnchor: string | null = null;
+  let failureBanner: HTMLElement | null = null;
+
+  const clearFailure = () => {
+    const focused = failureBanner?.contains(document.activeElement);
+    failureBanner?.remove();
+    failureBanner = null;
+    if (focused) scroller.focus({ preventScroll: true });
+  };
+
+  const showFailure = (error: Error) => {
+    if (failureBanner) {
+      failureBanner.querySelector('button')!.disabled = false;
+      return;
+    }
+    void import('./tail-failure').then(({ mountTailFailure }) => {
+      if (tailError === error && !failureBanner) {
+        failureBanner = mountTailFailure(scroller, article, () => { void startTail(); });
+      }
+    }).catch(() => undefined);
+  };
+
+  const hasAvailable = () => !!pending && (!!pending.firstChild || nextChunk < chunkEnds.length);
 
   const resolveSettledWaiters = () => {
     settledWaiters.forEach(({ resolve, signal, abort }) => {
       if (signal && abort) signal.removeEventListener('abort', abort);
       resolve();
+    });
+    settledWaiters = [];
+  };
+
+  const rejectSettledWaiters = (error: Error) => {
+    settledWaiters.forEach(({ reject, signal, abort }) => {
+      if (signal && abort) signal.removeEventListener('abort', abort);
+      reject(error);
     });
     settledWaiters = [];
   };
@@ -245,7 +280,7 @@ export function createViewer(
       segmentLargeCodeBlock(block);
       appended++;
     }
-    if (pending && !pending.firstChild && nextChunk === chunkEnds.length) {
+    if (pending && !pending.firstChild && nextChunk === chunkEnds.length && !tail) {
       pending = null;
       pendingHtml = '';
       interactiveCompletion = false;
@@ -258,7 +293,9 @@ export function createViewer(
 
   /** Append blocks until `done()` holds or the document is complete. */
   const appendUntil = (done: () => boolean) => {
-    while (pending && !done()) appendBlocks(FIRST_SCREEN_STEP);
+    while (pending && !done()) {
+      if (appendBlocks(FIRST_SCREEN_STEP) === 0 && !hasAvailable()) break;
+    }
   };
 
   const appendInBackground = (gen: number) => {
@@ -281,7 +318,11 @@ export function createViewer(
         () => performance.now() - start >= budget || (!deadline.didTimeout && deadline.timeRemaining() < 2));
       void article.offsetHeight; // lay out now, inside this slice, not in the next frame
       perBlock = Math.max(0.005, (performance.now() - start) / Math.max(1, appended));
-      if (pending) schedule();
+      if (hasAvailable()) schedule();
+      else {
+        rescheduleBackground = null;
+        cancelBackground = null;
+      }
     };
     rescheduleBackground = () => {
       cancelIdleCallback(idleId);
@@ -289,6 +330,52 @@ export function createViewer(
     };
     cancelBackground = () => cancelIdleCallback(idleId);
     schedule();
+  };
+
+  const startTail = (): Promise<void> => {
+    const state = tail;
+    if (!state || state.gen !== generation) return Promise.resolve();
+    if (state.promise) return state.promise;
+    const recovering = tailError !== null;
+    tailError = null;
+    if (failureBanner) failureBanner.querySelector('button')!.disabled = true;
+    let loaded: Promise<ViewDocument>;
+    try {
+      loaded = state.load();
+    } catch (error) {
+      loaded = Promise.reject(error);
+    }
+    state.promise = loaded.then((full) => {
+      if (state.gen !== generation || tail !== state) return;
+      const ends = [...(full.chunkEnds ?? []), full.html.length];
+      if (!full.html.startsWith(state.preview.html) || ends[0] !== state.preview.html.length
+        || full.path !== state.preview.path) throw new Error('startup tail does not match its preview');
+      pendingHtml = full.html;
+      chunkEnds = ends;
+      tail = null;
+      clearFailure();
+      textRevision++;
+      if (queuedAnchor) {
+        const anchor = queuedAnchor;
+        queuedAnchor = null;
+        scrollToAnchor(anchor);
+      }
+      if (pending && !hasAvailable()) appendBlocks(0);
+      if (hasAvailable() && !rescheduleBackground) appendInBackground(state.gen);
+      if (recovering) shownListeners.forEach((listener) => listener(full));
+    }).catch((cause: unknown) => {
+      if (state.gen !== generation || tail !== state) return;
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      state.promise = null;
+      tailError = error;
+      cancelBackground?.();
+      cancelBackground = null;
+      rescheduleBackground = null;
+      rejectSettledWaiters(error);
+      showFailure(error);
+      onTailError(error);
+    });
+    return state.promise;
   };
 
   const lineOf = (el: Element) => Number(el.getAttribute('data-line')) || 1;
@@ -346,11 +433,17 @@ export function createViewer(
 
   const scrollToAnchor = (id: string): boolean => {
     let el = findAnchor(id);
-    while (!el && pending) {
+    while (!el && hasAvailable()) {
       appendBlocks(FIRST_SCREEN_STEP * 8);
       el = findAnchor(id);
     }
+    if (!el && tail) {
+      queuedAnchor = id;
+      void startTail();
+      return true;
+    }
     if (!el) return false;
+    queuedAnchor = null;
     const target = el;
     appendUntil(() => article.scrollHeight - target.offsetTop > scroller.clientHeight * 2);
     scrollToElement(target);
@@ -358,7 +451,7 @@ export function createViewer(
   };
 
   return {
-    async show(doc: ViewDocument, at?: Position) {
+    async show(doc: ViewDocument, at?: Position, loadTail?: () => Promise<ViewDocument>) {
       const gen = ++generation;
       const ends = [...(doc.chunkEnds ?? []), doc.html.length];
       const template = document.createElement('template');
@@ -368,6 +461,10 @@ export function createViewer(
       trace('viewer math font ready');
       if (gen !== generation) return;
 
+      tail = loadTail ? { gen, preview: doc, load: loadTail, promise: null } : null;
+      tailError = null;
+      queuedAnchor = null;
+      clearFailure();
       pending = template.content;
       interactiveCompletion = settledWaiters.some(({ signal }) => signal && !signal.aborted);
       rescheduleBackground = null;
@@ -380,22 +477,42 @@ export function createViewer(
       article.replaceChildren();
       scroller.scrollTop = 0;
       // The first screenful (and a bit) now; checking the height lays it out.
-      appendUntil(() => article.scrollHeight > scroller.clientHeight * 1.5);
+      const firstTarget = scroller.clientHeight * 1.5;
+      appendUntil(() => article.scrollHeight > firstTarget);
+      // A sparse first chunk may not fill the viewport. In that case the tail
+      // is needed before the first screen can honestly be marked ready.
+      if (tail && article.scrollHeight <= firstTarget) {
+        await startTail();
+        if (gen !== generation) return;
+        appendUntil(() => article.scrollHeight > firstTarget);
+      }
       trace('viewer first blocks laid out');
       if (at && 'anchor' in at) {
         if (!scrollToAnchor(at.anchor)) scroller.scrollTop = 0;
       } else if (at) {
         scrollToLine(at.line);
       }
-      if (pending) appendInBackground(gen);
-      else appendBlocks(0); // resolves settled() waiters
+      if (hasAvailable() && !rescheduleBackground) appendInBackground(gen);
+      else appendBlocks(0); // resolves waiters if all content is complete
       shownListeners.forEach((listener) => listener(doc));
+      if (tail) {
+        const waiting = tail;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (tail === waiting && !tailError) void startTail();
+        }));
+        setTimeout(() => {
+          if (tail === waiting && !tailError) void startTail();
+        }, 250);
+      }
     },
     topLine,
     scrollToAnchor,
     focus: () => scroller.focus({ preventScroll: true }),
-    settled: (interactive) => (pending && !interactive?.aborted ? new Promise<void>((resolve) => {
-      const waiter: { resolve: () => void; signal?: AbortSignal; abort?: () => void } = { resolve, signal: interactive };
+    settled: (interactive) => (interactive?.aborted ? Promise.resolve()
+      : tailError ? Promise.reject(tailError)
+      : pending && !interactive?.aborted ? new Promise<void>((resolve, reject) => {
+      const waiter: { resolve: () => void; reject: (error: Error) => void;
+        signal?: AbortSignal; abort?: () => void } = { resolve, reject, signal: interactive };
       if (interactive) {
         waiter.abort = () => {
           interactive.removeEventListener('abort', waiter.abort!);
@@ -413,11 +530,19 @@ export function createViewer(
         interactiveCompletion = true;
         rescheduleBackground?.();
       }
+      if (interactive && tail) void startTail();
     }) : Promise.resolve()),
-    loadAll: () => appendUntil(() => false),
+    loadAll: () => {
+      appendUntil(() => false);
+      if (tail) void startTail();
+    },
     suspend: () => {
       generation++;
       contentVersion++;
+      tail = null;
+      tailError = null;
+      queuedAnchor = null;
+      clearFailure();
       cancelBackground?.();
       cancelBackground = null;
       rescheduleBackground = null;

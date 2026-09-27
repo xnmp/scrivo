@@ -12,7 +12,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const STARTUP_BUDGET_BYTES = 40 * 1024;
+// The deferred startup-tail contract adds ~1 KiB to the reader's first-paint code.
+const STARTUP_BUDGET_BYTES = 41 * 1024;
 const PREPAINT_BUDGET_BYTES = 56 * 1024;
 // Boot registers Tauri window handlers before the first-frame mark. Keep this list
 // aligned with src/boot.ts and src/platform/tauri.ts when startup imports change.
