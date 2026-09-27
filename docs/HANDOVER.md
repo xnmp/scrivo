@@ -3,12 +3,13 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current work extends bounded
-layout of very tall code blocks to common Unicode and tabbed lines while keeping
-horizontal text reachable. Earlier checkpoints fixed Find geometry in contained
-code, false save conflicts from lossy timestamps, and conditional writes. They
-also added renderer-supplied HTML chunk
-boundaries, viewer phase traces, batched postpaint code highlighting, reviewed
+verified, and exceptionally fast at startup. The current work reduces the time to
+finish inserting a large document without materially changing its first viewport
+time. The previous checkpoint extended bounded layout of giant code blocks to
+Unicode and tabbed lines. Earlier checkpoints fixed Find geometry in contained
+code, false save conflicts from lossy timestamps, and conditional writes, and
+added renderer-supplied HTML chunk boundaries, viewer phase traces, batched
+postpaint code highlighting, reviewed
 startup benchmarks, and a manifest-based bundle gate. The broader goal is
 ongoing; there is no release or deployment.
 
@@ -20,7 +21,79 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: Unicode width for giant code blocks
+## Current checkpoint: faster background insertion
+
+- The 443 KB large fixture contains 151 safe HTML chunks. Instrumentation on the
+  committed one-chunk scheduler observed about 150 idle callbacks after initial
+  screen insertion; roughly 0.8 s of callback work included about 0.7 s of layout, and
+  callback scheduling added roughly 0.55 s. The viewer now allows two chunks per
+  idle callback with a 12 ms slice budget (previously one chunk and 8 ms). It still
+  parses only the first safe chunk before paint, yields when the deadline is low,
+  and forces layout inside each callback so cost is accounted for before the next.
+- A 12-round rotated release comparison on the large fixture, with each launch
+  checked against the reviewed first-viewport screenshot, measured **−419 ms
+  paired median** to `document settled` (all blocks inserted). The candidate was
+  faster in **12/12** pairs; unpaired medians were 1,634 ms baseline and 1,232 ms
+  candidate. In those same runs, first-viewport paired median was −2 ms. Separate
+  ordinary startup A/B runs measured −3 ms medium (6/12 faster) and +5 ms large
+  (4/12 faster). These small, inconsistent first-viewport differences do not
+  establish a startup speed change.
+- Five diagnostic native release traces of the two-chunk policy measured 75–77
+  background callbacks, with 12–18 ms maximum callback work. Temporary RAF
+  instrumentation during those traces measured 21–29 ms maximum frame gaps and
+  15–19 ms p95; it was removed from the final build. A new Chromium E2E test
+  verifies that the real large document completes with 800 code blocks, 400
+  tables, 800 MathML elements, 800 tasks, a reachable tail, and no frame gap
+  reaching 250 ms during insertion. The existing native large-file tests still
+  check tail visibility, full highlighting, and Find while highlighting.
+- An attempted 16-block first-screen batch was reverted. Both startup fixtures
+  crossed the 1.5-viewport target after 16 blocks, but a 12-pair medium release
+  comparison showed +1 ms paired median and no reliable improvement. A reviewer
+  found no scheduler race in the final change. One unit assertion that assumed a
+  single callback could not parse a second chunk was changed to assert that the
+  document still loads progressively.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| TypeScript and Vitest | Pass; 295/295 unit tests |
+| Full Chromium suite | 60/60 passed, including the large-document background outcome and frame check |
+| Full native WebKitGTK suite | 12/12 specs, 15 tests passed on final debug build |
+| Debug and release builds | Pass; bundle gate 37/40 KiB static, 51/56 KiB known prepaint JS/CSS, 1,060 KiB conditional font, 2,517 KiB deferred graph |
+| Large settled-time paired comparison | 12/12 valid pairs; −419 ms paired median, candidate faster 12/12 |
+| First-viewport paired comparisons | 12/12 valid pairs each; −3 ms medium, +5 ms large in ordinary A/B runs |
+| Independent review | No substantive scheduler race or settled-time benchmark validity issue found |
+
+Raw rounds are in `bench/results/paired-two-chunk-settled-large.txt`,
+`bench/results/paired-two-chunk-startup-medium.txt`, and
+`bench/results/paired-two-chunk-startup-large.txt`. The RAF diagnostic is in
+`bench/results/diagnostic-two-chunk-frames-large.txt`; its binary included
+temporary measurement code, while the final release binary does not. Baseline
+`8fea444` SHA-256:
+`885783490a3a22ae453e98f6e8058d22c1d5b1711226a59f2dfe16354406676d`;
+final candidate SHA-256:
+`39a756ea84231b04a6b2cf7127d5fad2aa60a5ac0b0a55964aef3e640548ec84`.
+The paired settled-time command used an ephemeral script around
+`bench/bench.mjs scrivo bench/fixtures/large.md 1 --trace`, rotated baseline
+and candidate launch order, required a valid screenshot and the `document
+settled` trace mark on every run, and exited successfully with 12/12 valid pairs.
+Only the first-viewport A/B commands are stable repository tooling; reproduce
+settled-time numbers with the trace command and a rebuilt `8fea444` baseline if
+needed. Do not compare absolute medians between benchmark sessions.
+
+An exploratory Chromium probe called Find immediately after the 443 KB document's
+first screen appeared. `src/viewer/find.ts` synchronously invoked
+`viewer.loadAll()`, inserting the remaining code blocks before indexing text;
+the search found its one match but blocked for **444 ms** on this host. The
+probe was temporary and is not a committed performance gate. This is the next
+concrete responsiveness target: preserve complete-document search while keeping
+typing and Find open responsive during background insertion. Keep the first-viewport
+reference check and a frame-gap measurement when changing the idle policy. The
+Windows conflict and final cross-process check → rename race remain data-safety
+follow-ups described below.
+
+## Previous checkpoint: Unicode width for giant code blocks (`8fea444`)
 
 - `src/viewer/viewer.ts` now segments a giant block with Unicode lines when it can
   preserve horizontal width. Its scanner finds the widest ASCII line in `ch`
@@ -97,7 +170,7 @@ cross-process check → rename race remain data-safety follow-ups described belo
   code element that minimum width. An independent review reproduced the bug with
   a 1,000-character line; browser and native tests now scroll to its final
   characters on a tabbed line. At this checkpoint, non-ASCII giant code stayed on
-  the original layout path; the current checkpoint extends bounded Unicode support.
+  the original layout path; the following Unicode checkpoint extended bounded support.
 - WebKit returns a zero `Range` rectangle when a Find match lies in an offscreen
   segment. `src/viewer/find.ts` temporarily lays out only the matching segment(s)
   for geometry queries. Find also scrolls a code block horizontally when the match

@@ -1,0 +1,29 @@
+round 1 scrivo-before-first-screen-step: window=214 content=359 complete=359
+round 1 scrivo: window=226 content=356 complete=356
+round 2 scrivo: window=207 content=369 complete=369
+round 2 scrivo-before-first-screen-step: window=215 content=344 complete=344
+round 3 scrivo-before-first-screen-step: window=212 content=359 complete=359
+round 3 scrivo: window=213 content=360 complete=360
+round 4 scrivo: window=214 content=360 complete=360
+round 4 scrivo-before-first-screen-step: window=211 content=357 complete=357
+round 5 scrivo-before-first-screen-step: window=226 content=356 complete=356
+round 5 scrivo: window=217 content=363 complete=363
+round 6 scrivo: window=215 content=359 complete=359
+round 6 scrivo-before-first-screen-step: window=212 content=342 complete=342
+round 7 scrivo-before-first-screen-step: window=229 content=360 complete=360
+round 7 scrivo: window=211 content=357 complete=357
+round 8 scrivo: window=249 content=405 complete=405
+round 8 scrivo-before-first-screen-step: window=210 content=356 complete=356
+round 9 scrivo-before-first-screen-step: window=249 content=381 complete=381
+round 9 scrivo: window=209 content=355 complete=355
+round 10 scrivo: window=241 content=374 complete=374
+round 10 scrivo-before-first-screen-step: window=229 content=359 complete=359
+round 11 scrivo-before-first-screen-step: window=219 content=363 complete=363
+round 11 scrivo: window=203 content=350 complete=350
+round 12 scrivo: window=244 content=373 complete=373
+round 12 scrivo-before-first-screen-step: window=212 content=357 complete=357
+
+large.md, 12 rounds
+  scrivo-before-first-screen-step n=12  window med=215  content med=358  complete med=358
+  scrivo           n=12  window med=215  content med=360  complete med=360
+  scrivo vs scrivo-before-first-screen-step: content +5 ms (paired median), faster in 4/12 rounds

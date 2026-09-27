@@ -198,6 +198,7 @@ Adopted:
 | Render in Rust on the prefetch thread, in parallel with window creation | HTML ready before the page asks |
 | Progressive insertion (first 1.5 screens, rest in idle slices) | large.md first frame 1285 → ~400 ms |
 | Parse only the first safe HTML chunk before paint | −20 ms paired median on large.md, faster in 10/12 release pairs (see README) |
+| Insert up to two HTML chunks per 12 ms idle slice after initial screen insertion | −419 ms paired median to full large-document insertion (12/12 pairs faster); first-viewport differences stayed within a few ms across separate 12-pair runs |
 | Load the math font before inserting math | first layout 142 → 86 ms (math-heavy page) |
 | `system-ui` first in the body font stack | first layout 75 → 53 ms |
 | Warm EGL + image loader on worker threads (`prewarm.rs`) | −48 ms (10/12 rounds) |
@@ -208,6 +209,7 @@ Rejected (measured, then reverted):
 | Idea | Why not |
 |---|---|
 | `content-visibility: auto` on blocks | large.md layout 521 → 967 ms |
+| Reduce first-screen insertion batch from 24 to 16 blocks | medium.md first-viewport paired median +1 ms in 12 pairs; no reliable gain |
 | Targeted `content-visibility: auto` on a 5 MB code block | background insertion became fast, but scrolling into it caused a 350 ms frame gap |
 | Streaming a 5 MB code block into one `<pre>` in idle slices | cumulative layout grew and a full-suite run still had a 383 ms frame gap |
 | First blocks prerendered into `index.html` (via `on_web_resource_request`) | +58 ms: WebKitGTK doesn't paint parser-inserted content before the first script-driven layout, and parsing it first delays the script |

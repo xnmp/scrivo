@@ -1,0 +1,28 @@
+round 1 scrivo-before-first-screen-step: content=387 settled=1678.5
+round 1 scrivo: content=360 settled=1291.6
+round 2 scrivo: content=372 settled=1162.6
+round 2 scrivo-before-first-screen-step: content=341 settled=1586.7
+round 3 scrivo-before-first-screen-step: content=357 settled=1632.7
+round 3 scrivo: content=383 settled=1437.4
+round 4 scrivo: content=364 settled=1240.2
+round 4 scrivo-before-first-screen-step: content=377 settled=1653.6
+round 5 scrivo-before-first-screen-step: content=342 settled=1572.3
+round 5 scrivo: content=439 settled=1442.8
+round 6 scrivo: content=349 settled=1203.6
+round 6 scrivo-before-first-screen-step: content=368 settled=1636.2
+round 7 scrivo-before-first-screen-step: content=356 settled=1604.1
+round 7 scrivo: content=357 settled=1228.6
+round 8 scrivo: content=369 settled=1199
+round 8 scrivo-before-first-screen-step: content=375 settled=1726.1
+round 9 scrivo-before-first-screen-step: content=373 settled=1635.3
+round 9 scrivo: content=366 settled=1207.9
+round 10 scrivo: content=375 settled=1315.3
+round 10 scrivo-before-first-screen-step: content=359 settled=1607.1
+round 11 scrivo-before-first-screen-step: content=383 settled=1611.3
+round 11 scrivo: content=378 settled=1108.3
+round 12 scrivo: content=359 settled=1234.4
+round 12 scrivo-before-first-screen-step: content=358 settled=1705.1
+scrivo-before-first-screen-step n=12 content median=363.5 settled median=1634
+scrivo n=12 content median=367.5 settled median=1231.5
+content paired median=-2 faster=6/12
+settled paired median=-418.75 faster=12/12

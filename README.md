@@ -52,7 +52,7 @@ rounds must be valid. Times start at process launch and include the window syste
 and webview; results are machine-specific. A native E2E test separately checks that
 the large document's tail renders and can be scrolled into view.
 
-Measured on Linux on 2026-09-27 using the release binary, Typora 1.14.9-1, and
+Measured on Linux on 2026-09-27 using release commit `129cd13`, Typora 1.14.9-1, and
 12 valid paired rounds per fixture (milliseconds; lower is better):
 
 | Document | App | Valid launches | Window median | Content median | Viewport stable median |
@@ -65,7 +65,7 @@ Measured on Linux on 2026-09-27 using the release binary, Typora 1.14.9-1, and
 Scrivo reached the verified first viewport sooner in all 12 pairs for both
 fixtures. The paired median advantage was 626 ms for medium and 1,682 ms for large.
 The comparison is based on within-round pairs because absolute times vary with host
-load. The current [medium](bench/results/verified-medium-chunked.txt) and
+load. The [medium](bench/results/verified-medium-chunked.txt) and
 [large](bench/results/verified-large-chunked.txt) round logs are included for
 inspection. [Previous release comparisons](bench/results/verified-large.txt) and
 earlier runs with weaker readiness checks are retained as history; their absolute
@@ -84,12 +84,19 @@ check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
-The web build gate counts 34 KiB of linked static startup JS/CSS against a 40 KiB
-budget. Tauri's window API loads during boot; including it gives 48 KiB of known
+The current web build gate counts 37 KiB of linked static startup JS/CSS against a 40 KiB
+budget. Tauri's window API loads during boot; including it gives 51 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
 1,060 KiB math font referenced by the reading-view stylesheet and a 2,517 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
 features loaded later.
+
+The current release inserts up to two rendered HTML chunks per idle slice after
+the initial screen is inserted. Against commit `8fea444`, a 12-pair large-file run
+reached full document insertion 419 ms sooner by paired median (faster in all
+12 rounds). Separate 12-pair startup runs found −3 ms on medium and +5 ms on
+large; these small differences do not establish a first-viewport speed change.
+[Raw rounds and conditions](docs/HANDOVER.md) are retained.
 
 Run the comparison locally with:
 

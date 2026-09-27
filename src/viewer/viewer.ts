@@ -28,7 +28,7 @@ export interface Viewer extends ViewerPort {
 }
 
 /** Time budget per idle slice for appending blocks. */
-const SLICE_MS = 8;
+const SLICE_MS = 12;
 /** Blocks appended per step when filling the first screen. */
 const FIRST_SCREEN_STEP = 24;
 const LARGE_CODE_LENGTH = 1_000_000;
@@ -252,9 +252,9 @@ export function createViewer(
       const budget = Math.max(2, Math.min(SLICE_MS, deadline.timeRemaining()));
       const count = Math.max(8, Math.floor(budget / perBlock));
       const start = performance.now();
-      // A chunk can contain a costly table or code block. Parse at most one new
-      // chunk per idle callback and stop appending when this slice has run out.
-      const appended = appendBlocks(count, 1, () => performance.now() - start >= budget || deadline.timeRemaining() < 2);
+      // Most renderer chunks are cheap, but a table can be costly. Parse at most
+      // two chunks per idle callback and stop appending when its budget runs out.
+      const appended = appendBlocks(count, 2, () => performance.now() - start >= budget || deadline.timeRemaining() < 2);
       void article.offsetHeight; // lay out now, inside this slice, not in the next frame
       perBlock = Math.max(0.005, (performance.now() - start) / Math.max(1, appended));
       if (pending) requestIdleCallback(step);

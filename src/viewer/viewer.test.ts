@@ -72,7 +72,7 @@ describe('showing a document', () => {
     await viewer.show({ ...doc(html), chunkEnds });
     expect(article.children.length).toBeLessThan(40);
     idleQueue.shift()?.({ didTimeout: false, timeRemaining: () => 5 });
-    expect(article.querySelector('[data-line="81"]')).toBeNull();
+    expect(article.children.length).toBeLessThan(200);
     runIdle();
     await viewer.settled();
     expect(texts()).toEqual(['😀 first', ...Array.from({ length: 199 }, (_, i) => `Paragraph ${i + 2}`)]);
