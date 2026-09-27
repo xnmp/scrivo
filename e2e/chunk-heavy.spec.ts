@@ -42,3 +42,41 @@ test('large code blocks remain complete and searchable after background parsing'
   await expect(page.locator('.find-count')).toHaveText('1 of 1');
   console.log(`heavy-chunk diagnostic: ${result.chunks} chunks, max frame gap ${result.maxFrameGap.toFixed(1)} ms`);
 });
+
+test('one oversized code block stays complete and responsive', async ({ page }) => {
+  await openApp(page, { mode: 'view' });
+  const result = await page.evaluate(async () => {
+    const line = '0123456789'.repeat(10).concat('\n');
+    const code = line.repeat(10_000);
+    const markdown = Array.from({ length: 40 }, (_, i) => `Paragraph ${i}\n\n`).join('') + `\n\`\`\`\n${code}\`\`\`\n\n# Tail\n`;
+    const response = await fetch('/__scrivo/render', { method: 'POST', body: markdown });
+    if (!response.ok) throw new Error(await response.text());
+    const rendered = { ...(await response.json()), path: null, stamp: null };
+    const viewer = (window as any).__scrivo.viewer;
+    const gaps: number[] = [];
+    let previous = 0;
+    let sampling = true;
+    const frame = (time: number) => {
+      if (previous) gaps.push(time - previous);
+      previous = time;
+      if (sampling) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    await new Promise(requestAnimationFrame);
+    await viewer.show(rendered);
+    await viewer.settled();
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    sampling = false;
+    return {
+      maxFrameGap: Math.max(...gaps),
+      exact: document.querySelector('#document pre > code')?.textContent === code,
+      tail: viewer.scrollToAnchor('tail'),
+      chunks: rendered.chunkEnds.length + 1,
+    };
+  });
+  console.log(`oversized-block diagnostic: ${result.chunks} chunks, max frame gap ${result.maxFrameGap.toFixed(1)} ms`);
+  expect(result.exact).toBe(true);
+  expect(result.tail).toBe(true);
+  expect(result.maxFrameGap).toBeLessThan(200);
+});

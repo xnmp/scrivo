@@ -230,7 +230,7 @@ networking permitted. No native feature behavior or Rust source changed.
 | `bun run typecheck`; native E2E TypeScript check | Pass |
 | `bun run test` | 295 tests across 17 files passed |
 | `cargo test -q -p scrivo-render`; `cargo test -q` | 35 renderer and 26 app Rust tests passed |
-| `bun run test:e2e` | 53/53 Chromium tests passed |
+| `bun run test:e2e` | 54/54 Chromium tests passed, including the 1 MB single-block case |
 | `bun run test:e2e:native` | 11/11 WebKitGTK specs, 12 tests passed |
 | `bunx tauri build --no-bundle` | Pass; 34/40 KiB static and 48/56 KiB known prepaint JS/CSS |
 | Paired startup checks | 12/12 valid old/new large, 12/12 valid current Scrivo/Typora medium and large |
@@ -315,9 +315,13 @@ measure how long that takes. A prior single startup trace is in
   existing Find test does not guarantee that Find opens during highlighting.
 - Chunk boundaries require complete top-level blocks; a single very large code,
   table, or paragraph block can still take longer than an 8 ms idle budget to parse
-  or lay out. The heavy-block Chromium test bounds observed frame gaps below
-  200 ms on its fixture, but does not prove all input sizes or slower hosts meet
-  that bound. Preserve the source and rendering safety model if addressing it.
+  or lay out. An additional Chromium test with one 1 MB code block observed a
+  50 ms maximum frame gap in isolation and 100 ms in the full parallel suite,
+  with exact text and tail navigation.
+  A diagnostic with one 5 MB code block observed a 333 ms gap on the same host,
+  though text and navigation remained correct. The 200 ms test bound covers its
+  specified fixtures, not all input sizes or slower hosts. Preserve the source
+  and rendering safety model if addressing oversized blocks.
 
 ## Commands
 
