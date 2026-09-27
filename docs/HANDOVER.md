@@ -322,6 +322,16 @@ measure how long that takes. A prior single startup trace is in
   though text and navigation remained correct. The 200 ms test bound covers its
   specified fixtures, not all input sizes or slower hosts. Preserve the source
   and rendering safety model if addressing oversized blocks.
+  A follow-up isolated profile attributed about 22–25 ms to template parsing and
+  221 ms to forced layout for this 5 MB case (317 ms maximum frame gap). Applying
+  `content-visibility: auto` only to code blocks reduced the offscreen insertion
+  gap to 17 ms, but scrolling into the block then produced a 350 ms gap. A trial
+  that appended code text in 512,000-character idle slices reached 150 ms maximum
+  in isolation, but 383 ms under the full parallel Chromium suite; cumulative
+  layout grew from about 221 ms to 458–981 ms. Both trials were reverted. A future
+  fix should test the visible scroll interaction and total layout cost as well as
+  background insertion. The browser's standard offscreen-rendering mechanism is
+  described in [MDN's `content-visibility` reference](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/content-visibility).
 
 ## Commands
 

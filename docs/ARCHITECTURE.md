@@ -194,6 +194,8 @@ Rejected (measured, then reverted):
 | Idea | Why not |
 |---|---|
 | `content-visibility: auto` on blocks | large.md layout 521 → 967 ms |
+| Targeted `content-visibility: auto` on a 5 MB code block | background insertion became fast, but scrolling into it caused a 350 ms frame gap |
+| Streaming a 5 MB code block into one `<pre>` in idle slices | cumulative layout grew and a full-suite run still had a 383 ms frame gap |
 | First blocks prerendered into `index.html` (via `on_web_resource_request`) | +58 ms: WebKitGTK doesn't paint parser-inserted content before the first script-driven layout, and parsing it first delays the script |
 | Not preloading the editor chunk | no measurable change to first paint |
 | `NO_AT_BRIDGE`, `WEBKIT_DISABLE_COMPOSITING_MODE` | no measurable change (and a11y must stay) |
