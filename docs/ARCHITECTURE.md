@@ -41,7 +41,9 @@ view's outline is built from renderer heading metadata, and its code highlightin
 loads matching editor grammars only after the document has painted. It highlights
 several small blocks per idle deadline, then invalidates text nodes as a batch.
 Find refreshes at most every 250 ms while open and once at completion so repeated
-full-document indexing does not dominate highlighting.
+full-document indexing does not dominate highlighting. The Rust renderer also
+provides UTF-16 offsets at complete top-level block boundaries, so the viewer
+parses only the first HTML chunk before paint and later chunks during idle time.
 
 Why CodeMirror live preview rather than a ProseMirror WYSIWYG: ProseMirror-based
 editors (Milkdown, Tiptap) parse markdown into a rich document and serialize it back,
@@ -181,6 +183,7 @@ Adopted:
 | Outline and code highlighting loaded after first paint | keeps heading UI and grammars off the startup path |
 | Render in Rust on the prefetch thread, in parallel with window creation | HTML ready before the page asks |
 | Progressive insertion (first 1.5 screens, rest in idle slices) | large.md first frame 1285 → ~400 ms |
+| Parse only the first safe HTML chunk before paint | −20 ms paired median on large.md, faster in 10/12 release pairs (see README) |
 | Load the math font before inserting math | first layout 142 → 86 ms (math-heavy page) |
 | `system-ui` first in the body font stack | first layout 75 → 53 ms |
 | Warm EGL + image loader on worker threads (`prewarm.rs`) | −48 ms (10/12 rounds) |

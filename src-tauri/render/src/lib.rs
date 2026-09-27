@@ -30,6 +30,9 @@ pub struct Options<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct Rendered {
     pub html: String,
+    /// UTF-16 offsets after complete top-level blocks. The page can parse the
+    /// first chunk before paint and parse the rest in idle slices.
+    pub chunk_ends: Vec<usize>,
     pub headings: Vec<Heading>,
     /// Local files shown as images; the app grants the page access to exactly these.
     pub local_images: Vec<String>,
@@ -59,11 +62,47 @@ fn dialect() -> MdOptions {
 }
 
 pub fn render(markdown: &str, options: &Options) -> Rendered {
+    const CHUNK_BLOCKS: usize = 32;
+    const CHUNK_BYTES: usize = 16 * 1024;
     let mut w = Writer::new(markdown, options);
+    let mut depth = 0usize;
+    let mut blocks_in_chunk = 0usize;
+    let mut last_chunk_end = 0;
+    let mut byte_ends = Vec::new();
     for (event, range) in Parser::new_ext(markdown, dialect()).into_offset_iter() {
+        let boundary = matches!(&event, Event::End(_) if depth == 1)
+            || matches!(&event, Event::Rule | Event::DisplayMath(_) if depth == 0);
+        match &event {
+            Event::Start(_) => depth += 1,
+            Event::End(_) => {
+                debug_assert!(depth > 0);
+                depth -= 1;
+            }
+            _ => {}
+        }
         w.event(event, range);
+        if boundary {
+            blocks_in_chunk += 1;
+            if blocks_in_chunk >= CHUNK_BLOCKS || w.out.len() - last_chunk_end >= CHUNK_BYTES {
+                byte_ends.push(w.out.len());
+                last_chunk_end = w.out.len();
+                blocks_in_chunk = 0;
+            }
+        }
     }
-    Rendered { html: w.out, headings: w.headings, local_images: w.local_images }
+    debug_assert_eq!(depth, 0);
+    let html = w.out;
+    if byte_ends.last() == Some(&html.len()) {
+        byte_ends.pop();
+    }
+    let mut last_byte = 0;
+    let mut utf16_end = 0;
+    let chunk_ends = byte_ends.into_iter().map(|end| {
+        utf16_end += html[last_byte..end].encode_utf16().count();
+        last_byte = end;
+        utf16_end
+    }).collect();
+    Rendered { html, chunk_ends, headings: w.headings, local_images: w.local_images }
 }
 
 struct HeadingState {

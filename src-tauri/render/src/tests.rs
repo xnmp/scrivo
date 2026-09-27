@@ -14,6 +14,30 @@ fn html(markdown: &str) -> String {
     render_in(markdown, Some("/docs")).html
 }
 
+#[test]
+fn chunk_boundaries_preserve_unicode_and_whole_nested_blocks() {
+    let mut markdown = String::from("😀 first\n\n");
+    for n in 2..=31 {
+        markdown.push_str(&format!("paragraph {n}\n\n"));
+    }
+    markdown.push_str("- outer\n  - inner\n\ntail\n");
+    let rendered = render_in(&markdown, None);
+    assert_eq!(rendered.chunk_ends.len(), 1);
+    let list_end = rendered.html.rfind("</ul>\n").unwrap() + "</ul>\n".len();
+    let expected = rendered.html[..list_end].encode_utf16().count();
+    assert_eq!(rendered.chunk_ends[0], expected);
+    assert!(rendered.html[list_end..].contains("tail"));
+}
+
+#[test]
+fn large_blocks_do_not_accumulate_into_one_html_chunk() {
+    let markdown = format!("{}\n\n{}\n\ntail\n", "a".repeat(20_000), "b".repeat(20_000));
+    let rendered = render_in(&markdown, None);
+    assert_eq!(rendered.chunk_ends.len(), 2);
+    assert!(rendered.chunk_ends[0] < rendered.chunk_ends[1]);
+    assert!(rendered.chunk_ends[1] < rendered.html.encode_utf16().count());
+}
+
 /// Every `<tag` and attribute name in the output. Text is always escaped, so each `<` in
 /// the output starts a real tag.
 fn tags_and_attributes(html: &str) -> Vec<(String, Vec<String>)> {

@@ -4,7 +4,7 @@ import { sameStamp, type FileStamp } from '../domain/document';
 import { FileError, type Heading, type Platform, type StartupDocument, type ViewDocument } from '../app/ports';
 
 /** Markdown → HTML, as the backend's renderer does it. */
-export type RenderFn = (text: string, path: string | null) => Promise<{ html: string; headings: readonly Heading[] }>;
+export type RenderFn = (text: string, path: string | null) => Promise<{ html: string; chunkEnds?: readonly number[]; headings: readonly Heading[] }>;
 
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 

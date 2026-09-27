@@ -14,6 +14,7 @@ pub struct ViewDocument {
     pub path: Option<String>,
     pub stamp: Option<FileStamp>,
     pub html: String,
+    pub chunk_ends: Vec<usize>,
     pub headings: Vec<Heading>,
     /// Granted to the asset protocol before the page sees the HTML; not sent.
     #[serde(skip)]
@@ -36,8 +37,8 @@ pub fn render_text(text: &str, path: Option<&str>) -> ViewDocument {
     // heading from being one.
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let base_dir = path.map(Path::new).and_then(Path::parent);
-    let Rendered { html, headings, local_images } = render(text, &Options { base_dir, asset_url: &asset_url });
-    ViewDocument { path: path.map(str::to_owned), stamp: None, html, headings, local_images }
+    let Rendered { html, chunk_ends, headings, local_images } = render(text, &Options { base_dir, asset_url: &asset_url });
+    ViewDocument { path: path.map(str::to_owned), stamp: None, html, chunk_ends, headings, local_images }
 }
 
 pub fn render_document(doc: &ReadDocument) -> ViewDocument {

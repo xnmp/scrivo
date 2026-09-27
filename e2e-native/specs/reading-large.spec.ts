@@ -13,6 +13,12 @@ describe('large file in the native reading view', () => {
     await browser.waitUntil(async () => browser.execute(() =>
       document.getElementById('end-of-large-benchmark-document')?.textContent === 'End of Large Benchmark Document',
     ), { timeout: 20_000, timeoutMsg: 'the large document tail did not render' });
+    const structure = await browser.execute(() => ({
+      tables: document.querySelectorAll('#document table').length,
+      math: document.querySelectorAll('#document math').length,
+      tasks: document.querySelectorAll('#document input[type="checkbox"]').length,
+    }));
+    expect(structure).toEqual({ tables: 400, math: 800, tasks: 800 });
     await browser.execute(() => document.getElementById('end-of-large-benchmark-document')!.scrollIntoView());
     const visible = await browser.execute(() => {
       const tail = document.getElementById('end-of-large-benchmark-document')!;

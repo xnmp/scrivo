@@ -64,6 +64,23 @@ describe('showing a document', () => {
     expect(settled).toBe(true);
   });
 
+  it('shows and navigates every block when the renderer supplies HTML chunks', async () => {
+    const chunks = Array.from({ length: 5 }, (_, batch) =>
+      Array.from({ length: 40 }, (_, i) => para(batch * 40 + i + 1, i === 0 && batch === 0 ? '😀 first' : `Paragraph ${batch * 40 + i + 1}`)).join(''));
+    const html = chunks.join('');
+    const chunkEnds = chunks.slice(0, -1).map((_, i) => chunks.slice(0, i + 1).join('').length);
+    await viewer.show({ ...doc(html), chunkEnds });
+    expect(article.children.length).toBeLessThan(40);
+    idleQueue.shift()?.({ didTimeout: false, timeRemaining: () => 5 });
+    expect(article.querySelector('[data-line="81"]')).toBeNull();
+    runIdle();
+    await viewer.settled();
+    expect(texts()).toEqual(['😀 first', ...Array.from({ length: 199 }, (_, i) => `Paragraph ${i + 2}`)]);
+    expect(viewer.scrollToAnchor('missing')).toBe(false);
+    await viewer.show({ ...doc(html + '<h2 id="end" data-line="201">End</h2>'), chunkEnds });
+    expect(viewer.scrollToAnchor('end')).toBe(true);
+  });
+
   it('a short document is complete as soon as show() resolves', async () => {
     await viewer.show(docOf(3));
     expect(texts()).toEqual(['Paragraph 1', 'Paragraph 2', 'Paragraph 3']);
@@ -78,7 +95,9 @@ describe('showing a document', () => {
   });
 
   it('a newer document replaces one still being appended, which then stops', async () => {
-    await viewer.show(docOf(100, (n) => `old ${n}`));
+    const old = docOf(100, (n) => `old ${n}`);
+    const firstChunkEnd = Array.from({ length: 40 }, (_, i) => para(i + 1, `old ${i + 1}`)).join('').length;
+    await viewer.show({ ...old, chunkEnds: [firstChunkEnd] });
     await viewer.show(docOf(50, (n) => `new ${n}`));
     runIdle();
     expect(texts()).toEqual(Array.from({ length: 50 }, (_, i) => `new ${i + 1}`));

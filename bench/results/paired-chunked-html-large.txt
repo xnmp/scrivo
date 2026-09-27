@@ -1,0 +1,29 @@
+round 1 scrivo-before-chunked-html: window=202 content=379 complete=379
+round 1 scrivo: window=213 content=342 complete=342
+round 2 scrivo: window=199 content=344 complete=344
+round 2 scrivo-before-chunked-html: window=208 content=353 complete=353
+round 3 scrivo-before-chunked-html: window=199 content=361 complete=361
+round 3 scrivo: window=216 content=379 complete=379
+round 4 scrivo: window=211 content=356 complete=356
+round 4 scrivo-before-chunked-html: window=200 content=393 complete=393
+round 5 scrivo-before-chunked-html: window=209 content=371 complete=371
+round 5 scrivo: window=215 content=344 complete=344
+round 6 scrivo: window=202 content=347 complete=347
+round 6 scrivo-before-chunked-html: window=204 content=366 complete=366
+round 7 scrivo-before-chunked-html: window=212 content=357 complete=357
+round 7 scrivo: window=215 content=345 complete=345
+round 8 scrivo: window=197 content=341 complete=341
+round 8 scrivo-before-chunked-html: window=201 content=362 complete=362
+round 9 scrivo-before-chunked-html: window=228 content=393 complete=393
+round 9 scrivo: window=213 content=342 complete=342
+round 10 scrivo: window=198 content=326 complete=326
+round 10 scrivo-before-chunked-html: window=202 content=362 complete=362
+round 11 scrivo-before-chunked-html: window=205 content=350 complete=350
+round 11 scrivo: window=217 content=365 complete=365
+round 12 scrivo: window=201 content=346 complete=346
+round 12 scrivo-before-chunked-html: window=192 content=354 complete=354
+
+large.md, 12 rounds
+  scrivo-before-chunked-html n=12  window med=203  content med=362  complete med=362
+  scrivo           n=12  window med=212  content med=345  complete med=345
+  scrivo vs scrivo-before-chunked-html: content -20 ms (paired median), faster in 10/12 rounds

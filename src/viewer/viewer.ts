@@ -4,8 +4,8 @@
 // taken from the document (see ViewDocument). Every block element carries `data-line`,
 // its 1-based source line, which is how scroll positions carry over to the editor.
 //
-// Long documents are shown progressively: the HTML is parsed once into an inert
-// template, the first screenful is laid out and painted, and the remaining blocks are
+// Long documents are shown progressively: the first trusted HTML chunk is parsed
+// into an inert template, laid out and painted, then later chunks are parsed and
 // appended in idle time slices. Laying out a 20,000-line document in one go takes
 // about half a second in WebKit; `content-visibility: auto` measured slower still.
 import type { ViewDocument } from '../app/ports';
@@ -73,6 +73,9 @@ export function createViewer(
 
   /** Blocks parsed but not yet in the page. */
   let pending: DocumentFragment | null = null;
+  let pendingHtml = '';
+  let chunkEnds: readonly number[] = [];
+  let nextChunk = 0;
   /** Bumped by every show(), so an older document stops appending. */
   let generation = 0;
   /** Bumped when content is actually replaced (after show()'s awaits). */
@@ -81,13 +84,30 @@ export function createViewer(
   const shownListeners: Array<(doc: ViewDocument) => void> = [];
   let settledWaiters: Array<() => void> = [];
 
-  const appendBlocks = (count: number) => {
-    for (let i = 0; i < count && pending?.firstChild; i++) article.appendChild(pending.firstChild);
-    if (pending && !pending.firstChild) {
+  const appendBlocks = (count: number, maxChunkParses = Infinity, shouldYield: () => boolean = () => false): number => {
+    let parsedChunks = 0;
+    let appended = 0;
+    for (let i = 0; i < count && pending; i++) {
+      if (i > 0 && shouldYield()) break;
+      while (!pending.firstChild && nextChunk < chunkEnds.length) {
+        if (parsedChunks >= maxChunkParses) return appended;
+        const template = document.createElement('template');
+        template.innerHTML = pendingHtml.slice(chunkEnds[nextChunk - 1]!, chunkEnds[nextChunk]!);
+        pending.append(template.content);
+        nextChunk++;
+        parsedChunks++;
+      }
+      if (!pending.firstChild) break;
+      article.appendChild(pending.firstChild);
+      appended++;
+    }
+    if (pending && !pending.firstChild && nextChunk === chunkEnds.length) {
       pending = null;
+      pendingHtml = '';
       settledWaiters.forEach((resolve) => resolve());
       settledWaiters = [];
     }
+    return appended;
   };
 
   /** Append blocks until `done()` holds or the document is complete. */
@@ -102,9 +122,11 @@ export function createViewer(
       const budget = Math.max(2, Math.min(SLICE_MS, deadline.timeRemaining()));
       const count = Math.max(8, Math.floor(budget / perBlock));
       const start = performance.now();
-      appendBlocks(count);
+      // A chunk can contain a costly table or code block. Parse at most one new
+      // chunk per idle callback and stop appending when this slice has run out.
+      const appended = appendBlocks(count, 1, () => performance.now() - start >= budget || deadline.timeRemaining() < 2);
       void article.offsetHeight; // lay out now, inside this slice, not in the next frame
-      perBlock = Math.max(0.005, (performance.now() - start) / count);
+      perBlock = Math.max(0.005, (performance.now() - start) / Math.max(1, appended));
       if (pending) requestIdleCallback(step);
     };
     requestIdleCallback(step);
@@ -174,14 +196,18 @@ export function createViewer(
   return {
     async show(doc: ViewDocument, at?: Position) {
       const gen = ++generation;
+      const ends = [...(doc.chunkEnds ?? []), doc.html.length];
       const template = document.createElement('template');
-      template.innerHTML = doc.html; // parsed but inert: nothing loads or lays out yet
-      trace('viewer HTML parsed');
+      template.innerHTML = doc.html.slice(0, ends[0]); // inert: nothing loads or lays out yet
+      trace('viewer first HTML chunk parsed');
       await mathFontReady(doc.html);
       trace('viewer math font ready');
       if (gen !== generation) return;
 
       pending = template.content;
+      pendingHtml = doc.html;
+      chunkEnds = ends;
+      nextChunk = 1;
       contentVersion++;
       textRevision++;
       article.replaceChildren();

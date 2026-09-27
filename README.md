@@ -52,32 +52,35 @@ rounds must be valid. Times start at process launch and include the window syste
 and webview; results are machine-specific. A native E2E test separately checks that
 the large document's tail renders and can be scrolled into view.
 
-Measured on Linux on 2026-09-27 using the release binary and 12 valid paired
-rounds per fixture (milliseconds; lower is better):
+Measured on Linux on 2026-09-27 using the release binary, Typora 1.14.9-1, and
+12 valid paired rounds per fixture (milliseconds; lower is better):
 
 | Document | App | Valid launches | Window median | Content median | Viewport stable median |
 |---|---|---:|---:|---:|---:|
-| Medium (8.8 KB) | Typora | 12 | 449 | 1,010 | 1,010 |
-| Medium (8.8 KB) | Scrivo | 12 | 218 | 363 | 363 |
-| Large (443 KB) | Typora | 12 | 819 | 4,107 | 4,107 |
-| Large (443 KB) | Scrivo | 12 | 495 | 858 | 858 |
+| Medium (8.8 KB) | Typora | 12 | 411 | 965 | 965 |
+| Medium (8.8 KB) | Scrivo | 12 | 211 | 340 | 340 |
+| Large (443 KB) | Typora | 12 | 433 | 2,016 | 2,016 |
+| Large (443 KB) | Scrivo | 12 | 211 | 356 | 356 |
 
-Scrivo reached the verified first viewport sooner in 11/12 medium pairs and all
-12 large pairs. The paired median advantage was 651 ms for medium and 3,239 ms
-for large. One medium Scrivo launch took 1.7 s to show a window. Host load changed
-sharply during the large run, so its absolute medians are especially sensitive to
-that run's conditions; the comparison is based on within-round pairs. The
-[medium](bench/results/verified-medium.txt) and
-[large](bench/results/verified-large.txt) round logs are included for inspection.
-Earlier runs with different fixture labels and less stringent readiness checks are
-retained as [medium](bench/results/pre-readiness-medium.txt) and
-[large](bench/results/pre-readiness-large.txt) historical logs; they are not directly
-comparable with these results.
+Scrivo reached the verified first viewport sooner in all 12 pairs for both
+fixtures. The paired median advantage was 626 ms for medium and 1,682 ms for large.
+The comparison is based on within-round pairs because absolute times vary with host
+load. The current [medium](bench/results/verified-medium-chunked.txt) and
+[large](bench/results/verified-large-chunked.txt) round logs are included for
+inspection. [Previous release comparisons](bench/results/verified-large.txt) and
+earlier runs with weaker readiness checks are retained as history; their absolute
+medians should not be mixed with this run.
+
+The renderer supplies safe top-level block boundaries so the reading view parses
+only its first HTML chunk before paint, then parses and inserts the rest in idle
+slices. In 12 paired old/new release runs on the large fixture, this cut first
+viewport time by 20 ms (paired median), with the new build faster in 10/12 pairs.
+The [raw build comparison](bench/results/paired-chunked-html-large.txt) is retained.
 
 The editor startup path has its own reviewed first-viewport reference. In 12
-headless launches of `scrivo --edit medium.md`, the median window time was 213 ms
-and the median visible editor time was 389 ms; all 12 runs passed the reference
-check. The [raw editor log](bench/results/verified-medium-edit.txt) is a standalone
+headless launches of `scrivo --edit medium.md`, the median window time was 212 ms
+and the median visible editor time was 388 ms; all 12 runs passed the reference
+check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a standalone
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 

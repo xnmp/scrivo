@@ -91,6 +91,8 @@ export interface ViewDocument {
   /** Disk stamp when rendered from a file. */
   readonly stamp: FileStamp | null;
   readonly html: string;
+  /** UTF-16 offsets after complete top-level blocks; absent for simple test renderers. */
+  readonly chunkEnds?: readonly number[];
   readonly headings: readonly Heading[];
 }
 

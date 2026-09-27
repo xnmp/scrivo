@@ -1,0 +1,71 @@
+Five alternating pairs; each pair is baseline binary, then chunked binary.
+run 1: window=200 content=361 complete=361 ms  pss=432 MiB  (108 frames @ 17 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=200 median=200 p90=200 max=200
+  content  ms  : min=361 median=361 p90=361 max=361
+  complete ms  : min=361 median=361 p90=361 max=361
+  pss      MiB : min=432 median=432 p90=432 max=432
+run 1: window=195 content=324 complete=324 ms  pss=431 MiB  (106 frames @ 17 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=195 median=195 p90=195 max=195
+  content  ms  : min=324 median=324 p90=324 max=324
+  complete ms  : min=324 median=324 p90=324 max=324
+  pss      MiB : min=431 median=431 p90=431 max=431
+run 1: window=194 content=338 complete=338 ms  pss=430 MiB  (112 frames @ 16 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=194 median=194 p90=194 max=194
+  content  ms  : min=338 median=338 p90=338 max=338
+  complete ms  : min=338 median=338 p90=338 max=338
+  pss      MiB : min=430 median=430 p90=430 max=430
+run 1: window=199 content=329 complete=329 ms  pss=430 MiB  (111 frames @ 17 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=199 median=199 p90=199 max=199
+  content  ms  : min=329 median=329 p90=329 max=329
+  complete ms  : min=329 median=329 p90=329 max=329
+  pss      MiB : min=430 median=430 p90=430 max=430
+run 1: window=199 content=360 complete=360 ms  pss=432 MiB  (113 frames @ 17 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=199 median=199 p90=199 max=199
+  content  ms  : min=360 median=360 p90=360 max=360
+  complete ms  : min=360 median=360 p90=360 max=360
+  pss      MiB : min=432 median=432 p90=432 max=432
+run 1: window=198 content=327 complete=327 ms  pss=437 MiB  (108 frames @ 17 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=198 median=198 p90=198 max=198
+  content  ms  : min=327 median=327 p90=327 max=327
+  complete ms  : min=327 median=327 p90=327 max=327
+  pss      MiB : min=437 median=437 p90=437 max=437
+run 1: window=202 content=366 complete=366 ms  pss=430 MiB  (99 frames @ 19 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=202 median=202 p90=202 max=202
+  content  ms  : min=366 median=366 p90=366 max=366
+  complete ms  : min=366 median=366 p90=366 max=366
+  pss      MiB : min=430 median=430 p90=430 max=430
+run 1: window=200 content=347 complete=347 ms  pss=432 MiB  (93 frames @ 20 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=200 median=200 p90=200 max=200
+  content  ms  : min=347 median=347 p90=347 max=347
+  complete ms  : min=347 median=347 p90=347 max=347
+  pss      MiB : min=432 median=432 p90=432 max=432
+run 1: window=215 content=376 complete=376 ms  pss=430 MiB  (99 frames @ 19 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=215 median=215 p90=215 max=215
+  content  ms  : min=376 median=376 p90=376 max=376
+  complete ms  : min=376 median=376 p90=376 max=376
+  pss      MiB : min=430 median=430 p90=430 max=430
+run 1: window=213 content=356 complete=356 ms  pss=428 MiB  (105 frames @ 18 ms)
+
+scrivo large.md runs=1 on cage (headless, 1280x720)
+  window   ms  : min=213 median=213 p90=213 max=213
+  content  ms  : min=356 median=356 p90=356 max=356
+  complete ms  : min=356 median=356 p90=356 max=356
+  pss      MiB : min=428 median=428 p90=428 max=428
