@@ -103,6 +103,8 @@ body:not([data-mode='edit']) #editor {
   overflow-x: auto;
 }
 .markdown-body pre code { background: none; padding: 0; font-size: 1em; border-radius: 0; }
+.markdown-body pre code.segmented-code { display: block; }
+.markdown-body pre code .code-segment { display: block; content-visibility: auto; }
 .markdown-body pre[data-lang]::before {
   content: attr(data-lang);
   float: right;

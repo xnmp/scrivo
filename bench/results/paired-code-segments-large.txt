@@ -1,0 +1,29 @@
+round 1 scrivo-before-code-segments: window=252 content=384 complete=384
+round 1 scrivo: window=244 content=391 complete=391
+round 2 scrivo: window=224 content=369 complete=369
+round 2 scrivo-before-code-segments: window=249 content=363 complete=363
+round 3 scrivo-before-code-segments: window=215 content=365 complete=365
+round 3 scrivo: window=264 content=393 complete=393
+round 4 scrivo: window=234 content=398 complete=398
+round 4 scrivo-before-code-segments: window=237 content=397 complete=397
+round 5 scrivo-before-code-segments: window=223 content=387 complete=387
+round 5 scrivo: window=235 content=382 complete=382
+round 6 scrivo: window=230 content=361 complete=361
+round 6 scrivo-before-code-segments: window=235 content=384 complete=384
+round 7 scrivo-before-code-segments: window=231 content=379 complete=379
+round 7 scrivo: window=232 content=381 complete=381
+round 8 scrivo: window=231 content=361 complete=361
+round 8 scrivo-before-code-segments: window=218 content=366 complete=366
+round 9 scrivo-before-code-segments: window=214 content=374 complete=374
+round 9 scrivo: window=230 content=375 complete=375
+round 10 scrivo: window=210 content=356 complete=356
+round 10 scrivo-before-code-segments: window=255 content=403 complete=403
+round 11 scrivo-before-code-segments: window=233 content=368 complete=368
+round 11 scrivo: window=241 content=387 complete=387
+round 12 scrivo: window=225 content=387 complete=387
+round 12 scrivo-before-code-segments: window=217 content=362 complete=362
+
+large.md, 12 rounds
+  scrivo-before-code-segments n=12  window med=232  content med=377  complete med=377
+  scrivo           n=12  window med=232  content med=382  complete med=382
+  scrivo vs scrivo-before-code-segments: content +2 ms (paired median), faster in 4/12 rounds

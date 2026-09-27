@@ -7,7 +7,8 @@
 // Long documents are shown progressively: the first trusted HTML chunk is parsed
 // into an inert template, laid out and painted, then later chunks are parsed and
 // appended in idle time slices. Laying out a 20,000-line document in one go takes
-// about half a second in WebKit; `content-visibility: auto` measured slower still.
+// about half a second in WebKit. Whole-block content visibility was slower;
+// exceptionally tall plain-ASCII code blocks use smaller contained segments.
 import type { ViewDocument } from '../app/ports';
 import type { Position, ViewerPort } from '../app/workspace';
 
@@ -30,6 +31,73 @@ export interface Viewer extends ViewerPort {
 const SLICE_MS = 8;
 /** Blocks appended per step when filling the first screen. */
 const FIRST_SCREEN_STEP = 24;
+const LARGE_CODE_LENGTH = 1_000_000;
+const CODE_SEGMENT_LINES = 250;
+
+/** Monospace columns, or null when glyph width cannot be inferred from `ch`. */
+function maxAsciiColumns(text: string, tabSize: number): number | null {
+  let column = 0;
+  let widest = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    if (char === 10) {
+      widest = Math.max(widest, column);
+      column = 0;
+    } else if (char === 9) {
+      column += tabSize - column % tabSize;
+    } else if (char >= 32 && char <= 126) {
+      column++;
+    } else {
+      return null;
+    }
+  }
+  return Math.max(widest, column);
+}
+
+/** Bound layout work for a very tall code block while keeping its full text in the DOM. */
+function segmentLargeCodeBlock(block: Node): void {
+  if (!(block instanceof HTMLPreElement) || typeof CSS === 'undefined'
+    || typeof CSS.supports !== 'function'
+    || !CSS.supports('content-visibility', 'auto')
+    || !CSS.supports('contain-intrinsic-height', 'auto 100px')) return;
+  const code = block.firstElementChild;
+  if (!(code instanceof HTMLElement) || code.tagName !== 'CODE'
+    || [...code.childNodes].some((node) => !(node instanceof Text))) return;
+  // WebKit splits very long parsed text into several Text nodes; join them before
+  // segmenting while preserving the exact bytes exposed through textContent.
+  const text = code.textContent ?? '';
+  if (text.length < LARGE_CODE_LENGTH) return;
+  const style = getComputedStyle(code);
+  const lineHeight = Number.parseFloat(style.lineHeight);
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+  const tabSize = Number(style.tabSize);
+  if (!Number.isInteger(tabSize) || tabSize <= 0) return;
+  const columns = maxAsciiColumns(text, tabSize);
+  if (columns === null) return;
+  const segments = document.createDocumentFragment();
+  let start = 0;
+  while (start < text.length) {
+    let end = start;
+    let lines = 0;
+    while (lines < CODE_SEGMENT_LINES && end < text.length) {
+      const newline = text.indexOf('\n', end);
+      if (newline < 0) { end = text.length; break; }
+      end = newline + 1;
+      lines++;
+    }
+    if (end === text.length && start === 0) return; // one huge line is not helped
+    if (text[end - 1] !== '\n') lines++;
+    const segment = document.createElement('span');
+    segment.className = 'code-segment';
+    segment.style.containIntrinsicHeight = `auto ${Math.max(1, lines) * lineHeight}px`;
+    segment.textContent = text.slice(start, end);
+    segments.append(segment);
+    start = end;
+  }
+  code.classList.add('segmented-code');
+  code.style.minWidth = `${columns}ch`;
+  code.replaceChildren(segments);
+}
 
 /**
  * Math glyphs need an OpenType MATH font. Loaded before math is laid out, the layout
@@ -98,7 +166,9 @@ export function createViewer(
         parsedChunks++;
       }
       if (!pending.firstChild) break;
-      article.appendChild(pending.firstChild);
+      const block = pending.firstChild;
+      article.appendChild(block);
+      segmentLargeCodeBlock(block);
       appended++;
     }
     if (pending && !pending.firstChild && nextChunk === chunkEnds.length) {

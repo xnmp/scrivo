@@ -116,3 +116,19 @@ test.describe('find in the reading view', () => {
     await expect(count(page)).toHaveText('1 of 3');
   });
 });
+
+test('Find reveals a match beyond an ordinary code block’s horizontal scrollbar', async ({ page }) => {
+  await openApp(page, { text: `\`\`\`\n${'W'.repeat(1000)}far-right-marker\n\`\`\`\n`, mode: 'view' });
+  await page.keyboard.press('Control+f');
+  await page.getByRole('textbox', { name: 'Find in document' }).fill('far-right-marker');
+  await expect(page.locator('.find-count')).toHaveText('1 of 1');
+  const revealed = await page.evaluate(() => {
+    const pre = document.querySelector<HTMLPreElement>('#document pre')!;
+    const [range] = [...((CSS as any).highlights.get('scrivo-find-current') ?? [])] as Range[];
+    const box = range!.getBoundingClientRect();
+    const clip = pre.getBoundingClientRect();
+    return pre.scrollLeft > pre.clientWidth * 4
+      && box.left >= clip.left - 1 && box.right <= clip.right + 1;
+  });
+  expect(revealed).toBe(true);
+});

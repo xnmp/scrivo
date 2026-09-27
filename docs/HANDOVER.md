@@ -3,10 +3,11 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current work fixes false save
-conflicts caused by lossy JavaScript serialization of filesystem timestamps,
-hardens conditional writes, and proves Find can open while a large document is
-still highlighting. Earlier checkpoints added renderer-supplied HTML chunk
+verified, and exceptionally fast at startup. The current work bounds layout for
+very tall code blocks in the reader and makes Find reveal matches inside those
+blocks, including text beyond a horizontal scrollbar. The previous checkpoint
+fixed false save conflicts caused by lossy timestamp serialization and hardened
+conditional writes. Earlier checkpoints added renderer-supplied HTML chunk
 boundaries, viewer phase traces, batched postpaint code highlighting, reviewed
 startup benchmarks, and a manifest-based bundle gate. The broader goal is
 ongoing; there is no release or deployment.
@@ -19,7 +20,70 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: exact file revisions and active Find
+## Current checkpoint: tall code blocks and Find
+
+- A 5 MB fenced code block with 50,000 lines previously produced about a 333–350 ms
+  maximum Chromium frame gap. Profiling attributed roughly 221–242 ms to layout;
+  the earlier whole-block `content-visibility: auto` trial merely moved a 350 ms
+  stall to scrolling. `src/viewer/viewer.ts` now splits plain ASCII code blocks of
+  at least 1 MB into 250-line DOM spans. Each has `content-visibility: auto` and an
+  estimated intrinsic height based on the computed line height. All source text
+  remains in DOM order and `code.textContent` remains exact. The code block is
+  segmented after insertion but before a forced layout read. WebKit's HTML parser
+  splits a large code string into multiple Text nodes; the implementation joins
+  these before segmenting.
+- Paint containment initially clipped long lines. The viewer now calculates the
+  widest ASCII line in monospace columns, accounting for tab stops, and gives the
+  code element that minimum width. An independent review reproduced the bug with
+  a 1,000-character line; browser and native tests now scroll to its final
+  characters on a tabbed line. Non-ASCII giant code stays on the original layout
+  path to preserve exact horizontal sizing; this is a remaining performance limit,
+  not text loss.
+- WebKit returns a zero `Range` rectangle when a Find match lies in an offscreen
+  segment. `src/viewer/find.ts` temporarily lays out only the matching segment(s)
+  for geometry queries. Find also scrolls a code block horizontally when the match
+  lies beyond its right edge. Native and Chromium tests locate a middle marker and
+  a marker at the far right of the 1,000-character line, checking the actual match
+  rectangle is visible. Tests also compare the entire 5 MB code text with the
+  source, navigate to the tail, and check background and scroll frame gaps.
+- The targeted three-test Chromium spec measured a **33–100 ms** maximum frame gap
+  for the 5 MB case across runs on this host, below its 200 ms bound. A native
+  five-stop scroll diagnostic measured **17 ms** and is now checked against the
+  same 200 ms bound. These are host-specific behavioral gates, not a controlled
+  startup speed comparison.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| TypeScript and Vitest | Pass; 295/295 unit tests |
+| Targeted Chromium giant-code and Find specs | 11/11 tests passed after horizontal Find change |
+| Targeted native WebKitGTK giant-code spec | Pass after horizontal Find change |
+| Full Chromium suite | 56/56 passed, including an ordinary wide-code Find test |
+| Full native WebKitGTK suite | 12/12 specs, 15 tests passed with final tabbed fixture and Find behavior |
+| Debug and release builds | Pass; bundle gate 36/40 KiB static, 50/56 KiB known prepaint JS/CSS, 1,060 KiB conditional font, 2,517 KiB deferred graph |
+| Paired release startup comparison | 12/12 valid old/new pairs for each fixture; median candidate change +4 ms medium, +2 ms large |
+
+The final startup runs are retained in
+`bench/results/paired-code-segments-medium.txt` and
+`bench/results/paired-code-segments-large.txt`. The baseline release binary was
+copied from `30b91d9` (SHA-256
+`3ce67f46c57f4584f6a17e487b20220bb33646d1c3af231095896bdcf0618780`);
+the candidate binary SHA-256 was
+`2e1965dcf79a70b07eb2ba461cb5b89f4c4c9d6c0d89dce09fa6254e384b78a7`.
+Medium first-viewport medians were 363 ms baseline and 366 ms candidate; large
+were 377 ms and 382 ms. Candidate was faster in 6/12 medium and 4/12 large
+rounds. These results do not establish a startup speed gain. The small positive
+differences should be weighed against the bounded 5 MB code-block layout and
+native scroll improvements; do not compare absolute medians to other sessions.
+
+The next agent should profile non-ASCII giant blocks and consider a width-preserving
+segmentation strategy for them. The data-safety priorities in the previous section
+remain: validate conflict behavior on Windows and consider a stronger Windows
+revision identity than size and modified time. The final filesystem check → rename
+race is still present across processes.
+
+## Previous checkpoint: exact file revisions and active Find (`30b91d9`)
 
 - Native runs intermittently displayed a save conflict when an untouched file was
   edited and saved. The key event reached the editor, but the disk bytes stayed
@@ -74,14 +138,6 @@ fixture references, but is a single-app check under this host's current load, no
 a controlled paired comparison with Typora. Raw current-run logs are in
 `/tmp/scrivo-smoke-medium-final.log` and `/tmp/scrivo-smoke-large-final.log` (not
 committed); retain the paired measurements below as the comparison baseline.
-
-The next agent should prioritize the 5 MB visible-block layout gap described in
-“Remaining limits” if continuing performance work. Profile the visible scroll
-interaction and total layout cost before changing insertion policy. For data
-safety, validate save conflict behavior on Windows and consider a stronger Windows
-revision identity than size and modified time. Keep the final check → rename race
-in mind when changing the write path; the current tests cover changes during temp
-file creation, not an adversarial writer in that final syscall gap.
 
 ## Earlier product checkpoint (`8eeead5`)
 
@@ -377,25 +433,23 @@ measure how long that takes. A prior single startup trace is in
   800-block outcome, while their runtimes are not stable performance gates. If
   changing the idle policy further, measure interaction latency and full
   highlighting time with a controlled trace.
-- Chunk boundaries require complete top-level blocks; a single very large code,
-  table, or paragraph block can still take longer than an 8 ms idle budget to parse
-  or lay out. An additional Chromium test with one 1 MB code block observed a
-  50 ms maximum frame gap in isolation and 100 ms in the full parallel suite,
-  with exact text and tail navigation.
-  A diagnostic with one 5 MB code block observed a 333 ms gap on the same host,
-  though text and navigation remained correct. The 200 ms test bound covers its
-  specified fixtures, not all input sizes or slower hosts. Preserve the source
-  and rendering safety model if addressing oversized blocks.
-  A follow-up isolated profile attributed about 22–25 ms to template parsing and
-  221 ms to forced layout for this 5 MB case (317 ms maximum frame gap). Applying
-  `content-visibility: auto` only to code blocks reduced the offscreen insertion
-  gap to 17 ms, but scrolling into the block then produced a 350 ms gap. A trial
+- Chunk boundaries require complete top-level blocks. A very large table or
+  paragraph can still exceed the 8 ms idle budget. Giant code blocks containing
+  non-ASCII text also use the original layout path while exact horizontal sizing
+  is unresolved. The 200 ms performance gates cover their specified fixtures on
+  this host, not arbitrary block size or slower hardware.
+- Before the current segmentation checkpoint, an additional Chromium test with
+  one 1 MB code block observed a 50 ms maximum frame gap in isolation and 100 ms
+  in the full parallel suite, with exact text and tail navigation. A 5 MB code
+  diagnostic observed a 333 ms gap; isolated profiling attributed 22–25 ms to
+  parsing and about 221 ms to forced layout. Applying `content-visibility: auto`
+  only to the whole code block moved a 350 ms stall to visible scrolling. A trial
   that appended code text in 512,000-character idle slices reached 150 ms maximum
-  in isolation, but 383 ms under the full parallel Chromium suite; cumulative
-  layout grew from about 221 ms to 458–981 ms. Both trials were reverted. A future
-  fix should test the visible scroll interaction and total layout cost as well as
-  background insertion. The browser's standard offscreen-rendering mechanism is
-  described in [MDN's `content-visibility` reference](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/content-visibility).
+  in isolation but 383 ms under the full parallel suite; cumulative layout grew
+  from about 221 ms to 458–981 ms. Both trials were reverted. The current 250-line
+  containment strategy addresses this ASCII case and tests visible scrolling.
+  [MDN's `content-visibility` reference](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/content-visibility)
+  describes the browser behavior used here.
 
 ## Commands
 

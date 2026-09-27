@@ -134,6 +134,17 @@ export function readingLargeFixture(): Fixture {
   return { dir, docPath };
 }
 
+export function readingGiantCodeFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'giant.md');
+  const line = `${'0123456789'.repeat(10)}\n`;
+  const code = line.repeat(25_000) + 'unique-middle-code-marker\n'
+    + `\t${'W'.repeat(1000)}far-right-marker\n` + line.repeat(25_000);
+  writeFileSync(docPath, Array.from({ length: 40 }, (_, i) => `Paragraph ${i}\n\n`).join('')
+    + `\n\`\`\`\n${code}\`\`\`\n\n# Tail\n`);
+  return { dir, docPath };
+}
+
 export const fixtureBySpec: Record<string, () => Fixture> = {
   'heading.spec.ts': headingFixture,
   'save-bytes.spec.ts': saveBytesFixture,
@@ -146,4 +157,5 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'reading-toggle.spec.ts': readingToggleFixture,
   'reading-watch.spec.ts': readingWatchFixture,
   'reading-large.spec.ts': readingLargeFixture,
+  'reading-giant-code.spec.ts': readingGiantCodeFixture,
 };

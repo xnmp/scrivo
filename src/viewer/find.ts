@@ -74,6 +74,21 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
     return range;
   };
 
+  const boxOf = (range: Range): DOMRect => {
+    // WebKit reports a zero rect for text inside an offscreen content-visibility
+    // segment. Lay out only the segment(s) containing this match for the query.
+    const start = range.startContainer.parentElement?.closest<HTMLElement>('.code-segment');
+    const end = range.endContainer.parentElement?.closest<HTMLElement>('.code-segment');
+    const segments = start === end ? (start ? [start] : []) : [start, end].filter((el): el is HTMLElement => !!el);
+    const previous = segments.map((segment) => segment.style.contentVisibility);
+    for (const segment of segments) segment.style.contentVisibility = 'visible';
+    try {
+      return range.getBoundingClientRect();
+    } finally {
+      segments.forEach((segment, i) => { segment.style.contentVisibility = previous[i]!; });
+    }
+  };
+
   /** Index of the first match whose box reaches below the top of the view. */
   const firstVisible = (): number => {
     const top = scroller.getBoundingClientRect().top;
@@ -81,17 +96,23 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
     let hi = ranges.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if (ranges[mid]!.getBoundingClientRect().bottom <= top) lo = mid + 1;
+      if (boxOf(ranges[mid]!).bottom <= top) lo = mid + 1;
       else hi = mid;
     }
     return lo < ranges.length ? lo : 0;
   };
 
   const reveal = (range: Range) => {
-    const box = range.getBoundingClientRect();
+    const box = boxOf(range);
     const view = scroller.getBoundingClientRect();
     if (box.top < view.top || box.bottom > view.bottom) {
       scroller.scrollTop += box.top - view.top - scroller.clientHeight / 3;
+    }
+    const pre = range.startContainer.parentElement?.closest('pre');
+    if (pre && pre.scrollWidth > pre.clientWidth) {
+      const clip = pre.getBoundingClientRect();
+      if (box.left < clip.left) pre.scrollLeft += box.left - clip.left - 8;
+      else if (box.right > clip.right) pre.scrollLeft += box.right - clip.right + 8;
     }
   };
 
