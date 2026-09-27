@@ -139,9 +139,11 @@ export function readingGiantCodeFixture(): Fixture {
   const docPath = path.join(dir, 'giant.md');
   const line = `${'0123456789'.repeat(10)}\n`;
   const code = line.repeat(25_000) + 'unique-middle-code-marker\n'
-    + `\t${'W'.repeat(1000)}far-right-marker\n` + line.repeat(25_000);
+    + `\t${'W'.repeat(1000)}far-right-marker\n`
+    + `\t${'漢'.repeat(350)}\t${'漢'.repeat(350)}unicode-right-marker\n` + line.repeat(25_000);
+  const boundaryCode = `${'漢'.repeat(19)}\tZ\n` + '0123456789abcdefghij\n'.repeat(50_000);
   writeFileSync(docPath, Array.from({ length: 40 }, (_, i) => `Paragraph ${i}\n\n`).join('')
-    + `\n\`\`\`\n${code}\`\`\`\n\n# Tail\n`);
+    + `\n\`\`\`\n${code}\`\`\`\n\n\`\`\`\n${boundaryCode}\`\`\`\n\n# Tail\n`);
   return { dir, docPath };
 }
 

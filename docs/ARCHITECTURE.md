@@ -44,13 +44,15 @@ Find refreshes at most every 250 ms while open and once at completion so repeate
 full-document indexing does not dominate highlighting. The Rust renderer also
 provides UTF-16 offsets at complete top-level block boundaries, so the viewer
 parses only the first HTML chunk before paint and later chunks during idle time.
-Plain ASCII code blocks of at least 1 MB are split into 250-line contained spans
-before layout, keeping all text in the DOM while bounding visible-scroll work.
-The viewer sets the code width from its widest monospace line so containment does
-not hide horizontal overflow. Find temporarily exposes matching spans for WebKit
-range geometry and scrolls a `<pre>` horizontally to reveal a wide-line match.
-Non-ASCII giant blocks retain the original layout path until their horizontal
-width can be preserved reliably.
+Code blocks of at least 1 MB are split into 250-line contained spans before layout,
+keeping all text in the DOM while bounding visible-scroll work. The viewer sets
+the code width from the widest ASCII line and a bounded set of distinct Unicode
+lines measured with Canvas. Its tab calculation applies the CSS Text 0.5ch
+minimum advance rule. Lines over 10,000 Unicode code units, over 512 distinct
+Unicode lines, or over 200,000 distinct Unicode code units keep native layout
+instead of risking clipped horizontal content. Find temporarily exposes matching
+spans for WebKit range geometry and scrolls a `<pre>` horizontally to reveal a
+wide-line match.
 
 Why CodeMirror live preview rather than a ProseMirror WYSIWYG: ProseMirror-based
 editors (Milkdown, Tiptap) parse markdown into a rich document and serialize it back,

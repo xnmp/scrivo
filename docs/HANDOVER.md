@@ -3,11 +3,11 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current work bounds layout for
-very tall code blocks in the reader and makes Find reveal matches inside those
-blocks, including text beyond a horizontal scrollbar. The previous checkpoint
-fixed false save conflicts caused by lossy timestamp serialization and hardened
-conditional writes. Earlier checkpoints added renderer-supplied HTML chunk
+verified, and exceptionally fast at startup. The current work extends bounded
+layout of very tall code blocks to common Unicode and tabbed lines while keeping
+horizontal text reachable. Earlier checkpoints fixed Find geometry in contained
+code, false save conflicts from lossy timestamps, and conditional writes. They
+also added renderer-supplied HTML chunk
 boundaries, viewer phase traces, batched postpaint code highlighting, reviewed
 startup benchmarks, and a manifest-based bundle gate. The broader goal is
 ongoing; there is no release or deployment.
@@ -20,7 +20,67 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Current checkpoint: tall code blocks and Find
+## Current checkpoint: Unicode width for giant code blocks
+
+- `src/viewer/viewer.ts` now segments a giant block with Unicode lines when it can
+  preserve horizontal width. Its scanner finds the widest ASCII line in `ch`
+  columns and collects distinct Unicode lines. Canvas measures the latter with the
+  computed code font. Tab stops follow the CSS Text rule that skips a stop when
+  the advance would be less than `0.5ch`, plus a 1px rounding allowance
+  ([CSS Text Level 3](https://www.w3.org/TR/css-text-3/)). The
+  resulting minimum code width has a further 4px allowance for Canvas/DOM shaping
+  differences. The full source text remains in DOM order and `code.textContent`
+  stays exact. No change was made to the 250-line segmentation or Find geometry.
+- Measurement is bounded to 512 distinct Unicode lines, 200,000 distinct Unicode
+  UTF-16 code units total, and 10,000 per line. Controls/line separators, invalid
+  style assumptions, or a measurement limit cause the entire giant block to keep
+  the browser's native unsegmented layout. The per-line limit protects correctness:
+  an adversarial 200,000-character CJK line had about 806px of Canvas/DOM width
+  divergence in Chromium and clipped after segmentation. At the 10,000-character
+  limit, an independent review swept 7,516 plain and tabbed Unicode patterns;
+  its largest underestimate was 0.141px, within the 4px allowance. This is an
+  empirical guard for the tested engines, not a proof for every font/platform.
+- The reviewer also reproduced a tab-stop boundary bug in the first implementation:
+  19 CJK characters then a tab advanced one full tab stop farther in Chromium
+  than a naive next-multiple calculation. The CSS Text threshold fix and a narrow
+  scrollbar regression test pass in Chromium and native WebKitGTK. The 5 MB fixture
+  has a wide line with tabs before and within CJK text; tests assert exact text,
+  segmentation, far-right Find visibility, tail access, and frame gaps. A separate
+  1 MB fixture verifies that an over-limit Unicode line uses native width and its
+  final marker remains horizontally reachable.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| TypeScript and Vitest | Pass; 295/295 unit tests |
+| Full Chromium suite | 59/59 passed after the 10,000-character cap; isolated six-test giant-code spec passed |
+| Native WebKitGTK | 12/12 specs passed after final cap, including adversarial tab-stop reachability |
+| Debug and release builds | Pass; bundle gate 37/40 KiB static, 51/56 KiB known prepaint JS/CSS, 1,060 KiB conditional font, 2,517 KiB deferred graph |
+| Independent review | No further concrete clipping issue within the cap; 7,516 Chromium line patterns checked |
+| Paired release startup comparison | 12/12 valid pairs per fixture; median change −3 ms medium, +4 ms large |
+
+The raw rotated A/B rounds are in
+`bench/results/paired-unicode-segments-medium.txt` and
+`bench/results/paired-unicode-segments-large.txt`. The previous checkpoint binary
+(`6f1c539`) had SHA-256
+`2e1965dcf79a70b07eb2ba461cb5b89f4c4c9d6c0d89dce09fa6254e384b78a7`;
+the final candidate had SHA-256
+`885783490a3a22ae453e98f6e8058d22c1d5b1711226a59f2dfe16354406676d`.
+Medium first-viewport content medians were 375 ms baseline and 374 ms candidate;
+large medians were 380 ms and 385 ms. Candidate was faster in 6/12 medium and
+4/12 large rounds. The paired differences are small and do not establish a
+startup speed gain. The medium and large fixtures do not contain a 5 MB Unicode
+code block; the giant-block E2E checks cover its interaction and frame behavior.
+Absolute medians should not be compared across benchmark sessions.
+
+The next agent should retain the fallback limits unless a browser-measured width
+strategy can guarantee reachability with acceptable cost. Startup is the broader
+priority: keep using the reviewed first-viewport benchmark and inspect any
+regression under controlled paired runs. Windows conflict behavior and the final
+cross-process check → rename race remain data-safety follow-ups described below.
+
+## Previous checkpoint: tall code blocks and Find (`6f1c539`)
 
 - A 5 MB fenced code block with 50,000 lines previously produced about a 333–350 ms
   maximum Chromium frame gap. Profiling attributed roughly 221–242 ms to layout;
@@ -36,9 +96,8 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
   widest ASCII line in monospace columns, accounting for tab stops, and gives the
   code element that minimum width. An independent review reproduced the bug with
   a 1,000-character line; browser and native tests now scroll to its final
-  characters on a tabbed line. Non-ASCII giant code stays on the original layout
-  path to preserve exact horizontal sizing; this is a remaining performance limit,
-  not text loss.
+  characters on a tabbed line. At this checkpoint, non-ASCII giant code stayed on
+  the original layout path; the current checkpoint extends bounded Unicode support.
 - WebKit returns a zero `Range` rectangle when a Find match lies in an offscreen
   segment. `src/viewer/find.ts` temporarily lays out only the matching segment(s)
   for geometry queries. Find also scrolls a code block horizontally when the match
@@ -77,11 +136,9 @@ rounds. These results do not establish a startup speed gain. The small positive
 differences should be weighed against the bounded 5 MB code-block layout and
 native scroll improvements; do not compare absolute medians to other sessions.
 
-The next agent should profile non-ASCII giant blocks and consider a width-preserving
-segmentation strategy for them. The data-safety priorities in the previous section
-remain: validate conflict behavior on Windows and consider a stronger Windows
-revision identity than size and modified time. The final filesystem check → rename
-race is still present across processes.
+The data-safety priorities from this checkpoint remain: validate conflict behavior
+on Windows and consider a stronger Windows revision identity than size and modified
+time. The final filesystem check → rename race is still present across processes.
 
 ## Previous checkpoint: exact file revisions and active Find (`30b91d9`)
 
@@ -378,15 +435,15 @@ networking permitted. No native feature behavior or Rust source changed.
   content time was 335 ms, but the run intentionally exited nonzero and is not a
   reviewed benchmark result.
 
-## Final paired measurements
+## Earlier paired measurements versus Typora
 
-Raw logs for the **current** release build and 0.3% content criterion are
+Raw logs for that earlier release build and 0.3% content criterion are
 `bench/results/verified-medium-chunked.txt` and
 `bench/results/verified-large-chunked.txt`. Previous release logs are retained
 as `bench/results/verified-medium.txt` and `verified-large.txt`; earlier logs with
 weaker readiness checks are `bench/results/pre-readiness-*.txt`. Do not mix
 absolute medians across these sessions.
-Each current run attempted 12 rotated-order pairs in the same private compositor;
+Each run attempted 12 rotated-order pairs in the same private compositor;
 all 12 pairs were valid for both fixtures. Times are milliseconds after process
 launch and are specific to this Linux host, Typora 1.14.9-1, and their load:
 
@@ -434,10 +491,10 @@ measure how long that takes. A prior single startup trace is in
   changing the idle policy further, measure interaction latency and full
   highlighting time with a controlled trace.
 - Chunk boundaries require complete top-level blocks. A very large table or
-  paragraph can still exceed the 8 ms idle budget. Giant code blocks containing
-  non-ASCII text also use the original layout path while exact horizontal sizing
-  is unresolved. The 200 ms performance gates cover their specified fixtures on
-  this host, not arbitrary block size or slower hardware.
+  paragraph can still exceed the 8 ms idle budget. Giant code blocks beyond the
+  bounded Unicode measurement limits keep the original layout path. The 200 ms
+  performance gates cover their specified fixtures on this host, not arbitrary
+  block size or slower hardware.
 - Before the current segmentation checkpoint, an additional Chromium test with
   one 1 MB code block observed a 50 ms maximum frame gap in isolation and 100 ms
   in the full parallel suite, with exact text and tail navigation. A 5 MB code

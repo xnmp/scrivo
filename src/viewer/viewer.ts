@@ -8,7 +8,7 @@
 // into an inert template, laid out and painted, then later chunks are parsed and
 // appended in idle time slices. Laying out a 20,000-line document in one go takes
 // about half a second in WebKit. Whole-block content visibility was slower;
-// exceptionally tall plain-ASCII code blocks use smaller contained segments.
+// exceptionally tall code blocks use smaller contained segments.
 import type { ViewDocument } from '../app/ports';
 import type { Position, ViewerPort } from '../app/workspace';
 
@@ -33,25 +33,59 @@ const SLICE_MS = 8;
 const FIRST_SCREEN_STEP = 24;
 const LARGE_CODE_LENGTH = 1_000_000;
 const CODE_SEGMENT_LINES = 250;
+const MAX_UNICODE_LINES_TO_MEASURE = 512;
+const MAX_UNICODE_TEXT_TO_MEASURE = 200_000;
+const MAX_UNICODE_LINE_LENGTH = 10_000;
 
-/** Monospace columns, or null when glyph width cannot be inferred from `ch`. */
-function maxAsciiColumns(text: string, tabSize: number): number | null {
+interface CodeWidth {
+  readonly asciiColumns: number;
+  readonly unicodeLines: ReadonlySet<string>;
+}
+
+/** Fast width input for ASCII lines; retain a bounded set of Unicode lines for canvas measurement. */
+function codeWidth(text: string, tabSize: number): CodeWidth | null {
   let column = 0;
   let widest = 0;
+  let lineStart = 0;
+  let hasUnicode = false;
+  let uniqueUnicodeLength = 0;
+  const unicodeLines = new Set<string>();
+  const finishLine = (end: number): boolean => {
+    if (hasUnicode) {
+      // Very wide Unicode runs lose subpixel precision in browser shaping;
+      // retain their native DOM width instead of estimating a contained span.
+      if (end - lineStart > MAX_UNICODE_LINE_LENGTH) return false;
+      const line = text.slice(lineStart, end);
+      if (!unicodeLines.has(line)) {
+        unicodeLines.add(line);
+        uniqueUnicodeLength += line.length;
+        if (unicodeLines.size > MAX_UNICODE_LINES_TO_MEASURE
+          || uniqueUnicodeLength > MAX_UNICODE_TEXT_TO_MEASURE) return false;
+      }
+    } else {
+      widest = Math.max(widest, column);
+    }
+    column = 0;
+    lineStart = end + 1;
+    hasUnicode = false;
+    return true;
+  };
   for (let i = 0; i < text.length; i++) {
     const char = text.charCodeAt(i);
     if (char === 10) {
-      widest = Math.max(widest, column);
-      column = 0;
+      if (!finishLine(i)) return null;
     } else if (char === 9) {
       column += tabSize - column % tabSize;
     } else if (char >= 32 && char <= 126) {
       column++;
+    } else if (char >= 128 && char !== 0x2028 && char !== 0x2029 && char !== 0x0085) {
+      hasUnicode = true;
     } else {
       return null;
     }
   }
-  return Math.max(widest, column);
+  if (!finishLine(text.length)) return null;
+  return { asciiColumns: widest, unicodeLines };
 }
 
 /** Bound layout work for a very tall code block while keeping its full text in the DOM. */
@@ -69,11 +103,37 @@ function segmentLargeCodeBlock(block: Node): void {
   if (text.length < LARGE_CODE_LENGTH) return;
   const style = getComputedStyle(code);
   const lineHeight = Number.parseFloat(style.lineHeight);
-  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0 || style.whiteSpace !== 'pre'
+    || (style.letterSpacing !== 'normal' && style.letterSpacing !== '0px')) return;
   const tabSize = Number(style.tabSize);
-  if (!Number.isInteger(tabSize) || tabSize <= 0) return;
-  const columns = maxAsciiColumns(text, tabSize);
-  if (columns === null) return;
+  if (!Number.isInteger(tabSize) || tabSize <= 0 || tabSize > 256) return;
+  const width = codeWidth(text, tabSize);
+  if (width === null) return;
+  let minWidth = `${width.asciiColumns}ch`;
+  if (width.unicodeLines.size > 0) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    if (!context.font.includes(style.fontSize)) return;
+    const tabWidth = context.measureText(' '.repeat(tabSize)).width;
+    const halfCh = context.measureText('0').width / 2;
+    if (!Number.isFinite(tabWidth) || tabWidth <= 0 || !Number.isFinite(halfCh)) return;
+    let widestUnicode = 0;
+    for (const line of width.unicodeLines) {
+      const parts = line.split('\t');
+      let advance = 0;
+      for (let i = 0; i < parts.length; i++) {
+        advance += context.measureText(parts[i]!).width;
+        // CSS Text skips a stop if the tab would advance less than 0.5ch.
+        // One extra pixel absorbs Canvas/DOM subpixel rounding at that boundary.
+        if (i < parts.length - 1) advance = Math.ceil((advance + halfCh + 1) / tabWidth) * tabWidth;
+      }
+      widestUnicode = Math.max(widestUnicode, advance);
+    }
+    // Allow for subpixel differences between Canvas and DOM text shaping.
+    minWidth = `max(${minWidth}, ${Math.ceil(widestUnicode + 4)}px)`;
+  }
   const segments = document.createDocumentFragment();
   let start = 0;
   while (start < text.length) {
@@ -95,7 +155,7 @@ function segmentLargeCodeBlock(block: Node): void {
     start = end;
   }
   code.classList.add('segmented-code');
-  code.style.minWidth = `${columns}ch`;
+  code.style.minWidth = minWidth;
   code.replaceChildren(segments);
 }
 

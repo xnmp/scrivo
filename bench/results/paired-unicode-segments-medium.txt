@@ -1,0 +1,29 @@
+round 1 scrivo-before-unicode-segments: window=253 content=366 complete=366
+round 1 scrivo: window=227 content=375 complete=375
+round 2 scrivo: window=239 content=370 complete=370
+round 2 scrivo-before-unicode-segments: window=213 content=359 complete=359
+round 3 scrivo-before-unicode-segments: window=266 content=397 complete=397
+round 3 scrivo: window=282 content=433 complete=433
+round 4 scrivo: window=241 content=386 complete=386
+round 4 scrivo-before-unicode-segments: window=250 content=406 complete=406
+round 5 scrivo-before-unicode-segments: window=216 content=360 complete=360
+round 5 scrivo: window=222 content=353 complete=353
+round 6 scrivo: window=211 content=341 complete=341
+round 6 scrivo-before-unicode-segments: window=241 content=373 complete=373
+round 7 scrivo-before-unicode-segments: window=255 content=371 complete=371
+round 7 scrivo: window=243 content=372 complete=372
+round 8 scrivo: window=209 content=338 complete=338
+round 8 scrivo-before-unicode-segments: window=224 content=378 complete=378
+round 9 scrivo-before-unicode-segments: window=226 content=371 complete=371
+round 9 scrivo: window=244 content=396 complete=396
+round 10 scrivo: window=236 content=365 complete=365
+round 10 scrivo-before-unicode-segments: window=249 content=377 complete=377
+round 11 scrivo-before-unicode-segments: window=272 content=402 complete=402
+round 11 scrivo: window=265 content=411 complete=411
+round 12 scrivo: window=248 content=379 complete=379
+round 12 scrivo-before-unicode-segments: window=262 content=398 complete=398
+
+medium.md, 12 rounds
+  scrivo-before-unicode-segments n=12  window med=250  content med=375  complete med=375
+  scrivo           n=12  window med=240  content med=374  complete med=374
+  scrivo vs scrivo-before-unicode-segments: content -3 ms (paired median), faster in 6/12 rounds

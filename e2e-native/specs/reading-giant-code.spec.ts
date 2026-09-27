@@ -20,7 +20,8 @@ describe('giant code block in the native reading view', () => {
       const code = document.querySelector('#document pre > code')!;
       const line = '0123456789'.repeat(10) + '\n';
       const expected = line.repeat(25_000) + 'unique-middle-code-marker\n'
-        + `\t${'W'.repeat(1000)}far-right-marker\n` + line.repeat(25_000);
+        + `\t${'W'.repeat(1000)}far-right-marker\n`
+        + `\t${'漢'.repeat(350)}\t${'漢'.repeat(350)}unicode-right-marker\n` + line.repeat(25_000);
       const tail = document.querySelector('#document h1');
       return {
         exact: code.textContent === expected,
@@ -64,9 +65,9 @@ describe('giant code block in the native reading view', () => {
     const horizontal = await browser.execute(() => {
       const pre = document.querySelector<HTMLPreElement>('#document pre')!;
       const segment = [...pre.querySelectorAll('.code-segment')]
-        .find((node) => node.textContent?.includes('W'.repeat(1000)))!;
+        .find((node) => node.textContent?.includes('漢'.repeat(350)))!;
       const text = segment.firstChild!;
-      const end = text.textContent!.indexOf('W'.repeat(1000)) + 1000;
+      const end = text.textContent!.lastIndexOf('漢'.repeat(350)) + 350;
       pre.scrollLeft = pre.scrollWidth - pre.clientWidth;
       const range = document.createRange();
       range.setStart(text, end - 10);
@@ -102,6 +103,48 @@ describe('giant code block in the native reading view', () => {
     });
     expect(farRight.scrollLeft).toBeGreaterThan(farRight.width * 4);
     expect(farRight.visible).toBe(true);
+
+    await find.setValue('unicode-right-marker');
+    await browser.waitUntil(async () => (await $('.find-count').getText()) === '1 of 1', {
+      timeout: 20_000,
+      timeoutMsg: 'Find did not locate the wide Unicode marker',
+    });
+    const unicodeRight = await browser.execute(() => {
+      const pre = document.querySelector<HTMLPreElement>('#document pre')!;
+      const segment = [...pre.querySelectorAll('.code-segment')]
+        .find((node) => node.textContent?.includes('unicode-right-marker'))!;
+      const text = segment.firstChild!;
+      const start = text.textContent!.indexOf('unicode-right-marker');
+      const range = document.createRange();
+      range.setStart(text, start);
+      range.setEnd(text, start + 'unicode-right-marker'.length);
+      const box = range.getBoundingClientRect();
+      const clip = pre.getBoundingClientRect();
+      return { scrollLeft: pre.scrollLeft, width: pre.clientWidth,
+        visible: box.left >= clip.left - 1 && box.right <= clip.right + 1 };
+    });
+    expect(unicodeRight.scrollLeft).toBeGreaterThan(unicodeRight.width * 8);
+    expect(unicodeRight.visible).toBe(true);
+
+    const tabBoundary = await browser.execute(() => {
+      const pre = document.querySelectorAll<HTMLPreElement>('#document pre')[1]!;
+      pre.style.width = '150px';
+      pre.scrollLeft = pre.scrollWidth - pre.clientWidth;
+      const text = pre.querySelector('.code-segment')!.firstChild!;
+      const range = document.createRange();
+      range.setStart(text, 20);
+      range.setEnd(text, 21);
+      const glyph = range.getBoundingClientRect();
+      const viewport = pre.getBoundingClientRect();
+      return {
+        segments: pre.querySelectorAll('.code-segment').length,
+        tabSize: getComputedStyle(pre).tabSize,
+        visible: glyph.left >= viewport.left - 1 && glyph.right <= viewport.right + 1,
+      };
+    });
+    expect(tabBoundary.segments).toBeGreaterThan(100);
+    expect(tabBoundary.tabSize).toBe('8');
+    expect(tabBoundary.visible).toBe(true);
 
     const maxScrollGap = await browser.execute(async () => {
       const scroller = document.querySelector<HTMLElement>('#viewer')!;
