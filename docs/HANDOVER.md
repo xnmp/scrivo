@@ -39,6 +39,10 @@ text, Find, scroll, and tail outcomes. Native typecheck and the rebuilt full
 native suite passed: 12/12 specs, 16/16 tests. This is a regression guard for
 the current JSON startup response and any future transport change.
 
+An intentionally incomplete preview-only release probe established a measurable
+upper bound for deferring the startup tail. It was restored immediately after
+the paired run; the working app still receives and renders the whole document.
+
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
 `docs/CONVENTIONS.md` for coding and testing rules. Key code entry points are
@@ -49,6 +53,26 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
 
 ## Latest startup investigation (after `eec536a`)
 
+- **First-chunk preview upper bound, reverted.** A temporary `startup_view`
+  response truncated rendered HTML at the first complete renderer chunk and
+  omitted the rest. Its first viewport matched the reviewed screenshot in one
+  smoke run for each fixture and in **12/12 paired rounds** each. Because the
+  tail never arrived, this build was intentionally incomplete and is **not** a
+  candidate for release or a proven production speedup. Candidate minus baseline
+  first-viewport paired medians were **−1 ms** medium (6/12 faster), **−60 ms**
+  large (8/12 faster), and **−32 ms** synthetic 5 MB (10/12 faster). Paired
+  content-after-window medians were −12, −31.5, and −34 ms, respectively. Host
+  load varied substantially, so these are an upper bound to investigate, not a
+  promised gain. The probe also removed background tail insertion and highlighting
+  work, so its effect cannot be attributed solely to IPC. Raw rounds are
+  `bench/results/paired-preview-upper-{medium,large,5mb}.txt`. Baseline binary
+  SHA-256 was `60d13b8e46171297babc0397397f5ba456132582e4d94ae8d81f486958e7570f`;
+  incomplete probe binary was
+  `7d167408e6acfdc7592944254c77595bccd93059d996b91842794ef68b63bba3`.
+  Both source and release binary were restored to the baseline after the probe.
+  A production attempt is justified only if its complete tail path retains a
+  material paired first-viewport gain while all tail, Find, anchor, cancellation,
+  Unicode, and failure outcomes pass.
 - **First-screen layout experiment, reverted.** A three-run diagnostic instrumented
   `viewer.show()` without changing its insertion order. For medium, large, and
   synthetic 5 MB documents it appended exactly **24 initial blocks** in about
@@ -148,6 +172,12 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
   needed; a simple two-command design may have less maintenance cost. Neither
   design is implemented yet. The existing medium, large, and synthetic 5 MB
   visual references and early Find/anchor/native tests should gate it.
+  A low-complexity first attempt would retain `startup_view` as the full result,
+  add `startup_preview` for large documents only, and fetch the full cached view
+  after first paint. The preview should end at the renderer's first complete
+  chunk. If that chunk cannot fill the first 1.5 screens, the viewer must fetch
+  the tail before claiming the first screen is ready. The full result can then
+  extend pending HTML without replacing the visible prefix or resetting scroll.
 
 - A later trace split the time between Rust's `startup_view` return and the
   viewer's first HTML parse. Temporary marks at JavaScript receipt and viewer

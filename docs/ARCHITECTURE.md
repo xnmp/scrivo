@@ -261,6 +261,12 @@ temporary phase marks measured about 1 ms for a 22 KB payload, 8–12 ms for a
 1.12 MB payload, and 32–39 ms for a synthetic 5.17 MB payload. First-chunk HTML
 parsing itself stayed under 1 ms. See the diagnostic IPC traces in the handover.
 The current `startup_view` command therefore still returns its JSON view contract.
+An incomplete first-chunk-only probe matched reviewed first viewports and showed
+an upper bound of −60 ms on large.md and −32 ms on a synthetic 5 MB fixture in
+12 paired release rounds each. It omitted all content after the first chunk, so
+these numbers are not a usable application result. A complete preview/tail path
+must keep the viewer's settled, Find, anchor, cancellation, and error contracts;
+the handover records the probe and proposed gates.
 
 ## Testing
 
