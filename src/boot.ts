@@ -26,6 +26,7 @@ const tauri = isTauri();
 // The browser dev platform (in-memory files) never ships in the app's startup path.
 const platform: Platform = tauri ? createTauriPlatform() : (await import('./platform/dev')).createDevPlatform();
 const loadEditorModule = () => import('./editor-app');
+const FIND_REFRESH_MS = 250;
 
 const byId = (id: string) => document.getElementById(id)!;
 const prompter = createPrompter(document.body);
@@ -60,10 +61,17 @@ viewer.onShown(() => {
         if (version !== viewer.version()) return;
         if (!byId('document').querySelector('pre[data-lang] > code')) return;
         const { highlightCodeBlocks } = await import('./viewer/code-highlight');
+        let lastFindRefresh = 0;
         await highlightCodeBlocks(byId('document'), () => version === viewer.version(), () => {
           viewer.invalidateTextNodes();
-          findBar?.refresh();
+          // Re-indexing a large document on every idle batch makes Find dominate
+          // highlighting. Keep an open search current without scanning every block.
+          if (findBar?.isOpen() && performance.now() - lastFindRefresh >= FIND_REFRESH_MS) {
+            findBar.refresh();
+            lastFindRefresh = performance.now();
+          }
         });
+        if (version === viewer.version()) findBar?.refresh();
       })
       .catch(() => undefined);
   });

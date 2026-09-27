@@ -3,12 +3,12 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The latest checkpoint on `main`
-adds a verified editor-startup benchmark, reruns the feature suites, and measures
-when large documents finish progressive insertion. The prior checkpoint,
-`425cd77 Account for prepaint and deferred bundle assets`, made the build gate
-use Vite's manifest, validate deferred assets, and count known prepaint imports.
-The broader goal is ongoing; there is no release or deployment.
+verified, and exceptionally fast at startup. This checkpoint batches postpaint
+code highlighting, keeps Find responsive during it, and verifies the change in
+native WebKitGTK. Previous commit `2101010` added a reviewed editor-startup
+benchmark and measured when large documents finish progressive insertion. Earlier
+commit `425cd77` made the build gate use Vite's manifest and count known prepaint
+imports. The broader goal is ongoing; there is no release or deployment.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -59,7 +59,7 @@ and the budget omitted a conditional 1 MB math font.
   The first attempt used a stale WebDriver element handle while progressive blocks
   were appending; the final test polls the live DOM and passed with the full suite.
 
-## Current checkpoint
+## Bundle gate checkpoint (`425cd77`)
 
 - `vite.config.ts` now emits Vite's build manifest. `scripts/check-bundle.mjs`
   traverses manifest `imports`, `dynamicImports`, `css`, and `assets`, plus CSS
@@ -68,7 +68,7 @@ and the budget omitted a conditional 1 MB math font.
 - Review found that `src/app/workspace.ts` calls `window.setTitle` during initial
   display and `src/boot.ts` registers window handlers before the first-frame mark.
   Both can request `@tauri-apps/api/window` before paint. The checker now includes
-  that known dynamic root and its static dependencies in a **47/56 KiB prepaint
+  that known dynamic root and its static dependencies in a **48/56 KiB prepaint
   JS/CSS** budget. The root list in `scripts/check-bundle.mjs` needs review when
   boot-time imports change. This budget measures uncompressed files; it does not
   measure network latency or parse/evaluation cost.
@@ -82,26 +82,56 @@ and the budget omitted a conditional 1 MB math font.
   three initial findings against the final checker and found them resolved, with
   no remaining substantive gate or documentation issue.
 
+## Current checkpoint: postpaint code highlighting
+
+- The 443 KB large fixture has 800 fenced code blocks. Before this change, a
+  temporary native diagnostic saw all 800 highlighted only around 10.9 seconds
+  after launch: the highlighter yielded once per block. The initial batched-idle
+  diagnostic reached all 800 around 3.9 seconds on the same host. These are
+  exploratory observations, not controlled paired benchmarks or a CI speed gate.
+- `src/viewer/code-highlight.ts` now uses `IdleDeadline.timeRemaining()` to fit
+  several small blocks in an idle period. It caches resolved language supports
+  within the document, preserves original code on grammar/parser failure, and
+  flushes text-node invalidation before a new grammar load, before yielding to
+  another idle callback, and at completion. It checks document version after an
+  asynchronous load or idle callback to avoid changing a superseded document.
+- `src/boot.ts` refreshes an open Find at most every 250 ms during highlighting
+  and once at completion. Previously, re-indexing the entire document after each
+  code block made a native Find-open diagnostic take about 19.4 seconds; after
+  throttling, the large native test took 3.2–3.3 seconds. That test duration is
+  not a formal performance metric and does not guarantee Find opened before
+  highlighting finished. The behavior tests cover Find's final count and the
+  content outcome.
+- `src/viewer/code-highlight.test.ts` checks that a changed block is reported
+  before a slow second grammar load, then checks text preservation and cancellation.
+  The new native test independently waits for all 800 code blocks, opens Find for
+  `fib_400`, verifies `1 of 1`, waits for every block to have token spans, and
+  compares all rendered code text with the source fixture. An independent reviewer
+  found no remaining substantive correctness issue in this revised change.
+- The new release binary passed five first-viewport runs against the reviewed
+  large fixture reference: content times **338–485 ms**, median **388 ms**. This
+  is a single-app smoke measurement under current host load, not a replacement
+  for the retained 12-pair Scrivo/Typora comparison below.
+
 ## Validation
 
 | Check | Latest result |
 |---|---|
 | `bun run typecheck` | Pass |
 | `bunx tsc --noEmit -p e2e-native/tsconfig.json` | Pass |
-| `bun run test` | 292 tests across 16 files passed |
-| `bun run test:e2e` | 52/52 Chromium tests passed on this continuation |
-| `bun run test:e2e:native` | 11/11 native WebKitGTK specs passed on this continuation, including large-file tail |
-| `cargo test -q` | 26/26 Rust tests passed on this continuation |
-| `bun run build:web` | Pass; 34/40 KiB static, 47/56 KiB known prepaint JS/CSS, 1,060 KiB referenced assets, 2,517 KiB deferred graph |
-| `bunx tauri build --no-bundle` | Pass; release binary rebuilt with manifest-bearing web assets |
-| `node --check bench/bench.mjs` and `bench/ab.mjs` | Pass |
+| `bun run test` | 294 tests across 17 files passed |
+| `bun run test:e2e` | 52/52 Chromium tests passed |
+| `bun run test:e2e:native` | 11/11 native WebKitGTK specs, 12 tests passed, including both large-file tests |
+| `cargo test -q` | 26/26 Rust tests passed at the prior checkpoint; Rust unchanged here |
+| `bun run build:web` | Pass; 34/40 KiB static, 48/56 KiB known prepaint JS/CSS, 1,060 KiB referenced assets, 2,517 KiB deferred graph |
+| `bunx tauri build --no-bundle` | Pass; release binary rebuilt with current web assets |
+| `node bench/bench.mjs scrivo bench/fixtures/large.md 5` | 5/5 verified reference matches; first viewport median 388 ms |
 | `git diff --check` | Pass before commit |
 
-The Rust source and browser app source did not change in this checkpoint. The
-preceding checkpoint's `cargo test -q` (26 passed) and Chromium E2E (52 passed)
-remain the relevant evidence. The full native
-suite initially had 10 pass and one new test fail from its stale handle, then passed
-11/11 after the test correction. Playwright WebKit cannot start on this host because
+Rust source did not change in this checkpoint. The previous native suite initially
+had 10 pass and one new test fail from its stale handle, then passed 11/11 after
+the test correction; the current suite passes both large-file tests. Playwright
+WebKit cannot start on this host because
 `libicu74`, `libxml2`, and `libflite1` are missing; native WebKitGTK was exercised.
 Repository-wide `cargo fmt --check` still reports broad preexisting formatting drift.
 
@@ -176,11 +206,11 @@ measure how long that takes. A prior single startup trace is in
   been measured. A prior concurrent browser/native run had one failure in each
   suite under load; later full concurrent and sequential reruns passed, but its
   exact cause was not established.
-- `document settled` times insertion only. After that, reading-view code highlighting
-  visits each fenced block and yields once per block (`src/viewer/code-highlight.ts`).
-  A 400-section fixture has many code blocks; its total highlighting time and effect
-  on early interactions have not been measured. Instrument before changing the idle
-  policy or parser scheduling.
+- `document settled` times insertion only. Code highlighting completes later.
+  The new native test verifies the final 800-block outcome, while its runtime is
+  not a stable performance gate. If changing the idle policy further, measure
+  interaction latency and full highlighting time with a controlled trace. The
+  existing Find test does not guarantee that Find opens during highlighting.
 
 ## Commands
 

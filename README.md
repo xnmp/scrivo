@@ -82,7 +82,7 @@ Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
 The web build gate counts 34 KiB of linked static startup JS/CSS against a 40 KiB
-budget. Tauri's window API loads during boot; including it gives 47 KiB of known
+budget. Tauri's window API loads during boot; including it gives 48 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
 1,060 KiB math font referenced by the reading-view stylesheet and a 2,517 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and

@@ -38,8 +38,10 @@ saving goes through the editor's controller, and positions carry over both ways 
 1-based source lines (every rendered block has `data-line`). Operations run through a
 serial queue so a click during a pending switch can't interleave with it. The reading
 view's outline is built from renderer heading metadata, and its code highlighting
-loads matching editor grammars only after the document has painted. Find rebuilds its
-text index when highlighting replaces code text nodes.
+loads matching editor grammars only after the document has painted. It highlights
+several small blocks per idle deadline, then invalidates text nodes as a batch.
+Find refreshes at most every 250 ms while open and once at completion so repeated
+full-document indexing does not dominate highlighting.
 
 Why CodeMirror live preview rather than a ProseMirror WYSIWYG: ProseMirror-based
 editors (Milkdown, Tiptap) parse markdown into a rich document and serialize it back,
