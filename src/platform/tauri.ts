@@ -6,6 +6,7 @@ import {
   type FileErrorCode,
   type Platform,
   type ReadResult,
+  type RecoveryCopy,
   type StartupDocument,
   type StartupView,
   type ViewDocument,
@@ -78,6 +79,11 @@ export function createTauriPlatform(): Platform {
       throw error;
     }));
   return {
+    recovery: {
+      list: () => invoke<RecoveryCopy[]>('list_recovery'),
+      put: (copy) => invoke<void>('put_recovery', { copy }),
+      remove: (id) => invoke<void>('remove_recovery', { id }),
+    },
     fs: {
       read: (path) => call<ReadResult>('read_document', path, { path }),
       write: (path, text, condition) => call<FileStamp>('write_document', path, { path, text, condition }),

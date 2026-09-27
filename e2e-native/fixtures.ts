@@ -14,6 +14,8 @@ export interface Fixture {
   docPath: string;
   /** Extra CLI args passed before the doc path (e.g. `--edit`). */
   launchArgs?: readonly string[];
+  /** Launch without a path to exercise untitled crash recovery. */
+  launchWithoutFile?: boolean;
 }
 
 export interface SaveBytesFixture extends Fixture {
@@ -99,6 +101,43 @@ export function tableFixture(): Fixture {
   return { dir, docPath, launchArgs: EDIT };
 }
 
+export function recoveryFixture(): Fixture {
+  const dir = freshDir();
+  return { dir, docPath: path.join(dir, 'unused.md'), launchWithoutFile: true };
+}
+
+export function autosaveConflictFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, 'Start\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
+export function recoveryNamedFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'deleted.md');
+  const recoveryDir = path.join(dir, 'data', 'dev.scrivo.editor', 'recovery');
+  mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(recoveryDir, 'named-copy.json'), JSON.stringify({
+    id: 'named-copy', path: docPath, stamp: 'deleted-stamp',
+    format: { eol: '\n', bom: false, mixedEol: false }, text: '# Recovered missing file\n', updatedAt: Date.now(),
+  }), { mode: 0o600 });
+  return { dir, docPath, launchWithoutFile: true };
+}
+
+export function recoveryOtherFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'viewed.md');
+  writeFileSync(docPath, '# Original reading view\n');
+  const recoveryDir = path.join(dir, 'data', 'dev.scrivo.editor', 'recovery');
+  mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(recoveryDir, 'other-copy.json'), JSON.stringify({
+    id: 'other-copy', path: path.join(dir, 'deleted.md'), stamp: 'deleted-stamp',
+    format: { eol: '\n', bom: false, mixedEol: false }, text: '# Recovered other file\n', updatedAt: Date.now(),
+  }), { mode: 0o600 });
+  return { dir, docPath };
+}
+
 // --- Reading-view fixtures (view-first: launched with no extra args). ---
 
 export function readingHeadingFixture(): Fixture {
@@ -164,6 +203,10 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'image.spec.ts': imageFixture,
   'checkbox.spec.ts': checkboxFixture,
   'table.spec.ts': tableFixture,
+  'recovery.spec.ts': recoveryFixture,
+  'autosave-conflict.spec.ts': autosaveConflictFixture,
+  'recovery-named.spec.ts': recoveryNamedFixture,
+  'recovery-other.spec.ts': recoveryOtherFixture,
   'reading-heading.spec.ts': readingHeadingFixture,
   'reading-image.spec.ts': readingImageFixture,
   'reading-toggle.spec.ts': readingToggleFixture,

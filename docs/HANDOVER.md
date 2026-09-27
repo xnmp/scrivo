@@ -1,5 +1,111 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: file editor parity, durable editing checkpoint
+
+The active goal is `docs/FILE_EDITOR_PARITY.md`: make Scrivo an Obsidian-class
+local Markdown file editor and test the work extensively. The table-editing
+checkpoint below is committed as `3298091`. This checkpoint implements milestone
+1, P1–P4: autosave, visible save state, crash recovery, and deliberate handling
+of external edits. `docs/FILE_EDITOR_AUDIT.md` records the milestone 0 native
+behavior matrix. This is a checkpoint, **not completion of the parity goal**.
+
+### What changed and where
+
+- `src/app/controller.ts` owns the durable-editing state. Existing named files
+  autosave after 2 seconds idle through the existing serial queue and conditional
+  `fs.write`. Save status is `saved`, `edited`, `saving`, or `action-needed`; the
+  last state pauses autosave after failure/conflict. Manual Save retries and can
+  reload, Save As, or confirm overwrite. The saved snapshot is captured before
+  each write; edits made while it is in flight stay dirty and save later.
+- `src/app/ports.ts` defines `RecoveryStore` and recovery prompt contracts;
+  `src/platform/memory.ts` backs tests and `src/platform/tauri.ts` invokes the
+  native commands. `src-tauri/src/recovery.rs` stores JSON recovery copies under
+  the Tauri app-data `recovery/` directory using a synced same-directory temp
+  file and atomic replacement. Unix directory/file modes are 0700/0600. The
+  first dirty change starts a write immediately; later changes are throttled
+  to 500 ms. Each document's latest copy is kept until saved or explicitly
+  discarded; seven-day/100 MiB limits apply to redundant history only.
+- `src/ui/save-status.ts`, `status-bar.ts`, `dialog.ts`, and `recovery-prompt.ts`
+  provide the visible state, retry control, and Restore/Discard UI. Dialog code
+  stays in lazy editor imports, preserving the startup budget. Escape cancels
+  a recovery prompt without deleting the copy.
+- `src/app/workspace.ts` checks for recovery after the reading view paints.
+  Recovery copies for missing named files can be offered even if launch has no
+  file path. Accepting a copy for another path surfaces it in the editor; an
+  existing editor in reading mode re-renders after a successful reopen even
+  when the path stays the same. These two hidden-buffer bugs were found in
+  independent review and have unit and native coverage.
+- Native E2E fixtures now set `XDG_DATA_HOME` per test directory so crash and
+  recovery tests cannot touch the user's real Scrivo data. New native specs
+  cover real autosave bytes, a competing external writer, SIGKILL/relaunch of
+  untitled text, deleted named recovery, and recovery while viewing another file.
+
+### Safety details and known limit
+
+The controller never changes its known file stamp merely because the user chose
+“Keep Mine.” A later save still requires a conditional write or explicit
+resolution. Overwrite confirmation uses the disk stamp observed before the
+dialog, so a third writer during the dialog yields another conflict. Reload
+rechecks the editor version after awaiting the file read; it cannot replace an
+edit typed during that read. Close/open/new refuse to drop edits typed while a
+chosen Save is in flight. A deleted file triggers an immediate recovery write.
+Undoing back to the saved text removes an obsolete copy after pending writes.
+If another edit arrives while a clean save removes its recovery copy, removal
+immediately queues a new first checkpoint; queued writes for a clean or replaced
+document are skipped. The regression is covered in the controller tests.
+
+Recovery IPC is asynchronous. A SIGKILL before the latest copy has finished
+writing can lose those last keystrokes; the native crash test waits until a
+copy exists and then verifies exact restored Markdown. There is no true
+instantaneous guarantee at the keypress boundary. The latest copy for each
+identity may exceed the soft 100 MiB cap; that deliberate choice satisfies the
+requirement to keep one copy per dirty document. There is no multi-document
+session yet, so multiple in-memory tabs and independent watchers are future W1.
+
+### Verification and release
+
+Final source verification: 336/336 Vitest tests across 17 files; 51/51 Rust
+tests; 78/78 full Chromium E2E at two workers; 17/17 native WebKitGTK specs,
+22/22 tests; application and native-test TypeScript typechecks; and the web
+startup gate at 40/41 KiB startup JS/CSS and 54/56 KiB known prepaint JS/CSS.
+One first Chromium run with four workers hit exactly 250 ms on a strict
+`<250 ms` frame-gap assertion in an unrelated giant-code performance test;
+both two-worker full reruns passed. The release build and installed binary
+match: SHA-256
+`136bcb797c604e5cc362a164d0288fcf465e760cc08e206daf1fb296d71d27de`
+for both `src-tauri/target/release/scrivo` and
+`/home/chong/.local/bin/scrivo`. The existing live process was left alone;
+restart it when its unsaved work is safe.
+
+Useful commands:
+
+```sh
+bun run typecheck
+bunx tsc --noEmit -p e2e-native/tsconfig.json
+bun run test
+cargo test -q --manifest-path src-tauri/Cargo.toml
+bun run build:web
+bunx playwright test --project=chromium --workers=2
+bun run test:e2e:native
+bunx tauri build --no-bundle
+```
+
+### Resume work
+
+1. Confirm this checkpoint commit and the installed binary hash above. Do not
+   restart a live Scrivo window without preserving its unsaved content.
+2. Continue milestone 2 E1: list continuation/termination, indentation,
+   paired syntax, and folding, with pure Markdown transforms and CodeMirror
+   bindings. Expand E2 acceptance on malformed/escaped/large tables; direct
+   cell editing and row/column actions already exist.
+3. Then implement I1 rich HTML paste and I2 local attachments, W1 independent
+   document tabs, and D1 edit outline/properties. E3 table sort/move/alignment
+   and preferences remain later scope. Keep `docs/FILE_EDITOR_PARITY.md` status
+   current and check the native behavior matrix before each milestone.
+
+Do not mark the active parity goal complete until the remaining feature IDs and
+release criteria in `FILE_EDITOR_PARITY.md` are satisfied.
+
 ## 2026-09-28: live table editing
 
 The current work adds Obsidian-style cell editing to Scrivo's CodeMirror live

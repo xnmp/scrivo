@@ -97,6 +97,7 @@ const workspace = createWorkspace({
   platform,
   viewer,
   notify: prompter.notify,
+  scheduleIdle: (run) => void requestIdleCallback(run),
   onPathChanged(path) {
     const version = ++watchVersion;
     requestIdleCallback(() => {

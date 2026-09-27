@@ -67,6 +67,8 @@ export interface WorkspaceDeps {
   /** Give the reader a measurable, nonvisible viewport while replacing the editor. */
   readonly prepareView: () => () => void;
   readonly notify: (message: string) => void;
+  /** Schedule nonessential startup work after the first view has painted. */
+  readonly scheduleIdle?: (run: () => void) => void;
   /** Called when the current document path changes, including at startup. */
   readonly onPathChanged?: (path: string | null) => void;
 }
@@ -166,9 +168,9 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
     }
     const path = shown?.path ?? null;
     if (path !== null && e.controller.info().path !== path) {
-      await e.controller.open(path);
-      // The file couldn't be read (the controller said why): stay in the reading view.
-      if (e.controller.info().path !== path) return;
+      // Opening can restore a recovery copy for a different file. A successful
+      // open must surface that buffer even when its path differs from the reader.
+      if (!(await e.controller.open(path))) return;
     }
     editor = e;
     setMode('edit');
@@ -211,11 +213,15 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
   const openNow = async (path?: string, anchor?: string | null) => {
     const at = anchor ? { anchor } : undefined;
     if (editor) {
-      const before = editor.controller.info().path;
-      await editor.controller.open(path);
-      const after = editor.controller.info().path;
-      if (mode === 'view' && after !== before) await renderEditor(editor, at);
-      else if (mode === 'view' && at) viewer.scrollToAnchor(at.anchor);
+      const opened = await editor.controller.open(path);
+      // A matching recovery can replace the buffer without changing its path.
+      // Keep the reader in sync with the controller after every successful open.
+      if (mode === 'view' && opened && !(await renderEditor(editor, at))) {
+        // The new buffer is already owned by the controller. If rendering it
+        // fails, show that editor rather than an obsolete reading view.
+        setMode('edit');
+        editor.focus();
+      }
       return;
     }
     const target = path ?? (await platform.dialogs.pickOpen());
@@ -258,6 +264,14 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         if (startup.kind === 'view') {
           await display(startup.document, undefined, startup.loadTail);
           setMode('view');
+          const path = startup.document.path;
+          if (path !== null) deps.scheduleIdle?.(() => {
+            void platform.recovery.list().then((copies) => {
+              if (mode === 'view' && shown?.path === path && copies.length > 0) {
+                void serial(() => editNow());
+              }
+            }).catch((error) => notify(`Could not check recovery copies: ${describeError(error)}`));
+          });
           return;
         }
         const e = await ensureEditor();

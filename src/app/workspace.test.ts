@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMemoryPlatform, fakeRender, type MemoryPlatform, type RenderFn } from '../platform/memory';
 import { createDocumentController } from './controller';
-import type { ViewDocument } from './ports';
+import type { RecoveryCopy, ViewDocument } from './ports';
 import { fakeEditor, scriptedPrompter } from './testing';
 import { createWorkspace, type EditorHandle, type Mode, type Position } from './workspace';
 
@@ -30,7 +30,8 @@ function fakeViewer() {
 }
 
 async function setup(
-  opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number; watch?: boolean; render?: RenderFn } = {},
+  opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number; watch?: boolean; render?: RenderFn;
+    recoveryCopy?: RecoveryCopy } = {},
 ) {
   const platform: MemoryPlatform = createMemoryPlatform({
     files: opts.files ?? {},
@@ -38,6 +39,7 @@ async function setup(
     ...(opts.startInEditor ? { startInEditor: true } : {}),
     ...(opts.render ? { render: opts.render } : {}),
   });
+  if (opts.recoveryCopy) await platform.recovery.put(opts.recoveryCopy);
   const viewer = fakeViewer();
   const p = scriptedPrompter();
   const surfaces: Mode[] = [];
@@ -47,6 +49,7 @@ async function setup(
   let editorTop = 1;
   let loads = 0;
   let failuresLeft = opts.failEditorLoads ?? 0;
+  let idleTask: (() => void) | undefined;
   let workspace: ReturnType<typeof createWorkspace>;
   workspace = createWorkspace({
     platform,
@@ -57,6 +60,7 @@ async function setup(
       return () => void preparation.push('released');
     },
     notify: p.prompter.notify,
+    scheduleIdle: (run) => { idleTask = run; },
     ...(opts.watch ? { onPathChanged: (path: string | null) => void platform.fs.watch(path, () => void workspace.checkDisk()) } : {}),
     loadEditor: async () => {
       loads += 1;
@@ -83,6 +87,7 @@ async function setup(
     preparation,
     ...p,
     loads: () => loads,
+    runIdle: () => idleTask?.(),
     scrollEditorTo: (l: number) => void (editorTop = l),
     typeInEditor(s: string) {
       editorPort.type(s);
@@ -116,6 +121,41 @@ describe('starting', () => {
     const t = await setup({ files: { '/d/a.md': 'hello' }, startupPath: '/d/a.md', startInEditor: true });
     expect(t.editorPort.value()).toBe('hello');
     expect(t.editorPort.path()).toBe('/d/a.md');
+  });
+
+  it('offers a matching named recovery copy after the reading view is shown', async () => {
+    const t = await setup({
+      files: { '/d/a.md': 'disk' }, startupPath: '/d/a.md',
+      recoveryCopy: { id: crypto.randomUUID(), path: '/d/a.md', stamp: 'older',
+        format: { eol: '\n', bom: false, mixedEol: false }, text: 'recovered', updatedAt: Date.now() },
+    });
+    expect(t.workspace.mode()).toBe('view');
+    expect(t.loads()).toBe(0);
+    t.answers.recovery.push('restore');
+    t.runIdle();
+    await vi.waitFor(() => expect(t.workspace.mode()).toBe('edit'));
+    expect(t.editorPort.value()).toBe('recovered');
+    expect(t.asked).toEqual(['recovery:a.md:true']);
+    expect(t.platform.disk.get('/d/a.md')).toBe('disk');
+  });
+
+  it('surfaces an unmatched recovery copy accepted from a different reading view', async () => {
+    const t = await setup({
+      files: { '/d/b.md': 'B on disk' }, startupPath: '/d/b.md',
+      recoveryCopy: { id: crypto.randomUUID(), path: '/d/a.md', stamp: 'older',
+        format: { eol: '\n', bom: false, mixedEol: false }, text: 'A recovered', updatedAt: Date.now() },
+    });
+    t.answers.recovery.push('restore');
+    t.runIdle();
+    await vi.waitFor(() => expect(t.workspace.mode()).toBe('edit'));
+    expect(t.editorPort.value()).toBe('A recovered');
+    expect(t.editorPort.path()).toBe('/d/a.md');
+    expect(t.asked).toEqual(['recovery:a.md:true']);
+    expect(t.platform.disk.get('/d/b.md')).toBe('B on disk');
+    expect(t.platform.disk.get('/d/a.md')).toBeUndefined();
+    t.answers.unsaved.push('cancel');
+    expect(await t.workspace.requestClose()).toBe(false);
+    expect(t.asked).toContain('unsaved:a.md');
   });
 });
 
@@ -283,6 +323,37 @@ describe('opening files', () => {
     await t.workspace.open('/d/b.md');
     expect(t.viewer.text()).toBe('B');
     expect(t.workspace.mode()).toBe('view');
+  });
+
+  it('refreshes the reading view when reopening the same path restores a recovery copy', async () => {
+    const t = await setup({ files: { '/d/a.md': '# Disk' }, startupPath: '/d/a.md' });
+    await t.workspace.edit();
+    await t.workspace.view();
+    expect(t.viewer.text()).toBe('Disk');
+    await t.platform.recovery.put({ id: crypto.randomUUID(), path: '/d/a.md', stamp: 'older',
+      format: { eol: '\n', bom: false, mixedEol: false }, text: '# Recovered', updatedAt: Date.now() });
+    t.answers.recovery.push('restore');
+    await t.workspace.open('/d/a.md');
+    expect(t.workspace.mode()).toBe('view');
+    expect(t.viewer.text()).toBe('Recovered');
+    expect(t.platform.disk.get('/d/a.md')).toBe('# Disk');
+  });
+
+  it('shows the opened buffer in the editor if the reading view cannot render it', async () => {
+    const t = await setup({ files: { '/d/a.md': '# Disk' }, startupPath: '/d/a.md',
+      render: async (text, path) => {
+        if (text.includes('Recovered')) throw new Error('renderer unavailable');
+        return fakeRender(text, path);
+      } });
+    await t.workspace.edit();
+    await t.workspace.view();
+    await t.platform.recovery.put({ id: crypto.randomUUID(), path: '/d/a.md', stamp: 'older',
+      format: { eol: '\n', bom: false, mixedEol: false }, text: '# Recovered', updatedAt: Date.now() });
+    t.answers.recovery.push('restore');
+    await t.workspace.open('/d/a.md');
+    expect(t.workspace.mode()).toBe('edit');
+    expect(t.editorPort.value()).toBe('# Recovered');
+    expect(t.notices.join()).toContain('renderer unavailable');
   });
 });
 

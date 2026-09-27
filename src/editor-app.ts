@@ -7,6 +7,7 @@ import type { Platform, Prompter } from './app/ports';
 import type { EditorHandle } from './app/workspace';
 import { createEditor, type Editor } from './editor/setup';
 import { wordCounter, type StatusBar } from './ui/status-bar';
+import { createSaveIndicator } from './ui/save-status';
 
 export interface EditorAppOptions {
   readonly platform: Platform;
@@ -48,7 +49,11 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
       words.update();
     },
   });
-  const controller = createDocumentController({ platform, prompter, editor: editor.port });
+  const showSaveStatus = createSaveIndicator(options.status, options.commands.save);
+  const controller = createDocumentController({
+    platform, prompter, editor: editor.port,
+    onSaveStatus: showSaveStatus,
+  });
   const words = wordCounter(options.status, () => editor.view.state.doc.iter(), () => (editor.sourceMode() ? 'Source' : ''));
 
   return {

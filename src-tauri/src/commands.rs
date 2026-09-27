@@ -2,6 +2,7 @@
 //! so the main thread (and with it, window events) never waits on the disk.
 
 use crate::document_io::{self, DocError, FileStamp, ReadDocument, WriteCondition};
+use crate::recovery::{self, RecoveryCopy};
 use crate::startup::{Startup, StartupDocument, StartupView};
 use crate::view::{self, ViewDocument};
 use crate::trace;
@@ -107,6 +108,31 @@ pub async fn write_document(
 #[tauri::command]
 pub async fn stat_document(path: String) -> Result<Option<FileStamp>, CommandError> {
     blocking(move || document_io::stat_document(&PathBuf::from(path))).await
+}
+
+fn recovery_root(app: &AppHandle) -> Result<PathBuf, CommandError> {
+    Ok(app.path().app_data_dir().map_err(internal)?.join("recovery"))
+}
+
+#[tauri::command]
+pub async fn list_recovery(app: AppHandle) -> Result<Vec<RecoveryCopy>, CommandError> {
+    let root = recovery_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || recovery::list(&root))
+        .await.map_err(internal)?.map_err(internal)
+}
+
+#[tauri::command]
+pub async fn put_recovery(app: AppHandle, copy: RecoveryCopy) -> Result<(), CommandError> {
+    let root = recovery_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || recovery::put(&root, &copy))
+        .await.map_err(internal)?.map_err(internal)
+}
+
+#[tauri::command]
+pub async fn remove_recovery(app: AppHandle, id: String) -> Result<(), CommandError> {
+    let root = recovery_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || recovery::remove(&root, &id))
+        .await.map_err(internal)?.map_err(internal)
 }
 
 #[tauri::command]

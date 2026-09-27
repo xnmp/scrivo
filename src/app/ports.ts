@@ -1,6 +1,7 @@
 // Ports: everything the application needs from the outside world. Adapters live in
 // src/platform (Tauri, in-memory) and src/ui (prompts). Nothing here imports them.
 import type { FileStamp, Snapshot } from '../domain/document';
+import type { TextFormat } from '../domain/text-format';
 
 export type FileErrorCode =
   | 'not-found'
@@ -47,6 +48,22 @@ export interface FileSystem {
   stat(path: string): Promise<FileStamp | null>;
   /** Watch the current document; null stops watching. Notifications are hints: stat before acting. */
   watch(path: string | null, onChange: () => void): Promise<void>;
+}
+
+export interface RecoveryCopy {
+  readonly id: string;
+  readonly path: string | null;
+  readonly stamp: FileStamp | null;
+  readonly format: TextFormat;
+  /** Normalized editor text; format preserves its original BOM and line endings. */
+  readonly text: string;
+  readonly updatedAt: number;
+}
+
+export interface RecoveryStore {
+  list(): Promise<readonly RecoveryCopy[]>;
+  put(copy: RecoveryCopy): Promise<void>;
+  remove(id: string): Promise<void>;
 }
 
 export interface Dialogs {
@@ -126,6 +143,7 @@ export interface Shell {
 
 export interface Platform {
   readonly fs: FileSystem;
+  readonly recovery: RecoveryStore;
   readonly dialogs: Dialogs;
   readonly window: WindowPort;
   readonly render: Renderer;
@@ -134,13 +152,14 @@ export interface Platform {
 }
 
 export type UnsavedChoice = 'save' | 'discard' | 'cancel';
-export type ConflictChoice = 'overwrite' | 'reload' | 'cancel';
+export type ConflictChoice = 'overwrite' | 'reload' | 'save-as' | 'cancel';
 
 /** Questions the application asks the user. */
 export interface Prompter {
   unsavedChanges(docName: string): Promise<UnsavedChoice>;
   saveConflict(docName: string): Promise<ConflictChoice>;
   changedOnDisk(docName: string): Promise<'reload' | 'keep'>;
+  recover(docName: string, changedOnDisk: boolean): Promise<'restore' | 'dismiss' | 'cancel'>;
   notify(message: string): void;
 }
 

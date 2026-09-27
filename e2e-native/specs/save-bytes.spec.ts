@@ -70,4 +70,25 @@ describe('edit and save preserves bytes', () => {
     });
     expect(readFileSync(fixture.docPath).equals(theirs)).toBe(true);
   });
+
+  it('autosaves a named file after typing pauses', async () => {
+    const fixture = state.fixture as SaveBytesFixture;
+    const content = $('.cm-content');
+    await content.click();
+    await browser.keys(['Control', 'End']);
+    await browser.keys(' Auto saved');
+    await browser.waitUntil(() => content.getText().then((text) => text.includes('Auto saved')), {
+      timeout: 5_000,
+      timeoutMsg: 'typed text never appeared in the editor',
+    });
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8').includes('External change\r\n Auto saved'), {
+      timeout: 10_000,
+      interval: 200,
+      timeoutMsg: 'the native app did not autosave after the editing pause',
+    });
+    await browser.waitUntil(() => $('.save-status').getText().then((text) => text.includes('Saved')), {
+      timeout: 5_000,
+      timeoutMsg: 'the save status did not report completion',
+    });
+  });
 });

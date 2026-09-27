@@ -1,7 +1,7 @@
 // In-memory Platform: backs unit tests, the browser dev build and the Playwright suite.
 // It mimics the Tauri adapter's contract, including stamp-based conflict detection.
 import { sameStamp, type FileStamp } from '../domain/document';
-import { FileError, type Heading, type Platform, type StartupDocument, type ViewDocument } from '../app/ports';
+import { FileError, type Heading, type Platform, type RecoveryCopy, type StartupDocument, type ViewDocument } from '../app/ports';
 
 /** Markdown → HTML, as the backend's renderer does it. */
 export type RenderFn = (text: string, path: string | null) => Promise<{ html: string; chunkEnds?: readonly number[]; headings: readonly Heading[] }>;
@@ -82,6 +82,7 @@ export function createMemoryPlatform(options: {
   let gatePhase: 'before-landing' | 'after-landing' = 'before-landing';
   const titles: string[] = [];
   const opened: string[] = [];
+  const copies = new Map<string, RecoveryCopy>();
   const dialogAnswers = { open: [] as Array<string | null>, save: [] as Array<string | null> };
   let closeHandler: (() => Promise<boolean>) | null = null;
   const focusHandlers: Array<() => void> = [];
@@ -105,6 +106,11 @@ export function createMemoryPlatform(options: {
   };
 
   const platform: MemoryPlatform = {
+    recovery: {
+      list: async () => [...copies.values()].sort((a, b) => b.updatedAt - a.updatedAt),
+      put: async (copy) => void copies.set(copy.id, copy),
+      remove: async (id) => void copies.delete(id),
+    },
     fs: {
       read,
       async write(path, text, condition) {

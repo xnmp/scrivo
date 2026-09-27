@@ -107,6 +107,7 @@ src-tauri/
     prewarm.rs      Linux: starts EGL and image-loader init on worker threads
     view.rs         ViewDocument: renderer output + asset URLs + image grants
     document_io.rs  read (UTF-8 validation) and atomic write; no Tauri types
+    recovery.rs     private atomic recovery copies in app data
     watch.rs        parent-directory file change notifications
     commands.rs     thin #[tauri::command] adapters, error mapping
 ```
@@ -176,6 +177,20 @@ files it doesn't reference, start programs, or navigate the webview.
   not provide an atomic filesystem transaction.
 - The saved snapshot is the text that was *sent* to disk, so edits typed during an
   in-flight save stay dirty.
+- Named files autosave after a 2-second editing pause through the same serial
+  controller queue and conditional write API as manual Save. A failed or conflicting
+  autosave enters a visible action-needed state and pauses until the user acts.
+  Untitled documents receive recovery copies but no automatic user-file path.
+- The app-layer `RecoveryStore` port writes each dirty document's current text,
+  path, observed stamp, and text format to the Tauri app-data `recovery/` directory.
+  The native adapter uses a private directory and files on Unix, a synced temporary
+  file, and an atomic replacement. The first dirty change is queued immediately;
+  later changes are throttled to 500 ms. The latest copy for each document remains
+  until save or explicit discard; seven-day and 100 MiB limits prune redundant
+  history only. The asynchronous IPC/write interval is a durability window: a
+  process killed before the write finishes can lose the last change. Startup offers
+  matching and unmatched copies, and restoring a copy never silently overwrites a
+  newer disk file.
 - Invalid UTF-8 is refused (never lossily decoded and re-saved).
 - Line endings: the dominant EOL and a leading BOM are recorded at load and restored
   on save. Mixed-EOL files are normalised to the dominant EOL (the UI says so).

@@ -2,18 +2,21 @@ import { textStats } from '../domain/stats';
 
 export interface StatusBar {
   set(text: string): void;
+  readonly element: HTMLElement;
 }
 
 /** The small status line in the corner. */
 export function createStatusBar(host: HTMLElement): StatusBar {
   const el = document.createElement('div');
   el.className = 'status-bar';
-  el.setAttribute('aria-live', 'off');
+  const words = document.createElement('span');
+  el.appendChild(words);
   host.appendChild(el);
   return {
     set(text) {
-      if (el.textContent !== text) el.textContent = text;
+      words.textContent = text;
     },
+    element: el,
   };
 }
 

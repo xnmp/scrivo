@@ -1,5 +1,6 @@
 mod commands;
 mod document_io;
+mod recovery;
 #[cfg(target_os = "linux")]
 mod prewarm;
 mod startup;
@@ -53,6 +54,9 @@ pub fn run() {
             commands::read_document,
             commands::write_document,
             commands::stat_document,
+            commands::list_recovery,
+            commands::put_recovery,
+            commands::remove_recovery,
             commands::startup_document,
             commands::startup_preview,
             commands::startup_view,

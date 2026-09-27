@@ -21,7 +21,8 @@ export function fakeEditor() {
 }
 
 export function scriptedPrompter() {
-  const answers = { unsaved: [] as UnsavedChoice[], conflict: [] as ConflictChoice[], disk: [] as Array<'reload' | 'keep'> };
+  const answers = { unsaved: [] as UnsavedChoice[], conflict: [] as ConflictChoice[], disk: [] as Array<'reload' | 'keep'>,
+    recovery: [] as Array<'restore' | 'dismiss' | 'cancel'> };
   const asked: string[] = [];
   const notices: string[] = [];
   const prompter: Prompter = {
@@ -37,8 +38,11 @@ export function scriptedPrompter() {
       asked.push(`disk:${name}`);
       return answers.disk.shift() ?? 'keep';
     },
+    async recover(name, changedOnDisk) {
+      asked.push(`recovery:${name}:${changedOnDisk}`);
+      return answers.recovery.shift() ?? 'cancel';
+    },
     notify: (m) => void notices.push(m),
   };
   return { prompter, answers, asked, notices };
 }
-

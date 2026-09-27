@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createMemoryPlatform, type MemoryPlatform } from '../platform/memory';
 import { createDocumentController, type DocumentController } from './controller';
 import { FileError } from './ports';
@@ -166,6 +166,25 @@ describe('saving', () => {
     expect(platform.disk.get('/n/a.md')).toBe('a-mine');
   });
 
+  it('asks again if the disk changes while the overwrite confirmation is open', async () => {
+    const { platform, editor, controller, prompter } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+    platform.disk.put('/n/a.md', 'theirs');
+    editor.type('-mine');
+    let prompts = 0;
+    prompter.saveConflict = async () => {
+      prompts++;
+      if (prompts === 1) {
+        platform.disk.put('/n/a.md', 'newer still');
+        return 'overwrite';
+      }
+      return 'cancel';
+    };
+    expect(await controller.save()).toBe(false);
+    expect(prompts).toBe(2);
+    expect(platform.disk.get('/n/a.md')).toBe('newer still');
+    expect(editor.value()).toBe('a-mine');
+  });
+
   it('does not overwrite a file recreated after deletion before a disk check', async () => {
     const { editor, controller, platform, asked } = await setup({ '/n/a.md': 'old' }, '/n/a.md');
     editor.type('-mine');
@@ -202,6 +221,315 @@ describe('saving', () => {
     const { controller, platform } = await setup({ '/n/m.md': 'a\r\nb\r\nc\n' }, '/n/m.md');
     await controller.save();
     expect(platform.disk.get('/n/m.md')).toBe('a\r\nb\r\nc\r\n');
+  });
+});
+
+describe('autosave', () => {
+  it('saves a named file after two idle seconds, and resets the pause after more typing', async () => {
+    vi.useFakeTimers();
+    try {
+      const { editor, controller, platform } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+      editor.type('1');
+      controller.contentChanged();
+      expect(controller.info().saveStatus.kind).toBe('edited');
+      await vi.advanceTimersByTimeAsync(1500);
+      editor.type('2');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(platform.disk.get('/n/a.md')).toBe('a');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(platform.disk.get('/n/a.md')).toBe('a12');
+      expect(controller.info().saveStatus.kind).toBe('saved');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('saves an edit typed while an earlier write is in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const { editor, controller, platform } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+      let release!: () => void;
+      platform.disk.setWriteGate(() => new Promise<void>((resolve) => { release = resolve; }));
+      editor.type('1');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(controller.info().saveStatus.kind).toBe('saving');
+      editor.type('2');
+      controller.contentChanged();
+      platform.disk.setWriteGate(null);
+      release();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(platform.disk.get('/n/a.md')).toBe('a12');
+      expect(controller.info().saveStatus.kind).toBe('saved');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a failed write visible and stops automatic retries until manual save', async () => {
+    vi.useFakeTimers();
+    try {
+      const { editor, controller, platform, asked } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+      platform.disk.failNextWrite(new FileError('permission-denied', '/n/a.md'));
+      editor.type('!');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(controller.info().saveStatus).toEqual({ kind: 'action-needed', reason: 'Could not save a.md: permission denied' });
+      editor.type('?');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(platform.disk.writes).toEqual([]);
+      expect(asked).toEqual([]);
+      expect(await controller.save()).toBe(true);
+      expect(platform.disk.get('/n/a.md')).toBe('a!?');
+      expect(controller.info().saveStatus.kind).toBe('saved');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pauses after an autosave conflict and requires a manual resolution', async () => {
+    vi.useFakeTimers();
+    try {
+      const { editor, controller, platform, answers, asked } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+      editor.type('-mine');
+      controller.contentChanged();
+      platform.disk.put('/n/a.md', 'theirs');
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(platform.disk.get('/n/a.md')).toBe('theirs');
+      expect(controller.info().saveStatus.kind).toBe('action-needed');
+      expect(asked).toEqual([]);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(asked).toEqual([]);
+      answers.conflict.push('save-as');
+      platform.dialogAnswers.save.push('/n/mine.md');
+      expect(await controller.save()).toBe(true);
+      expect(platform.disk.get('/n/a.md')).toBe('theirs');
+      expect(platform.disk.get('/n/mine.md')).toBe('a-mine');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not autosave an untitled document to an invented path', async () => {
+    vi.useFakeTimers();
+    try {
+      const { editor, controller, platform } = await setup();
+      editor.type('draft');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(platform.disk.writes).toEqual([]);
+      expect(controller.info().saveStatus.kind).toBe('edited');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('crash recovery', () => {
+  it('starts protecting the first untitled edit without waiting for an idle timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const platform = createMemoryPlatform();
+      const editor = fakeEditor();
+      const controller = createDocumentController({ platform, prompter: scriptedPrompter().prompter, editor });
+      await controller.start({ kind: 'none' });
+      editor.type('first keystroke');
+      controller.contentChanged();
+      await Promise.resolve();
+      expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['first keystroke']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers and restores the exact unsaved text of an untitled document', async () => {
+    vi.useFakeTimers();
+    try {
+      const platform = createMemoryPlatform();
+      const first = fakeEditor();
+      const controller = createDocumentController({ platform, prompter: scriptedPrompter().prompter, editor: first });
+      await controller.start({ kind: 'none' });
+      first.type('# Draft\n😀 and | pipes');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(500);
+      expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['# Draft\n😀 and | pipes']);
+
+      const next = fakeEditor();
+      const prompts = scriptedPrompter();
+      prompts.answers.recovery.push('restore');
+      const reopened = createDocumentController({ platform, prompter: prompts.prompter, editor: next });
+      await reopened.start({ kind: 'none' });
+      expect(prompts.asked).toEqual(['recovery:Untitled:false']);
+      expect(next.value()).toBe('# Draft\n😀 and | pipes');
+      expect(reopened.info().dirty).toBe(true);
+      expect(reopened.info().saveStatus.kind).toBe('edited');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never overwrites a newer disk version when restoring a named file', async () => {
+    vi.useFakeTimers();
+    try {
+      const platform = createMemoryPlatform({ files: { '/n/a.md': '\ufeffBase\r\n' }, startupPath: '/n/a.md' });
+      const first = fakeEditor();
+      const controller = createDocumentController({ platform, prompter: scriptedPrompter().prompter, editor: first });
+      await controller.start(await platform.startupDocument());
+      first.type('😀\n');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(500);
+      platform.disk.put('/n/a.md', '\ufeffNewer\r\n');
+
+      const next = fakeEditor();
+      const prompts = scriptedPrompter();
+      prompts.answers.recovery.push('restore');
+      const reopened = createDocumentController({ platform, prompter: prompts.prompter, editor: next });
+      await reopened.start(await platform.startupDocument());
+      expect(prompts.asked).toEqual(['recovery:a.md:true']);
+      expect(next.value()).toBe('Base\n😀\n');
+      expect(reopened.info().saveStatus.kind).toBe('action-needed');
+      expect(await reopened.save()).toBe(false);
+      expect(platform.disk.get('/n/a.md')).toBe('\ufeffNewer\r\n');
+      prompts.answers.conflict.push('save-as');
+      platform.dialogAnswers.save.push('/n/recovered.md');
+      expect(await reopened.save()).toBe(true);
+      expect(platform.disk.get('/n/recovered.md')).toBe('\ufeffBase\r\n😀\r\n');
+      expect(platform.disk.get('/n/a.md')).toBe('\ufeffNewer\r\n');
+      expect(await platform.recovery.list()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('removes a recovery copy after explicit dismissal', async () => {
+    const platform = createMemoryPlatform();
+    await platform.recovery.put({ id: crypto.randomUUID(), path: null, stamp: null,
+      format: { eol: '\n', bom: false, mixedEol: false }, text: 'old draft', updatedAt: Date.now() });
+    const prompts = scriptedPrompter();
+    prompts.answers.recovery.push('dismiss');
+    const controller = createDocumentController({ platform, prompter: prompts.prompter, editor: fakeEditor() });
+    await controller.start({ kind: 'none' });
+    expect(prompts.asked).toEqual(['recovery:Untitled:false']);
+    expect(await platform.recovery.list()).toEqual([]);
+  });
+
+  it('keeps a recovery copy when the prompt is canceled', async () => {
+    const platform = createMemoryPlatform();
+    const copy = { id: crypto.randomUUID(), path: null, stamp: null,
+      format: { eol: '\n' as const, bom: false, mixedEol: false }, text: 'keep me', updatedAt: Date.now() };
+    await platform.recovery.put(copy);
+    const prompts = scriptedPrompter();
+    prompts.answers.recovery.push('cancel');
+    const editor = fakeEditor();
+    const controller = createDocumentController({ platform, prompter: prompts.prompter, editor });
+    await controller.start({ kind: 'none' });
+    expect(editor.value()).toBe('');
+    expect((await platform.recovery.list()).map((item) => item.text)).toEqual(['keep me']);
+  });
+
+  it('offers a missing named file recovery on an untitled launch', async () => {
+    const platform = createMemoryPlatform();
+    await platform.recovery.put({ id: crypto.randomUUID(), path: '/n/deleted.md', stamp: 'before-deletion',
+      format: { eol: '\n', bom: false, mixedEol: false }, text: 'last known edits', updatedAt: Date.now() });
+    const prompts = scriptedPrompter();
+    prompts.answers.recovery.push('restore');
+    const editor = fakeEditor();
+    const controller = createDocumentController({ platform, prompter: prompts.prompter, editor });
+    await controller.start({ kind: 'none' });
+    expect(prompts.asked).toEqual(['recovery:deleted.md:true']);
+    expect(editor.value()).toBe('last known edits');
+    expect(controller.info().path).toBe('/n/deleted.md');
+    expect(controller.info().saveStatus.kind).toBe('action-needed');
+    expect(platform.disk.get('/n/deleted.md')).toBeUndefined();
+  });
+
+  it('can restore an empty named recovery without losing the need to save it', async () => {
+    const platform = createMemoryPlatform();
+    await platform.recovery.put({ id: crypto.randomUUID(), path: '/n/empty.md', stamp: 'old',
+      format: { eol: '\n', bom: false, mixedEol: false }, text: '', updatedAt: Date.now() });
+    const prompts = scriptedPrompter();
+    prompts.answers.recovery.push('restore');
+    const controller = createDocumentController({ platform, prompter: prompts.prompter, editor: fakeEditor() });
+    await controller.start({ kind: 'none' });
+    expect(controller.info().dirty).toBe(true);
+    prompts.answers.conflict.push('overwrite');
+    expect(await controller.save()).toBe(true);
+    expect(platform.disk.get('/n/empty.md')).toBe('');
+  });
+
+  it('does not leave a stale recovery copy after saving while its write is in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const platform = createMemoryPlatform({ files: { '/n/a.md': 'a' }, startupPath: '/n/a.md' });
+      const actualPut = platform.recovery.put;
+      let release!: () => void;
+      platform.recovery.put = async (copy) => {
+        await new Promise<void>((resolve) => { release = resolve; });
+        await actualPut(copy);
+      };
+      const editor = fakeEditor();
+      const controller = createDocumentController({ platform, prompter: scriptedPrompter().prompter, editor });
+      await controller.start(await platform.startupDocument());
+      editor.type('!');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(500);
+      const save = controller.save();
+      release();
+      expect(await save).toBe(true);
+      expect(platform.disk.get('/n/a.md')).toBe('a!');
+      expect(await platform.recovery.list()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('checkpoints an edit made while a clean save removes its old recovery copy', async () => {
+    vi.useFakeTimers();
+    try {
+      const { platform, editor, controller } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+      editor.type('!');
+      controller.contentChanged();
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['a!']);
+
+      const actualRemove = platform.recovery.remove;
+      let startRemoving!: () => void;
+      let finishRemoving!: () => void;
+      const removing = new Promise<void>((resolve) => { startRemoving = resolve; });
+      const release = new Promise<void>((resolve) => { finishRemoving = resolve; });
+      platform.recovery.remove = async (id) => {
+        startRemoving();
+        await release;
+        await actualRemove(id);
+      };
+      const save = controller.save();
+      await removing;
+      editor.type('?');
+      controller.contentChanged();
+      finishRemoving();
+      expect(await save).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['a!?']);
+      expect(controller.info().dirty).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('removes a checkpoint when edits are undone back to the saved text', async () => {
+    const { platform, editor, controller, asked } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+    editor.type('!');
+    controller.contentChanged();
+    await Promise.resolve();
+    expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['a!']);
+    editor.replace('a');
+    controller.contentChanged();
+    expect(controller.info().dirty).toBe(false);
+    expect(await platform.requestClose()).toBe(true);
+    expect(await platform.recovery.list()).toEqual([]);
+    expect(asked).toEqual([]);
   });
 });
 
@@ -245,6 +573,30 @@ describe('closing', () => {
     expect(await platform.requestClose()).toBe(true);
     expect(platform.disk.get('/n/a.md')).toBe('a!');
   });
+
+  it('stays open if typing continues while the chosen Save is in flight', async () => {
+    const { platform, editor, controller, answers } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+    let release!: () => void;
+    let entered!: () => void;
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    platform.disk.setWriteGate(() => {
+      entered();
+      return new Promise<void>((resolve) => { release = resolve; });
+    });
+    editor.type('1');
+    controller.contentChanged();
+    answers.unsaved.push('save');
+    const closing = platform.requestClose();
+    await writing;
+    editor.type('2');
+    controller.contentChanged();
+    release();
+    expect(await closing).toBe(false);
+    expect(platform.destroyed).toBe(false);
+    expect(platform.disk.get('/n/a.md')).toBe('a1');
+    expect(editor.value()).toBe('a12');
+    expect(controller.info().dirty).toBe(true);
+  });
 });
 
 describe('changes made by other programs', () => {
@@ -258,15 +610,20 @@ describe('changes made by other programs', () => {
     expect(controller.info().eol).toBe('CRLF');
   });
 
-  it('asks before replacing unsaved edits, and "keep" stops asking', async () => {
-    const { platform, editor, controller, asked } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+  it('keeps a dirty external edit pending until overwrite is explicitly confirmed', async () => {
+    const { platform, editor, controller, asked, answers } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
     editor.type('!');
     platform.disk.put('/n/a.md', 'theirs');
     await controller.checkDisk();
     await controller.checkDisk();
     expect(asked).toEqual(['disk:a.md']);
     expect(editor.value()).toBe('a!');
-    // Having chosen to keep ours, saving overwrites without a conflict prompt.
+    expect(controller.info().saveStatus.kind).toBe('action-needed');
+    // Keeping our buffer must not silently grant permission to overwrite theirs.
+    expect(await controller.save()).toBe(false);
+    expect(platform.disk.get('/n/a.md')).toBe('theirs');
+    expect(asked).toEqual(['disk:a.md', 'conflict:a.md']);
+    answers.conflict.push('overwrite');
     expect(await controller.save()).toBe(true);
     expect(platform.disk.get('/n/a.md')).toBe('a!');
   });
@@ -277,6 +634,7 @@ describe('changes made by other programs', () => {
     await controller.checkDisk();
     expect(notices).toEqual(['a.md was deleted or moved. Save to keep it.']);
     expect(controller.info().dirty).toBe(true);
+    expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['a']);
     await controller.checkDisk(); // no repeated notice
     expect(notices).toHaveLength(1);
     expect(await controller.save()).toBe(true);
@@ -315,6 +673,30 @@ describe('changes made by other programs', () => {
     expect(asked).toEqual([]);
     expect(editor.value()).toBe('a12');
     expect(controller.info().dirty).toBe(true);
+  });
+
+  it('keeps a new edit made during a disk reload and preserves a recovery copy', async () => {
+    const { platform, editor, controller } = await setup({ '/n/a.md': 'a' }, '/n/a.md');
+    const actualRead = platform.fs.read;
+    let release!: () => void;
+    let entered!: () => void;
+    const reading = new Promise<void>((resolve) => { entered = resolve; });
+    platform.fs.read = async (path) => {
+      entered();
+      await new Promise<void>((resolve) => { release = resolve; });
+      return actualRead(path);
+    };
+    platform.disk.put('/n/a.md', 'theirs');
+    const checking = controller.checkDisk();
+    await reading;
+    editor.type(' mine');
+    controller.contentChanged();
+    release();
+    await checking;
+    expect(editor.value()).toBe('a mine');
+    expect(controller.info().saveStatus.kind).toBe('action-needed');
+    expect((await platform.recovery.list()).map((copy) => copy.text)).toEqual(['a mine']);
+    expect(platform.disk.get('/n/a.md')).toBe('theirs');
   });
 });
 

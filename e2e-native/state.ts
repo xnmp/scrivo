@@ -4,4 +4,4 @@
 // singleton is enough — no IPC needed.
 import type { Fixture } from './fixtures';
 
-export const state: { fixture?: Fixture } = {};
+export const state: { fixture?: Fixture; driverPid?: number } = {};

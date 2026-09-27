@@ -135,7 +135,7 @@ export const config: WebdriverIO.Config = {
     // "New Session" request made after beforeSession returns.
     (capabilities as Record<string, unknown>)['tauri:options'] = {
       application,
-      args: [...(fixture.launchArgs ?? []), fixture.docPath],
+      args: [...(fixture.launchArgs ?? []), ...(fixture.launchWithoutFile ? [] : [fixture.docPath])],
     };
 
     driverProcess = spawn(
@@ -144,8 +144,10 @@ export const config: WebdriverIO.Config = {
       {
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
+        env: { ...process.env, XDG_DATA_HOME: path.join(fixture.dir, 'data') },
       },
     );
+    state.driverPid = driverProcess.pid;
     const logPath = path.join(logDir, `${base}.tauri-driver.log`);
     const { createWriteStream } = await import('node:fs');
     const logStream = createWriteStream(logPath, { flags: 'a' });

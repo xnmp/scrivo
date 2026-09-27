@@ -25,6 +25,15 @@ one. Right-click a cell (or press `Shift+F10`) to add or delete rows and columns
 Table edits remain Markdown and can be undone. Local image paths resolve relative
 to the document.
 
+Named files save automatically after 2 seconds without typing; `Ctrl+S` saves
+immediately. The editor shows Edited, Saving, Saved, or Action needed. A failed
+save can be retried from the status bar. If another program changes the file,
+autosave pauses and the editor offers reload, Save As, or a confirmed overwrite
+when saving manually. Unsaved and untitled text receives a private recovery copy
+in app data; on the next launch, choose Restore or Discard. Recovery writes are
+asynchronous, so the very latest keystrokes may not survive a process kill before
+their copy has finished writing.
+
 ## Build and test
 
 Install [Bun](https://bun.sh/), Rust, and the [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/) for your platform. On Linux, the native test suite also needs `tauri-driver`, `WebKitWebDriver`, `xvfb-run`, `dbus-run-session`, and `openbox`.
