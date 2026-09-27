@@ -157,6 +157,47 @@
 }
 .cm-lp-table th { font-weight: 600; background: var(--code-bg); }
 .cm-lp-table tbody tr:nth-child(even) { background: var(--table-stripe); }
+.cm-lp-table th:focus-visible,
+.cm-lp-table td:focus-visible,
+.cm-lp-table th:focus-within,
+.cm-lp-table td:focus-within { outline: 2px solid var(--link); outline-offset: -2px; }
+.cm-lp-table-input {
+  display: block;
+  width: 100%;
+  min-width: 6ch;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: inherit;
+}
+.cm-lp-table-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 176px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0003;
+}
+.cm-lp-table-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--fg);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cm-lp-table-menu button:hover,
+.cm-lp-table-menu button:focus-visible { background: var(--code-bg); outline: none; }
+.cm-lp-table-menu button:disabled { color: var(--fg-muted); cursor: default; }
 
 /* Markdown tokens only matter in source mode; live preview styles its own classes. */
 .cm-source-mode .tok-heading { color: var(--heading); font-weight: 600; }

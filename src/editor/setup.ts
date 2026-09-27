@@ -1,5 +1,5 @@
 // Editor composition: builds the CodeMirror view and exposes it through EditorPort.
-import { defaultKeymap, history, historyKeymap, indentLess, indentMore } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore, redo, undo } from '@codemirror/commands';
 import { syntaxHighlighting } from '@codemirror/language';
 import { markdownKeymap } from '@codemirror/lang-markdown';
 import { Compartment, EditorSelection, EditorState, Transaction, type Extension, type Text } from '@codemirror/state';
@@ -103,6 +103,28 @@ export function createEditor(options: EditorOptions): Editor {
     EditorState.create({ doc: text, selection: EditorSelection.cursor(initialCursor(text)), extensions: extensions(path) });
 
   const view = new EditorView({ parent: options.parent, state: stateFor('', null) });
+
+  // Table cells live inside a CodeMirror widget, so its keymap does not receive
+  // their events. Keep document shortcuts available while the table has focus.
+  view.dom.addEventListener('keydown', (event) => {
+    if (!(event.target instanceof HTMLElement) || !event.target.closest('.cm-lp-table')) return;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key === 's' && !event.shiftKey) options.commands.save();
+    else if (key === 's' && event.shiftKey) options.commands.saveAs();
+    else if (key === 'o' && !event.shiftKey) options.commands.open();
+    else if (key === 'n' && !event.shiftKey) options.commands.newDocument();
+    else if (key === 'z' || key === 'y') {
+      if (event.target instanceof HTMLInputElement) event.target.blur();
+      (key === 'y' || event.shiftKey ? redo : undo)(view);
+      view.focus();
+    } else if (key === 'e' && !event.shiftKey) options.commands.toggleReading();
+    else if (key === '/' && !event.shiftKey) toggleSourceMode();
+    else if (key === 'f' && !event.shiftKey) void openSearch(view, false);
+    else if (key === 'h' && !event.shiftKey) void openSearch(view, true);
+    else return;
+    event.preventDefault();
+  }, true);
 
   function toggleSourceMode() {
     source = !source;

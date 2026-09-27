@@ -19,7 +19,11 @@ fenced code is highlighted after the document appears. `Ctrl+O` opens a file;
 `Ctrl+N` starts a new document. Changes made by another program are detected while
 the window stays open; a dirty editor asks before replacing its text.
 The editor supports fenced code, tables, task lists, math, images, and YAML front
-matter. Local image paths resolve relative to the document.
+matter. In a rendered table, click a cell to edit it, use `Tab`/`Shift+Tab` to
+move between cells, and use `Enter` to move down; moving beyond the last row adds
+one. Right-click a cell (or press `Shift+F10`) to add or delete rows and columns.
+Table edits remain Markdown and can be undone. Local image paths resolve relative
+to the document.
 
 ## Build and test
 

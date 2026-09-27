@@ -92,6 +92,13 @@ export function checkboxFixture(): Fixture {
   return { dir, docPath, launchArgs: EDIT };
 }
 
+export function tableFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '| Name | Score |\n| --- | ---: |\n| Ann | 10 |\n\nAfter the table.\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
 // --- Reading-view fixtures (view-first: launched with no extra args). ---
 
 export function readingHeadingFixture(): Fixture {
@@ -156,6 +163,7 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'invalid-utf8.spec.ts': invalidUtf8Fixture,
   'image.spec.ts': imageFixture,
   'checkbox.spec.ts': checkboxFixture,
+  'table.spec.ts': tableFixture,
   'reading-heading.spec.ts': readingHeadingFixture,
   'reading-image.spec.ts': readingImageFixture,
   'reading-toggle.spec.ts': readingToggleFixture,

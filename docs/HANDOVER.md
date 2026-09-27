@@ -1,6 +1,56 @@
-# Handover — 2026-09-27
+# Handover — 2026-09-28
 
-## Current Linux checkpoint: existing-file save race
+## 2026-09-28: live table editing
+
+The current work adds Obsidian-style cell editing to Scrivo's CodeMirror live
+preview. Previously, clicking a rendered cell revealed the entire raw Markdown
+table. Now a focused input edits that cell while the table stays rendered. Each
+input change updates the Markdown document through a normal undoable CodeMirror
+transaction. `Tab`/`Shift+Tab` move across cells, `Enter` moves down, and moving
+beyond the last row adds an empty row. Right-click or `Shift+F10` opens row and
+column insert/delete actions; the menu returns focus to the table. Document
+shortcuts remain available from focused cells. Source mode (`Ctrl+/`) still
+provides direct Markdown editing.
+
+The pure helpers in `src/domain/table.ts` find cells, escape typed pipes, and
+perform structural edits. `src/editor/live-preview/build.ts` builds a lazy table
+model; `widgets.ts` renders it and preserves the active input during source
+updates. Its `updateDOM` compares cell source and redraws only changed cells,
+while checking table shape and alignment. An external edit to the active cell
+closes the stale input. `src/editor/live-preview/index.ts` applies changes to
+the CodeMirror document. `src/editor/setup.ts` bridges document shortcuts while
+focus is inside the widget. CSS and user instructions are in `editor.css` and
+`README.md`.
+
+Adversarial review found and prompted fixes for surplus cells being discarded
+by column edits, compact cells ending in a backslash swallowing the next pipe,
+quadratic redraw work, stale focused inputs, table-shape reuse, and focus after
+menu actions. Unit tests cover the pure edge cases; browser tests assert actual
+Markdown output, save, undo, row/column actions, focus, and external updates.
+
+Verification: app/native TypeScript typechecks and **314/314** Vitest tests passed.
+The targeted Chromium table suite passed **9/9**, and the full Chromium suite
+passed **72/72** with four workers. The full native WebKitGTK suite passed
+**13/13 specs, 17/17 tests**, including a new rendered-cell edit and disk-save
+check. Its first draft failed because the initial caret kept the table in raw
+source mode; after moving the caret out, WebKit WebDriver's `setValue()` lost a
+replaced input element. The final test uses actual key input and passes. The
+release build and bundle gate passed at 41/41 KiB startup JS/CSS and 55/56 KiB
+known prepaint JS/CSS. Headless screenshots of a focused cell and the table
+menu were visually reviewed. The release binary was installed atomically at
+`/home/chong/.local/bin/scrivo`; installed and release SHA-256 both equal
+`bad687564f8198b677d2845011bbc4f235382819e7a139a7dc494abf08f83543`.
+An already-running Scrivo process retains the older executable until restarted;
+it was left open to avoid disturbing unsaved work.
+
+Known scope: direct cell editing and row/column insertion/deletion are present;
+sorting, moving rows/columns, and alignment menu actions from Obsidian remain
+future work. The context menu is portaled outside CodeMirror, so document
+shortcuts do not run while that transient menu has focus. The previous Linux
+save-race checkpoint begins below; its remaining risks and Windows deferral
+still apply.
+
+## Previous Linux checkpoint: existing-file save race
 
 The active request was to commit the two-phase startup preview, fix the known
 existing-target save race, run the Linux verification suites, and leave a

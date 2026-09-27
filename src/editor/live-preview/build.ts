@@ -14,7 +14,7 @@ import { reachesPrefix, touches, type Span } from '../../domain/reveal';
 import { parseAlignments, splitRow } from '../../domain/table';
 import { imageUrl, type PreviewEnv } from './env';
 import { inlineAst, type InlineNode } from './inline-ast';
-import { BulletWidget, CheckboxWidget, ImageWidget, MathWidget, TableWidget, type TableModel } from './widgets';
+import { BulletWidget, CheckboxWidget, ImageWidget, MathWidget, TableWidget, type TableAction, type TableModel } from './widgets';
 
 const hidden = Decoration.replace({});
 const markCache = new Map<string, Decoration>();
@@ -373,7 +373,9 @@ export function buildInline(
 // Block widgets
 
 export interface BlockCallbacks {
-  readonly onTableCellClick: (view: EditorView, tableFrom: number, row: number, col: number) => void;
+  readonly onTableCellInput: (view: EditorView, tableFrom: number, row: number, col: number, value: string) => void;
+  readonly onTableAppendRow: (view: EditorView, tableFrom: number, rows: number, columns: number) => void;
+  readonly onTableAction: (view: EditorView, tableFrom: number, row: number, col: number, rows: number, columns: number, action: TableAction) => void;
   readonly renderInline: (nodes: readonly InlineNode[], parent: HTMLElement, view: EditorView) => void;
 }
 
@@ -383,19 +385,32 @@ export function tableModel(state: EditorState, table: SyntaxNode): TableModel {
   const firstLine = doc.lineAt(table.from).number;
   const lastLine = doc.lineAt(table.to).number;
   const align = parseAlignments(doc.line(firstLine + 1).text);
-  const rows: InlineNode[][][] = [];
+  const sourceCells: string[][] = [];
+  const rowLines: number[] = [];
+  const rowNodes: (SyntaxNode | null)[] = [];
   for (let n = firstLine; n <= lastLine; n++) {
     if (n === firstLine + 1) continue; // delimiter row
     const line = doc.line(n);
-    const rowNode = table.childAfter(line.from);
     const cells = splitRow(line.text).slice(0, align.length);
-    rows.push(
-      cells.map(({ from, to }) =>
-        rowNode ? inlineAst(state, rowNode, line.from + from, line.from + to) : [{ t: 'text' as const, text: line.text.slice(from, to) }],
-      ),
-    );
+    sourceCells.push(cells.map(({ from, to }) => line.text.slice(from, to)));
+    rowLines.push(n);
+    rowNodes.push(table.childAfter(line.from));
   }
-  return { align, rows };
+  return {
+    align,
+    sourceCells,
+    inlineNodes(row: number, col: number): readonly InlineNode[] {
+      const lineNo = rowLines[row];
+      if (lineNo === undefined) return [];
+      const line = doc.line(lineNo);
+      const cell = splitRow(line.text)[col];
+      if (!cell) return [];
+      const rowNode = rowNodes[row];
+      return rowNode
+        ? inlineAst(state, rowNode, line.from + cell.from, line.from + cell.to)
+        : [{ t: 'text', text: line.text.slice(cell.from, cell.to) }];
+    },
+  };
 }
 
 export function buildBlocks(state: EditorState, selection: readonly Span[], callbacks: BlockCallbacks): DecorationSet {
@@ -414,7 +429,7 @@ export function buildBlocks(state: EditorState, selection: readonly Span[], call
     if (name === 'Table') {
       if (revealed || doc.lineAt(node.from).number + 1 > doc.lines) continue;
       const source = state.sliceDoc(from, to);
-      const widget = new TableWidget(source, () => tableModel(state, node), callbacks.onTableCellClick, callbacks.renderInline);
+      const widget = new TableWidget(source, () => tableModel(state, node), callbacks.onTableCellInput, callbacks.onTableAppendRow, callbacks.onTableAction, callbacks.renderInline);
       decos.push(Decoration.replace({ widget, block: true }).range(from, to));
     } else {
       const marks = childrenNamed(node, 'BlockMathMark');

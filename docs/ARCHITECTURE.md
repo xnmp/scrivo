@@ -68,6 +68,11 @@ Why CodeMirror live preview rather than a ProseMirror WYSIWYG: ProseMirror-based
 editors (Milkdown, Tiptap) parse markdown into a rich document and serialize it back,
 rewriting list markers, escapes and tables. Obsidian, Zettlr and SilverBullet use
 CodeMirror 6 live preview for this reason; it also virtualises the viewport.
+Rendered editor tables use a CodeMirror block widget. Its focused cell input
+updates only that cell's Markdown source through normal undoable transactions;
+the widget redraws changed cells and closes an input if another edit replaces its
+source. Row and column commands also edit Markdown directly. Table parsing and
+pipe escaping live in the pure `domain/table.ts` helpers.
 
 ## Layers
 

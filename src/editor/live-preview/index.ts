@@ -1,11 +1,12 @@
 // Live preview: Typora-style rendering of markdown source in place.
 import { syntaxTree } from '@codemirror/language';
-import { EditorSelection, StateField, type EditorState, type Extension, type Transaction } from '@codemirror/state';
+import { StateField, type EditorState, type Extension, type Transaction } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
-import { splitRow } from '../../domain/table';
+import { deleteTableColumn, emptyTableRow, insertTableColumn, replaceCell } from '../../domain/table';
 import { buildBlocks, buildInline, type BlockCallbacks } from './build';
 import { imageUrl, previewEnv, refreshPreview } from './env';
 import type { InlineNode } from './inline-ast';
+import type { TableAction } from './widgets';
 import { renderMath } from './math';
 
 function renderInline(nodes: readonly InlineNode[], parent: HTMLElement, view: EditorView): void {
@@ -56,20 +57,63 @@ function renderInline(nodes: readonly InlineNode[], parent: HTMLElement, view: E
   }
 }
 
-/** Put the caret at the end of the clicked cell's source, revealing the table. */
-function onTableCellClick(view: EditorView, tableFrom: number, row: number, col: number): void {
+/** Cell edits change only the Markdown source; the table widget is a view of it. */
+function onTableCellInput(view: EditorView, tableFrom: number, row: number, col: number, value: string): void {
   const doc = view.state.doc;
   const first = doc.lineAt(tableFrom).number;
   const lineNo = row === 0 ? first : first + row + 1; // skip the delimiter row
   if (lineNo > doc.lines) return;
   const line = doc.line(lineNo);
-  const cell = splitRow(line.text)[col];
-  const pos = line.from + (cell ? cell.to : line.length);
-  view.dispatch({ selection: EditorSelection.cursor(pos), scrollIntoView: true, userEvent: 'select.pointer' });
-  view.focus();
+  const next = replaceCell(line.text, col, value);
+  if (next !== line.text) view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, userEvent: 'input.table' });
 }
 
-const callbacks: BlockCallbacks = { onTableCellClick, renderInline };
+function onTableAppendRow(view: EditorView, tableFrom: number, rows: number, columns: number): void {
+  const doc = view.state.doc;
+  const lastLineNo = doc.lineAt(tableFrom).number + rows;
+  if (lastLineNo > doc.lines) return;
+  const last = doc.line(lastLineNo);
+  view.dispatch({ changes: { from: last.to, insert: `\n${emptyTableRow(columns)}` }, userEvent: 'input.table' });
+}
+
+function onTableAction(view: EditorView, tableFrom: number, row: number, col: number, rows: number, columns: number, action: TableAction): void {
+  const doc = view.state.doc;
+  const first = doc.lineAt(tableFrom).number;
+  const lineNo = row === 0 ? first : first + row + 1;
+  if (first + rows > doc.lines || col >= columns) return;
+
+  if (action.startsWith('insert-column') || action === 'delete-column') {
+    if (action === 'delete-column' && columns <= 1) return;
+    const at = action === 'insert-column-right' ? col + 1 : col;
+    const changes = Array.from({ length: rows + 1 }, (_, offset) => {
+      const line = doc.line(first + offset);
+      const insert = action === 'delete-column'
+        ? deleteTableColumn(line.text, at, columns)
+        : insertTableColumn(line.text, at, columns, offset === 1);
+      return { from: line.from, to: line.to, insert };
+    });
+    view.dispatch({ changes, userEvent: 'input.table' });
+    return;
+  }
+
+  if (action === 'delete-row') {
+    if (row === 0 || lineNo > doc.lines) return;
+    const line = doc.line(lineNo);
+    const from = line.to < doc.length ? line.from : line.from - 1;
+    const to = line.to < doc.length ? line.to + 1 : line.to;
+    view.dispatch({ changes: { from, to }, userEvent: 'input.table' });
+    return;
+  }
+
+  if (action === 'insert-row-above' && row === 0) return;
+  const line = doc.line(action === 'insert-row-below' && row === 0 ? first + 1 : lineNo);
+  const change = action === 'insert-row-above'
+    ? { from: line.from, insert: `${emptyTableRow(columns)}\n` }
+    : { from: line.to, insert: `\n${emptyTableRow(columns)}` };
+  view.dispatch({ changes: change, userEvent: 'input.table' });
+}
+
+const callbacks: BlockCallbacks = { onTableCellInput, onTableAppendRow, onTableAction, renderInline };
 
 const envChanged = (a: EditorState, b: EditorState) => a.facet(previewEnv) !== b.facet(previewEnv);
 const refreshed = (trs: readonly Transaction[]) => trs.some((tr) => tr.effects.some((e) => e.is(refreshPreview)));
