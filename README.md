@@ -43,30 +43,40 @@ for the code layout, safety model, and performance decisions.
 ## Startup performance
 
 The comparison uses the same 1280×720 private headless compositor for both apps.
-`bench/ab.mjs` rotates which app launches first on each paired round. “Content”
-is the first screenshot within 3% of the final document image; “complete” is the first
-frame after which the image stays stable. Times start at process launch. These numbers
-are machine-specific and include the window system and webview startup.
-These results are provisional: the sampler uses a stable final screenshot as its
-reference, but does not yet verify that the document rendered in every run or reject
-runs that reach its time cap. See [handover](docs/HANDOVER.md) for the validation work.
+`bench/ab.mjs` rotates which app launches first on each paired round. “Content” is
+the first screenshot matching a [visually reviewed, fixture-specific screen](bench/references/)
+within 0.3% of image tiles; stable loading or error screens, a missing window, and a 20-second
+time-cap result fail the run. “Complete” means the first frame after which that
+viewport stays stable, not that the whole file has rendered. At least 80% of paired
+rounds must be valid. Times start at process launch and include the window system
+and webview; results are machine-specific. A native E2E test separately checks that
+the large document's tail renders and can be scrolled into view.
 
-Measured on Linux on 2026-09-27, using the release binary and 12 attempted rounds
-per fixture (milliseconds; lower is better). Two Typora launches failed to show a
-window on the medium fixture, leaving 10 valid pairs there:
+Measured on Linux on 2026-09-27 using the release binary and 12 valid paired
+rounds per fixture (milliseconds; lower is better):
 
-| Document | App | Valid launches | Window median | Content median | Complete median |
+| Document | App | Valid launches | Window median | Content median | Viewport stable median |
 |---|---|---:|---:|---:|---:|
-| Medium (8.8 KB) | Typora | 10 | 822 | 1,857 | 1,857 |
-| Medium (8.8 KB) | Scrivo | 12 | 498 | 749 | 771 |
-| Large (443 KB) | Typora | 12 | 922 | 1,294 | 1,558 |
-| Large (443 KB) | Scrivo | 12 | 559 | 933 | 953 |
+| Medium (8.8 KB) | Typora | 12 | 449 | 1,010 | 1,010 |
+| Medium (8.8 KB) | Scrivo | 12 | 218 | 363 | 363 |
+| Large (443 KB) | Typora | 12 | 819 | 4,107 | 4,107 |
+| Large (443 KB) | Scrivo | 12 | 495 | 858 | 858 |
 
-Scrivo reached content sooner in all 10 valid medium pairs and all 12 large pairs.
-The paired median advantage was 1,162 ms for medium and 379 ms for large.
-Individual launches varied with system load; the
-[medium](bench/results/final-medium.txt) and
-[large](bench/results/final-large.txt) round logs are included for inspection.
+Scrivo reached the verified first viewport sooner in 11/12 medium pairs and all
+12 large pairs. The paired median advantage was 651 ms for medium and 3,239 ms
+for large. One medium Scrivo launch took 1.7 s to show a window. Host load changed
+sharply during the large run, so its absolute medians are especially sensitive to
+that run's conditions; the comparison is based on within-round pairs. The
+[medium](bench/results/verified-medium.txt) and
+[large](bench/results/verified-large.txt) round logs are included for inspection.
+Earlier runs with different fixture labels and less stringent readiness checks are
+retained as [medium](bench/results/pre-readiness-medium.txt) and
+[large](bench/results/pre-readiness-large.txt) historical logs; they are not directly
+comparable with these results.
+
+The web build gate counts 34 KiB of linked startup JS/CSS and static imports against
+a 40 KiB budget. It separately reports a 1,060 KiB math font that loads when math is
+used in the reading view.
 
 Run the comparison locally with:
 

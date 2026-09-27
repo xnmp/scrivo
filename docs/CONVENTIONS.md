@@ -31,9 +31,10 @@ codebase consistent.
   outline, KaTeX, dialogs, code grammars). Reading-view find stays in the startup
   chunk so typing immediately after Ctrl+F is captured. A failed lazy import must
   degrade, never wedge the UI.
-  `scripts/check-bundle.mjs` enforces a 40 KiB budget over linked JS/CSS assets and
-  transitive static JS imports. It does not count conditional fonts, dynamic imports,
-  or CSS imports; account for those separately when changing the first-paint path.
+  `scripts/check-bundle.mjs` enforces a 40 KiB budget over linked JS/CSS assets,
+  transitive static JS imports, and CSS `@import` files. It separately reports CSS
+  URL assets such as the conditional math font. Awaited dynamic imports still require
+  a runtime first-paint check.
 
 ## Editing semantics
 

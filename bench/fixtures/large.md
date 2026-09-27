@@ -1,6 +1,6 @@
-# Benchmark Document
+# Benchmark Large Document
 
-The first heading above is the readiness marker the harness waits for.
+**Large fixture:** 400 sections. This visible heading and line identify the opened file.
 
 ## Section 1: Notes on the system
 
@@ -20402,3 +20402,4 @@ $$
 
 ---
 
+## End of Large Benchmark Document

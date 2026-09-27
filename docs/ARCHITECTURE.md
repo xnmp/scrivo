@@ -158,12 +158,13 @@ These are phase observations from one launch, not a paired performance claim.
 ## Performance decisions
 
 Current comparisons use the release build with `bench/ab.mjs` (paired rounds with
-rotated launch order; "content" = first frame within 3% of the final one). Earlier
-experiments below used the original fixed launch order, so their deltas are
+rotated launch order; "content" = first frame within 0.3% of a reviewed fixture-specific
+first-viewport reference). The final viewport must also match that reference and settle
+before the 20-second cap; at least 80% of rounds must form
+valid pairs. "Complete" means viewport stability, not full-document completion. A
+native E2E test checks that the large document's tail is present and scrollable.
+Earlier experiments below used the original fixed launch order, so their deltas are
 directional rather than directly comparable with the current README results.
-The current sampler does not verify that every final screenshot contains the document
-or reject its time-cap result. Treat the paired results as provisional until those
-readiness checks and failure exits are added.
 
 Adopted:
 
@@ -203,4 +204,4 @@ after warm-up), NVIDIA's EGL init (Mesa's is ~35 ms faster on the same machine).
 | app in a browser | Playwright (chromium) | what the user sees, with the real renderer via the `scrivo-render` CLI |
 | native app | tauri-driver + WebKitWebDriver (`e2e-native/`) | real binary opens, edits and saves real files |
 | performance | `bench/bench.mjs`, `bench/ab.mjs` | window / content / complete / PSS; paired A/B |
-| startup bundle | `scripts/check-bundle.mjs` + Vitest fixture | 40 KiB budget over linked JS/CSS and transitive static JS imports; shims first (conditional fonts, dynamic imports and CSS imports uncounted) |
+| startup bundle | `scripts/check-bundle.mjs` + Vitest fixture | 40 KiB budget over linked JS/CSS, transitive static JS imports, and CSS `@import`; shims first; CSS assets reported separately (awaited dynamic imports uncounted) |

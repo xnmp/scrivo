@@ -1,6 +1,6 @@
-# Benchmark Document
+# Benchmark Medium Document
 
-The first heading above is the readiness marker the harness waits for.
+**Medium fixture:** 8 sections. This visible heading and line identify the opened file.
 
 ## Section 1: Notes on the system
 
@@ -410,3 +410,4 @@ $$
 
 ---
 
+## End of Medium Benchmark Document

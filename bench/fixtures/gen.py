@@ -2,13 +2,18 @@
 """Generate deterministic markdown fixtures for startup benchmarks.
 
 medium.md  ~ a long-ish real-world note (~400 lines)
-large.md   ~ a 1 MB+ document (~20k lines) to expose O(n) startup costs
+large.md   ~ a 443 KB document (~20k lines) to expose O(n) startup costs
 """
 from pathlib import Path
 
 HERE = Path(__file__).parent
 
-HEADER = "# Benchmark Document\n\nThe first heading above is the readiness marker the harness waits for.\n\n"
+HEADER = """\
+# Benchmark {label} Document
+
+**{label} fixture:** {sections} sections. This visible heading and line identify the opened file.
+
+"""
 
 SECTION = """\
 ## Section {n}: Notes on the system
@@ -65,13 +70,17 @@ $$
 """
 
 
-def build(sections: int) -> str:
-    return HEADER + "".join(SECTION.format(n=i) for i in range(1, sections + 1))
+def build(sections: int, label: str) -> str:
+    return (
+        HEADER.format(label=label, sections=sections)
+        + "".join(SECTION.format(n=i) for i in range(1, sections + 1))
+        + f"## End of {label} Benchmark Document\n"
+    )
 
 
 def main() -> None:
-    (HERE / "medium.md").write_text(build(8))
-    (HERE / "large.md").write_text(build(400))
+    (HERE / "medium.md").write_text(build(8, "Medium"))
+    (HERE / "large.md").write_text(build(400, "Large"))
 
 
 if __name__ == "__main__":

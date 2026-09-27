@@ -5,7 +5,7 @@
 // app with. Fixtures must finish writing before the app is launched (the app reads
 // the file at startup), so this runs inside wdio's `beforeSession` hook, not inside
 // a spec's `before()`.
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -127,6 +127,13 @@ export function readingWatchFixture(): Fixture {
   return { dir, docPath };
 }
 
+export function readingLargeFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'large.md');
+  writeFileSync(docPath, readFileSync(new URL('../bench/fixtures/large.md', import.meta.url)));
+  return { dir, docPath };
+}
+
 export const fixtureBySpec: Record<string, () => Fixture> = {
   'heading.spec.ts': headingFixture,
   'save-bytes.spec.ts': saveBytesFixture,
@@ -138,4 +145,5 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'reading-image.spec.ts': readingImageFixture,
   'reading-toggle.spec.ts': readingToggleFixture,
   'reading-watch.spec.ts': readingWatchFixture,
+  'reading-large.spec.ts': readingLargeFixture,
 };

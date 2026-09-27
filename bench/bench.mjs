@@ -6,54 +6,52 @@
 // (Typora blocks DevTools flags in production, so closed-source editors are measured
 // the same way as ours):
 //   window   – first frame where the app's window is on screen
-//   content  – first frame that is within 3% (by tile) of the final one: the document
-//              is up, small late changes (a status bar, a caret) aside
-//   complete – "visually complete": the first frame after which the screen stays
-//              identical (± caret blink) to the final settled frame
-//   pss      – summed PSS of the app's process tree, 1.5 s after visually complete
+//   content  – first frame matching the manually reviewed fixture screen to within
+//              0.3% of image tiles
+//   complete – first frame after which that viewport stays identical (± caret blink)
+//   pss      – summed PSS of the app's process tree, 1.5 s after viewport completion
 //
-// Display backends:
-//   cage (default) – a private, headless wlroots compositor (GPU-rendered, 1280×720).
-//                    Nothing appears on your desktop and focus is never stolen.
-//   hyprland       – your live Hyprland session (`--desktop`): the real-world number,
-//                    but windows pop up and take focus. Animations are disabled for the
-//                    duration and restored afterwards.
+// Every run uses a private, headless 1280×720 cage compositor.
 //
-// Usage: node bench/bench.mjs <typora|scrivo> <file.md> [runs=8] [--desktop] [--dump=DIR] [--trace]
+// Usage: node bench/bench.mjs <typora|scrivo> <file.md> [runs=8] [--dump=DIR] [--trace]
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { READY, SAME, diff, firstContentTime, loadReference, signature } from './visual.mjs';
+import { median } from './stats.mjs';
 
 const argv = process.argv.slice(2);
 const flags = argv.filter((a) => a.startsWith('--'));
 const [appName, fileArg, runsArg = '8'] = argv.filter((a) => !a.startsWith('--'));
 const dumpDir = flags.find((f) => f.startsWith('--dump='))?.slice('--dump='.length);
-const desktop = flags.includes('--desktop');
+const failureDir = flags.find((f) => f.startsWith('--failure-dir='))?.slice('--failure-dir='.length);
 const trace = flags.includes('--trace');
+const unverified = flags.includes('--unverified');
+if (flags.includes('--desktop')) throw new Error('live-desktop benchmarking is unsupported; use the private cage compositor');
 if (!appName || !fileArg) {
-  console.error('usage: bench.mjs <typora|scrivo> <file.md> [runs] [--desktop] [--dump=DIR] [--trace]');
+  console.error('usage: bench.mjs <typora|scrivo> <file.md> [runs] [--dump=DIR] [--failure-dir=DIR] [--trace] [--reference=FILE] [--unverified]');
   process.exit(2);
 }
 const file = path.resolve(fileArg);
 const runs = Number(runsArg);
+if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('runs must be a positive integer');
+const referenceFile = flags.find((f) => f.startsWith('--reference='))?.slice('--reference='.length)
+  ?? path.join(import.meta.dirname, 'references', `${appName}-${path.basename(file, path.extname(file))}.json`);
+const reference = unverified ? null : loadReference(referenceFile, readFileSync(file));
 
 const APPS = {
-  typora: { cmd: '/usr/bin/typora', classRe: /^typora$/i },
+  typora: { cmd: '/usr/bin/typora' },
   scrivo: {
     cmd: process.env.SCRIVO_BIN ?? path.resolve(import.meta.dirname, '../src-tauri/target/release/scrivo'),
-    classRe: /scrivo/i,
   },
 };
 const app = APPS[appName];
 if (!app) throw new Error(`unknown app ${appName}`);
 
 // ---------- screenshots ----------
-const BLOCK = 16;
-
-function capture(env, geometry) {
+function capture(env, geometry, includeRaw = Boolean(dumpDir)) {
   return new Promise((resolve, reject) => {
     const args = ['-t', 'ppm', ...(geometry ? ['-g', geometry] : []), '-'];
     const p = spawn('grim', args, { env });
@@ -63,49 +61,10 @@ function capture(env, geometry) {
     p.on('close', (code) => {
       if (code !== 0) return reject(new Error(`grim exit ${code}`));
       const raw = Buffer.concat(chunks);
-      resolve({ t: performance.now(), sig: signature(raw), raw: dumpDir ? raw : undefined });
+      resolve({ t: performance.now(), sig: signature(raw), raw: includeRaw ? raw : undefined });
     });
   });
 }
-
-/** Mean luminance per BLOCK×BLOCK tile of a binary PPM. */
-function signature(ppm) {
-  let off = 0;
-  const fields = [];
-  while (fields.length < 4) {
-    while (/\s/.test(String.fromCharCode(ppm[off]))) off++;
-    const s = off;
-    while (!/\s/.test(String.fromCharCode(ppm[off]))) off++;
-    fields.push(ppm.toString('latin1', s, off));
-  }
-  off++;
-  const [, w, h] = fields.map(Number);
-  const bw = Math.ceil(w / BLOCK);
-  const bh = Math.ceil(h / BLOCK);
-  const sum = new Float64Array(bw * bh);
-  const cnt = new Uint32Array(bw * bh);
-  for (let py = 0; py < h; py++) {
-    const row = off + py * w * 3;
-    const by = ((py / BLOCK) | 0) * bw;
-    for (let px = 0; px < w; px++) {
-      const i = row + px * 3;
-      const b = by + ((px / BLOCK) | 0);
-      sum[b] += 0.299 * ppm[i] + 0.587 * ppm[i + 1] + 0.114 * ppm[i + 2];
-      cnt[b]++;
-    }
-  }
-  return sum.map((s, i) => s / cnt[i]);
-}
-
-/** Fraction of tiles whose mean luminance moved by more than `tol`. */
-function diff(a, b, tol = 6) {
-  if (a.length !== b.length) return 1;
-  let n = 0;
-  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > tol) n++;
-  return n / a.length;
-}
-const SAME = 0.003; // ≤0.3% of tiles may differ (caret blink)
-const CONTENT = 0.03;
 
 /**
  * Sample until the screen has been stable for `stableMs` after the window appeared.
@@ -116,22 +75,30 @@ async function sampleRun(env, geometry, isWindow, { stableMs = 1500, capMs = 200
   const start = performance.now();
   let windowAt = null;
   let lastChange = start;
+  let settled = false;
   while (performance.now() - start < capMs) {
     const f = await capture(env, typeof geometry === 'function' ? geometry() : geometry);
     if (windowAt === null && isWindow(f)) windowAt = f.t;
     if (frames.length && diff(frames.at(-1).sig, f.sig) > SAME) lastChange = f.t;
     frames.push(f);
-    if (windowAt !== null && f.t - lastChange > stableMs) break;
+    if (f.t - start >= capMs) break;
+    if (windowAt !== null && f.t - lastChange > stableMs && (reference === null || diff(f.sig, reference) <= READY)) {
+      settled = true;
+      break;
+    }
   }
+  if (dumpDir && frames.length) dumpFrames(frames, frames.at(-1).sig);
   if (windowAt === null) throw new Error('window never appeared');
   const final = frames.at(-1).sig;
+  const readinessDifference = reference === null ? null : diff(final, reference);
+  if (readinessDifference !== null && readinessDifference > READY) throw new Error(`document never matched reviewed screen within ${capMs} ms (${(readinessDifference * 100).toFixed(1)}% of tiles differ)`);
+  if (!settled) throw new Error(`document screen did not settle within ${capMs} ms`);
   let lastDifferent = -1;
   frames.forEach((f, i) => {
     if (diff(f.sig, final) > SAME) lastDifferent = i;
   });
   const complete = frames[lastDifferent + 1].t;
-  const content = frames.find((f) => f.t >= windowAt && diff(f.sig, final) <= CONTENT).t;
-  if (dumpDir) dumpFrames(frames, final);
+  const content = firstContentTime(frames, windowAt, reference ?? final);
   const intervals = frames.slice(1).map((f, i) => f.t - frames[i].t);
   return { windowAt, content, complete, frames: frames.length, interval: intervals.reduce((a, b) => a + b, 0) / Math.max(1, intervals.length) };
 }
@@ -232,72 +199,21 @@ async function cageBackend() {
   };
 }
 
-/** Live Hyprland session: the real-world number, but windows appear and take focus. */
-async function hyprlandBackend() {
-  const hyprctl = (...args) => execFileSync('hyprctl', args, { encoding: 'utf8' });
-  // Legacy configs accept `keyword`; Lua configs (Hyprland ≥0.55) only accept `eval`.
-  const setAnimations = (on) => {
-    const out = hyprctl('keyword', 'animations:enabled', on ? '1' : '0');
-    if (/can't work/.test(out)) hyprctl('eval', `hl.config({ animations = { enabled = ${on} } })`);
-  };
-  const animationsOn = () => {
-    const o = JSON.parse(hyprctl('getoption', 'animations:enabled', '-j'));
-    return Boolean(o.bool ?? o.int);
-  };
-  const previous = animationsOn();
-  process.on('SIGINT', () => {
-    setAnimations(previous);
-    process.exit(130);
-  });
-  setAnimations(false);
-  if (animationsOn()) throw new Error('could not disable Hyprland animations');
-
-  const sock = path.join(process.env.XDG_RUNTIME_DIR, 'hypr', process.env.HYPRLAND_INSTANCE_SIGNATURE, '.socket2.sock');
-  const conn = net.createConnection(sock);
-  let opened = null;
-  let buf = '';
-  conn.on('data', (d) => {
-    const now = performance.now();
-    buf += d.toString();
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith('openwindow>>')) continue;
-      const [address, , cls] = line.slice('openwindow>>'.length).split(',');
-      if (app.classRe.test(cls) && !opened) opened = { t: now, address };
-    }
-  });
-  const geometry = () => {
-    if (!opened) return '0,0 1x1';
-    const c = JSON.parse(hyprctl('clients', '-j')).find((w) => w.address === `0x${opened.address}`);
-    return c ? `${c.at[0]},${c.at[1]} ${c.size[0]}x${c.size[1]}` : '0,0 1x1';
-  };
-  return {
-    name: 'hyprland desktop',
-    env: process.env,
-    async sample() {
-      opened = null;
-      const r = await sampleRun(process.env, geometry, () => opened !== null);
-      return { ...r, windowAt: opened.t };
-    },
-    settle: () => sleep(800),
-    async stop() {
-      conn.destroy();
-      setAnimations(previous);
-    },
-  };
-}
-
 // ---------- main ----------
 const stats = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
-  return { min: s[0], median: q(0.5), p90: q(0.9), max: s.at(-1) };
+  return { min: s[0], median: median(s), p90: q(0.9), max: s.at(-1) };
 };
 const fmt = (o) => Object.entries(o).map(([k, v]) => `${k}=${v.toFixed(0)}`).join(' ');
 
-const display = desktop ? await hyprlandBackend() : await cageBackend();
+const display = await cageBackend();
 const results = { window: [], content: [], complete: [], pss: [] };
+let failures = 0;
+if (unverified) {
+  console.error('UNVERIFIED capture: no document-readiness reference was checked');
+  process.exitCode = 1;
+}
 try {
   for (let i = 0; i < runs; i++) {
     const t0 = performance.now();
@@ -321,7 +237,18 @@ try {
           `pss=${pss.toFixed(0)} MiB  (${r.frames} frames @ ${r.interval.toFixed(0)} ms)`,
       );
     } catch (e) {
+      failures++;
       console.log(`run ${i + 1}: FAILED ${e.message}`);
+      if (failureDir) {
+        mkdirSync(failureDir, { recursive: true });
+        const screenshot = path.join(failureDir, `${appName}-${path.basename(file, path.extname(file))}-${Date.now()}.ppm`);
+        try {
+          writeFileSync(screenshot, (await capture(display.env, undefined, true)).raw);
+          console.log(`  failed screen: ${screenshot}`);
+        } catch (captureError) {
+          console.log(`  failed screen unavailable: ${captureError.message}`);
+        }
+      }
     } finally {
       await killTree(child.pid);
       await display.settle();
@@ -339,3 +266,4 @@ console.log(`\n${appName} ${path.basename(file)} runs=${runs} on ${display.name}
 for (const [k, unit] of [['window', 'ms'], ['content', 'ms'], ['complete', 'ms'], ['pss', 'MiB']]) {
   if (results[k].length) console.log(`  ${k.padEnd(8)} ${unit.padEnd(3)} : ${fmt(stats(results[k]))}`);
 }
+if (failures) process.exitCode = 1;

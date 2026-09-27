@@ -1,0 +1,29 @@
+round 1 typora: window=795 content=4068 complete=4068
+round 1 scrivo: window=534 content=893 complete=893
+round 2 scrivo: window=473 content=845 complete=845
+round 2 typora: window=848 content=4214 complete=4214
+round 3 typora: window=842 content=4146 complete=4146
+round 3 scrivo: window=554 content=871 complete=871
+round 4 scrivo: window=517 content=931 complete=931
+round 4 typora: window=940 content=4290 complete=4290
+round 5 typora: window=903 content=4351 complete=4351
+round 5 scrivo: window=569 content=991 complete=991
+round 6 scrivo: window=541 content=921 complete=921
+round 6 typora: window=962 content=4355 complete=4355
+round 7 typora: window=906 content=4345 complete=4345
+round 7 scrivo: window=537 content=872 complete=872
+round 8 scrivo: window=266 content=454 complete=454
+round 8 typora: window=728 content=3656 complete=3656
+round 9 typora: window=440 content=2131 complete=2131
+round 9 scrivo: window=257 content=451 complete=451
+round 10 scrivo: window=290 content=463 complete=463
+round 10 typora: window=413 content=1989 complete=1989
+round 11 typora: window=427 content=2010 complete=2010
+round 11 scrivo: window=245 content=391 complete=391
+round 12 scrivo: window=242 content=422 complete=422
+round 12 typora: window=457 content=2065 complete=2065
+
+large.md, 12 rounds
+  typora           n=12  window med=819  content med=4107  complete med=4107
+  scrivo           n=12  window med=495  content med=858  complete med=858
+  scrivo vs typora: content -3239 ms (paired median), faster in 12/12 rounds

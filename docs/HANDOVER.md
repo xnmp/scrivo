@@ -1,151 +1,140 @@
-# Handover — 2026-09-27 WIP checkpoint
+# Handover — 2026-09-27
 
-## Where to resume
+## Objective and current state
 
-The user wants a Typora-like markdown reader/editor that is working, thoroughly tested,
-and exceptionally fast at startup. This checkpoint commits completed feature work and
-measurements; the broader performance objective remains open. The branch is `main`.
-The preceding commit was `1a76308 Find in the reading view (Ctrl/Cmd+F)`; this handover
-is part of the next WIP commit. Start with the unresolved benchmark validity findings
-below before claiming a measured startup win. No release or deployment was made.
+The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
+verified, and exceptionally fast at startup. Work continues on `main` after commit
+`8eeead5 WIP: reader enhancements, file safety, and startup benchmarks`. This
+continuation hardened the startup comparison, made the large fixture visibly
+distinct, added a native large-file outcome test, and made the build gate report a
+conditional font dependency. The broader goal is ongoing; there is no release or
+deployment.
 
-Repository entry points: `README.md` (usage and current comparison),
-`docs/ARCHITECTURE.md` (layers, safety model, startup path, decisions), and
-`docs/CONVENTIONS.md` (code and testing conventions). The app opens files in a Rust-
-rendered reading view and loads the CodeMirror editor on demand. `src/boot.ts` composes
-it; `src/app/workspace.ts` owns document transitions and disk state; `src/app/controller.ts`
-owns user actions; `src/platform/tauri.ts` is the desktop adapter.
+Read `README.md` for usage and the latest performance table,
+`docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
+`docs/CONVENTIONS.md` for coding and testing rules. Key code entry points are
+`src/boot.ts` (composition root), `src/app/workspace.ts` (document state and disk
+transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
+adapter), `src/viewer/viewer.ts` (progressive reading view), and
+`src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Work in this checkpoint
+## Product work in the preceding checkpoint
 
-- Native E2E fixtures now account for reading-view startup; existing editor cases use
-  `--edit`. Four new native specs cover headings, local images and missing-image
-  placeholders, switching between surfaces, and an atomic external file replacement
-  while the window remains focused. The native package script uses an isolated X
-  display, D-Bus session, window manager, and distinct driver ports.
-- Rust file I/O in `src-tauri/src/document_io.rs` no longer has an in-place truncating
-  write fallback. Reads verify bytes and stamp through the same open file. Unix stamps
-  include metadata change time. Writes take an explicit condition (`unchanged`,
-  `absent`, or `overwrite`), use a same-directory temporary file, sync, recheck the
-  target, then rename. Workspace Save As conflict handling can load the selected
-  target. Deletion and recreation are checked before the final rename.
-- `src-tauri/src/watch.rs` watches parent directories so atomic replacements produce
-  notifications. `src/app/workspace.ts` treats events as hints, checks the current
-  stamp, reloads clean documents, and prompts before replacing a dirty buffer. It
-  checks after watcher installation to close the setup gap. Deletion retains the last
-  version; later recreation is detected. A failed first switch to the editor leaves
-  the reading view as document owner.
-- The reading view loads fenced-code highlighting after paint in
-  `src/viewer/code-highlight.ts`; unknown languages and blocks over 20,000 characters
-  remain plain text. Find caches refresh when highlighting changes text nodes.
-  `src/ui/outline.ts` and `src/styles/outline.css` add a responsive Contents sidebar
-  from headings. These lazy paths keep code grammars and outline UI off the initial
-  static JS path.
-- `bench/ab.mjs` now rotates the first app in each pair, preserves launch failure
-  reasons, and handles zero valid pairs without crashing. `bench/bench.mjs --trace`
-  captures `SCRIVO_TRACE=1` phase marks in its private compositor. Its validity and
-  exit-status gaps are listed below.
-- `scripts/check-bundle.mjs` follows transitive static JS imports even when a Vite
-  preload link is missing. `tests/check-bundle.test.mjs` proves an oversized nested
-  import is caught. The passing 34 KiB / 40 KiB budget covers linked JS/CSS and
-  transitive static JS imports only; it is not a complete first-paint byte total.
-- The native save-bytes E2E now waits for the editor and typed text to be visible and
-  prints expected bytes, actual bytes, and editor text on mismatch. The browser
-  large-document case waits for the rendered tail through Playwright auto-retry.
+The preceding commit made native E2E match view-first startup; hardened Rust file
+reads, stamps, and atomic writes; added parent-directory watching with clean reload
+and dirty-buffer prompts; added postpaint code highlighting and a Contents sidebar;
+and updated Save As conflict handling. It passed 279 unit tests, 26 Rust tests,
+52 Chromium E2E cases, and 10 native WebKitGTK specs. It also introduced rotated
+A/B rounds and a linked JS/CSS bundle budget. Its startup claims were provisional
+because a stable splash screen could be timed as content, failed runs could exit 0,
+and the budget omitted a conditional 1 MB math font.
 
-## Validation already completed
+## This continuation
 
-| Check | Result |
+- `bench/bench.mjs` now waits through intermediate stable screens until the first
+  viewport matches a manually reviewed fixture-specific reference, then stays
+  stable for 1.5 seconds. A timed `content` frame itself must match the reference
+  within 0.3% of 16×16 luminance tiles. Missing windows, incomplete or capped runs
+  fail; the process exits nonzero when a run fails. `--failure-dir=DIR` saves a final
+  PPM for diagnosis. `--unverified --dump=DIR` supports reference capture, exits
+  nonzero, and labels the numbers unverified. The live-desktop mode was removed;
+  every run uses a private 1280×720 `cage` compositor.
+- `bench/references/` contains compact fixture-hashed signatures and the four PNGs
+  from which they were made. Both apps' medium and large PNGs were visually
+  inspected: the expected heading, fixture label, and body text are visible.
+  `bench/fixtures/gen.py` now puts distinct Medium/Large labels at the top and
+  distinct end headings at the tail. The benchmark compares first-viewport startup,
+  not the time to finish rendering the whole file.
+- `bench/ab.mjs` retains each launch failure and requires at least 80% valid paired
+  rounds for every candidate, exiting nonzero otherwise. Both benchmark scripts
+  use the conventional median for even sample counts. Unit tests cover blank and
+  incomplete screens, wrong fixtures, fixture hash mismatch, the timed-frame
+  contract, median calculation, and the minimum-pair rule. An independent reviewer
+  rechecked the final implementation and found no substantive validity issue within
+  this first-viewport metric.
+- `scripts/check-bundle.mjs` now includes CSS `@import` files in the 40 KiB linked
+  JS/CSS budget and separately reports CSS `url()` assets. The current build reports
+  **34 KiB / 40 KiB** linked startup JS/CSS and **1,060 KiB** conditional CSS assets:
+  `libertinus-math` loads for math in the reading view. A synthetic CSS-import/font
+  test was added. Awaited dynamic imports remain outside this static budget.
+- `e2e-native/specs/reading-large.spec.ts` opens the real 443 KB fixture in the
+  native WebKitGTK app, waits for its distinct end heading, scrolls it into view,
+  and verifies it is visible. This separately validates the large file outcome.
+  The first attempt used a stale WebDriver element handle while progressive blocks
+  were appending; the final test polls the live DOM and passed with the full suite.
+
+## Validation
+
+| Check | Latest result |
 |---|---|
 | `bun run typecheck` | Pass |
 | `bunx tsc --noEmit -p e2e-native/tsconfig.json` | Pass |
-| `bun run test` | 279 tests, 15 files passed |
-| `cd src-tauri && cargo test -q` | 26 passed |
-| `bun run test:e2e` | 52 Chromium cases passed |
-| `bun run test:e2e:native` | 10 native cases passed |
-| `bun run build:web` | Pass; bundle gate reports 34 KiB / 40 KiB |
-| `bunx tauri build --no-bundle` | Release build passed before the final benchmark, test, and documentation edits; app source has not changed since |
-| `node --check` on benchmark and bundle-check scripts | Pass |
-| `git diff --check` | Pass before this handover rewrite; rerun before commit |
+| `bun run test` | 287 tests across 16 files passed |
+| `bun run test:e2e:native` | 11/11 passed, including large-file tail |
+| `bun run build:web` | Pass as the native test build prerequisite; 34 KiB JS/CSS gate plus 1,060 KiB conditional asset report |
+| `node --check bench/bench.mjs` and `bench/ab.mjs` | Pass |
+| `git diff --check` | Pass before this handover update; rerun before commit |
 
-The browser and native suites passed sequentially. An earlier concurrent run failed
-one native save-bytes case and one browser large-document case under load; isolated
-reruns passed. After tightening assertions, a full concurrent rerun passed 52/52 and
-10/10. The original failures' cause was not established; do not describe the stronger
-waits as proof of an app race fix. Repository-wide `cargo fmt --check` reports broad
-formatting differences in existing Rust files. New `watch.rs` was formatted; avoid a
-blanket formatting change in this checkpoint. Playwright WebKit cannot start on this
-host because `libicu74`, `libxml2`, and `libflite1` are missing. Native E2E exercises
-the installed WebKitGTK app.
+The Rust source and browser app source did not change in this continuation. The
+preceding checkpoint's `cargo test -q` (26 passed), Chromium E2E (52 passed), and
+release `tauri build --no-bundle` remain the relevant evidence. The full native
+suite initially had 10 pass and one new test fail from its stale handle, then passed
+11/11 after the test correction. Playwright WebKit cannot start on this host because
+`libicu74`, `libxml2`, and `libflite1` are missing; native WebKitGTK was exercised.
+Repository-wide `cargo fmt --check` still reports broad preexisting formatting drift.
 
-## Startup evidence and its limits
+## Final paired measurements
 
-Raw rotated-order logs are committed in `bench/results/final-medium.txt` and
-`bench/results/final-large.txt`. Both compare the same Scrivo release binary against
-Typora in a 1280×720 private headless compositor, 12 attempted paired rounds each.
-The metric is based on sampled screenshot similarity to a final stable screenshot.
-Times below are milliseconds from process launch and are machine-specific:
+Raw logs for the **current** distinct fixtures and 0.3% content criterion are
+`bench/results/verified-medium.txt` and `bench/results/verified-large.txt`. Older
+logs from different fixture labels and weaker readiness checks are retained as
+`bench/results/pre-readiness-*.txt` for history and are not directly comparable.
+Each current run attempted 12 rotated-order pairs in the same private compositor;
+all 12 pairs were valid for both fixtures. Times are milliseconds after process
+launch and are specific to this Linux host and its load:
 
-| Fixture | App | Valid | Window median | Content median | Complete median |
-|---|---|---:|---:|---:|---:|
-| Medium, 8.8 KB | Typora | 10 | 822 | 1,857 | 1,857 |
-| Medium, 8.8 KB | Scrivo | 12 | 498 | 749 | 771 |
-| Large, 443 KB | Typora | 12 | 922 | 1,294 | 1,558 |
-| Large, 443 KB | Scrivo | 12 | 559 | 933 | 953 |
+| Fixture | App | Window median | Content median | Stable viewport median |
+|---|---|---:|---:|---:|
+| Medium, 8.8 KB | Typora | 449 | 1,010 | 1,010 |
+| Medium, 8.8 KB | Scrivo | 218 | 363 | 363 |
+| Large, 443 KB | Typora | 819 | 4,107 | 4,107 |
+| Large, 443 KB | Scrivo | 495 | 858 | 858 |
 
-Two medium Typora attempts reported `window never appeared`. For pairs with two
-valid launches, Scrivo's median content advantage was 1,162 ms on medium (10/10
-faster) and 379 ms on large (12/12 faster). System load varied markedly. One Scrivo
-medium final screenshot (`/tmp/scrivo-medium-final.png`) was visually inspected and
-contained the real document, headings, and Contents button. Typora and large final
-screenshots have not been visually verified. `/tmp` artifacts are not in the commit.
+Scrivo reached the reviewed first viewport sooner in 11/12 medium pairs and 12/12
+large pairs. Paired median advantages were 651 ms and 3,239 ms respectively. One
+medium Scrivo launch had a 1.7-second window scheduling outlier. Host load changed
+sharply during the large run (load average about 27 midrun, then lower); use the
+paired differences and raw rounds, not cross-run absolute medians, to evaluate
+relative startup. "Complete" in raw logs means only that the first viewport was
+stable. The native large-file test proves its tail eventually renders; it does not
+measure how long that takes. A prior single startup trace is in
+`docs/ARCHITECTURE.md` and should not be treated as an A/B result.
 
-One `SCRIVO_TRACE=1` diagnostic under load recorded Tauri setup at 75.6 ms, EGL warm
-at 77.5 ms, image warm at 164.6 ms, window built at 430.3 ms, JS start at 680.4 ms,
-startup view delivered at 680.7 ms, document shown at 767.4 ms, first frame at
-805.1 ms, and document settled at 814.7 ms. The screenshot sampler reported window
-at 616 ms and content/complete at 926 ms. This is a single phase trace, not an A/B
-result; the window/webview path dominated this run.
+## Remaining limits and useful next work
 
-An independent performance review found these **open issues**, ordered by impact:
+- The build gate does not infer whether a dynamic import is awaited before first
+  paint. The production `src/boot.ts` path currently awaits no such chunk before
+  showing the reading view; re-audit when that path changes. The math font is
+  intentionally separate from the 40 KiB JS/CSS budget and remains a 1,060 KiB
+  conditional first-paint dependency for documents with math. Measure a proposed
+  font change in paired release runs and check math-heavy rendering before adopting.
+- Reviewed screenshot references are sensitive to compositor geometry, fonts, app
+  theme, and deliberate UI changes. Regenerate them only after inspecting the new
+  PNGs. The 0.3% tile threshold is strict by design; a new machine may need its
+  own reviewed references. This is a first-viewport benchmark, not a Typora
+  full-document completion test.
+- The Rust write path still has the unavoidable cross-process race between final
+  conflict check and rename. Windows stamps lack Unix metadata change time, so a
+  same-size edit that restores mtime may be missed. A writable file in a directory
+  that forbids temporary-file creation now fails safely and keeps the buffer dirty.
+  See `docs/ARCHITECTURE.md` for the safety model.
+- The editor uses KaTeX for interactive preview while the Rust reader supplies
+  MathML. Keep the two render paths separate until output and startup costs have
+  been measured. A prior concurrent browser/native run had one failure in each
+  suite under load; later full concurrent and sequential reruns passed, but its
+  exact cause was not established.
 
-1. `bench/bench.mjs` accepts a screen stable for 1.5 seconds as the final reference
-   without proving the document rendered. A splash, error, or blank page could count
-   as content; reaching its 20-second cap also is not rejected. Add document readiness
-   evidence and fail incomplete/capped runs. Verify final screenshots for both apps
-   and fixtures before treating the README comparison as validated.
-2. `bench/ab.mjs` exits successfully with no valid pairs; `bench/bench.mjs` reports
-   failed launches yet also exits successfully. Enforce successful candidate launches
-   and a documented minimum valid-pair count, with nonzero exit on insufficient data.
-3. The 40 KiB gate omits the conditional math font: `src/viewer/viewer.ts` waits on
-   `document.fonts.load('1em "Scrivo Math"')` before inserting math; its font is about
-   1,085,336 bytes. Measure and report this separately or extend the startup budget
-   to represent actual conditional first-paint dependencies. The README and docs now
-   state the gate's narrower scope.
-4. The bundle traversal uses a regex for static JS imports. Awaited dynamic imports,
-   CSS `@import`, and asset loads can escape it; the current synthetic test covers
-   only one nested static-import case. Prefer a reliable manifest/AST-based inventory
-   or an explicit dependency accounting for the first-paint path.
-5. `bench/bench.mjs` uses the upper middle observation as its even-count “median”; the
-   paired script uses the conventional mean of the two middle values. Align them.
-
-The reviewer confirmed the README figures match raw logs; the concern is what those
-screenshots prove. First make the harness reject invalid runs, rerun both fixtures,
-inspect representative final screenshots, then update the README with validated data.
-
-## Other known limits
-
-- A cross-process writer can race the final conflict check and rename; ordinary
-  filesystems do not provide atomic compare-and-rename. On Windows, stamps lack Unix
-  change time, so same-size edits with restored mtime can be missed. See the safety
-  discussion in `docs/ARCHITECTURE.md`.
-- A writable file in a directory that blocks creation of a same-directory temporary
-  file cannot be saved by the new safe path. Save fails and leaves the buffer dirty.
-- The editor uses KaTeX for interactive preview while the Rust reading renderer
-  supplies MathML. Keep the paths separate until output and startup costs have been
-  measured. Avoid speculative performance changes: run paired release comparisons.
-
-## Useful commands and environment
+## Commands
 
 ```sh
 bun run typecheck
@@ -161,9 +150,12 @@ node bench/ab.mjs bench/fixtures/large.md 12 typora src-tauri/target/release/scr
 node bench/bench.mjs scrivo bench/fixtures/medium.md 1 --trace
 ```
 
-Run GUI automation headlessly only: Playwright headless, native E2E under the package
-script's private Xvfb/D-Bus/openbox setup, and benchmarks under private `cage`. A
-benchmark may need access to local display sockets outside the default sandbox.
-Do not open app windows on the developer's live desktop. Follow the user's AGENTS.md
-instructions for domain-first design, behavior tests, and independent review of
-medium or high risk changes.
+To refresh a reference after a visual or platform change, run one app and fixture
+headlessly with `--unverified --dump=/tmp/NAME`, convert `final.ppm` to PNG with
+`ffmpeg`, **inspect the image**, then use `node bench/make-reference.mjs
+/tmp/NAME/final.ppm bench/fixtures/FILE.md bench/references/APP-FILE.json` and copy
+the inspected PNG beside it. The unverified capture exits 1 intentionally. Use
+`BENCH_FAILURE_DIR=/tmp/scrivo-bench-failures` with `bench/ab.mjs` to retain final
+screens of failed launches. Keep GUI automation off the developer's live desktop.
+The private compositor may need local display socket access outside the default
+sandbox. Use Bun, not npm/yarn/pnpm.
