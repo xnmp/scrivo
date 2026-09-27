@@ -53,7 +53,7 @@ test('Save As during attachment paste starts watching the chosen document', asyn
   await openApp(page, { doc: 'none' });
   await pushSaveAnswer(page, '/notes/New.md');
   await transferFile(page, 'paste', 'image.png', [9]);
-  await expect.poll(() => page.evaluate(() => (window as any).__scrivo.platform.watchedPath()))
+  await expect.poll(() => page.evaluate(() => (window as any).__scrivo.platform.watchedPaths().get('initial')))
     .toBe('/notes/New.md');
   await diskPut(page, '/notes/New.md', 'Changed elsewhere');
   await page.evaluate(() => (window as any).__scrivo.platform.disk.notify('/notes/New.md'));

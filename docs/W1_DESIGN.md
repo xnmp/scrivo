@@ -1,8 +1,9 @@
 # W1 document tabs: implementation design
 
-Status: in progress, 2026-09-28. Contract: `FILE_EDITOR_PARITY.md` W1.
-The keyed watcher port, native canonical identity command, and pure tab registry
-are implemented; session composition and the tab UI are next.
+Status: implemented and verified, 2026-09-28. Contract: `FILE_EDITOR_PARITY.md` W1.
+The keyed watcher port, native canonical identity command, pure tab registry,
+per-tab workspaces, and tab UI are implemented. Details and test results are in
+`HANDOVER.md`.
 
 ## Ownership
 

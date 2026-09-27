@@ -8,7 +8,12 @@
     <script type="module" src="/src/boot.ts"></script>
   </head>
   <body>
-    <div id="viewer"><article id="document" class="markdown-body"></article></div>
-    <main id="editor"></main>
+    <nav id="tab-bar" aria-label="Open documents"></nav>
+    <div id="tab-panels">
+      <section id="session-initial" class="document-session" data-mode="view" aria-label="Document">
+        <div id="viewer" class="viewer"><article id="document" class="markdown-body"></article></div>
+        <main id="editor" class="editor"></main>
+      </section>
+    </div>
   </body>
 </html>

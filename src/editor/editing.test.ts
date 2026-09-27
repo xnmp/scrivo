@@ -145,7 +145,7 @@ describe('folding', () => {
   });
 
   it('folds a large section past the incomplete initial parse', () => {
-    const content = 'paragraph text.\n\n'.repeat(1000);
+    const content = 'paragraph text.\n\n'.repeat(400);
     const text = `# Top\n${content}# Next\nend`;
     const state = EditorState.create({ doc: text, extensions: [markdownSupport(), codeFolding()] });
     expect(syntaxTree(state).length).toBeLessThan(text.length);

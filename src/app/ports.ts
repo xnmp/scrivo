@@ -78,6 +78,8 @@ export interface RecoveryCopy {
   readonly updatedAt: number;
 }
 
+export type RecoveryScope = 'all' | 'matching' | 'none';
+
 export interface RecoveryStore {
   list(): Promise<readonly RecoveryCopy[]>;
   put(copy: RecoveryCopy): Promise<void>;

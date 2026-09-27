@@ -42,7 +42,8 @@ Milestone 0's native behavior audit is in `docs/FILE_EDITOR_AUDIT.md`. Milestone
 (P1–P4) is implemented and verified in the 2026-09-28 checkpoint. E1 and E2
 editing interactions are implemented and verified in the current checkpoint.
 I1 rich clipboard conversion and I2 local attachments are implemented and
-verified in the latest checkpoint. W1, D1, and editor preferences in E3 remain open.
+verified in the latest checkpoint. W1 document tabs are implemented and verified
+in the 2026-09-28 checkpoint. D1 and editor preferences in E3 remain open.
 
 At the start of each later milestone, verify the precise existing behavior in
 the native app before adding code.

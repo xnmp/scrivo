@@ -140,7 +140,8 @@ test.describe('reading view', () => {
     await openApp(page, { text: SAMPLE, mode: 'view' });
     await doc(page).getByText('jump').click();
     await expect.poll(() => page.evaluate(() => (window as any).__scrivo.viewer.topLine())).toBeGreaterThan(60);
-    const top = await page.locator('#part-two').evaluate((el) => el.getBoundingClientRect().top);
+    const top = await page.locator('#part-two').evaluate((el) =>
+      el.getBoundingClientRect().top - document.querySelector('#viewer')!.getBoundingClientRect().top);
     expect(Math.abs(top)).toBeLessThan(5);
   });
 
@@ -153,7 +154,8 @@ test.describe('reading view', () => {
     expect(page.url()).toContain('localhost');
 
     await doc(page).getByText('other', { exact: true }).click();
-    await expect(doc(page).locator('h1')).toHaveText('Other doc');
+    await expect(page.locator('.document-session:not([hidden]) .markdown-body h1')).toHaveText('Other doc');
+    await expect(page.getByRole('tab')).toHaveCount(2);
     await expect(page).toHaveTitle('other.md — Scrivo');
   });
 

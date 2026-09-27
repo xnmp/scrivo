@@ -40,6 +40,7 @@
   --font-size: 16px;
   --line-height: 1.65;
   --content-width: 860px;
+  --tab-bar-height: 35px;
 }
 
 :root[data-theme='dark'] {
@@ -125,6 +126,39 @@ body {
   font-family: var(--font-body);
   font-size: var(--font-size);
 }
+
+body { display: flex; flex-direction: column; }
+#tab-panels { flex: 1; min-height: 0; }
+.document-session { height: 100%; }
+.document-session[hidden] { display: none; }
+
+#tab-bar {
+  display: flex;
+  align-items: stretch;
+  height: var(--tab-bar-height);
+  flex: none;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  scrollbar-width: thin;
+}
+.tab-list { display: flex; align-items: stretch; min-width: 0; }
+.tab-item { display: flex; align-items: stretch; border-right: 1px solid var(--border); }
+.tab-select, .tab-close, .tab-add {
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tab-select { max-width: 220px; min-width: 80px; padding: 0 8px 0 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tab-select[aria-selected='true'] { background: var(--bg); color: var(--fg); font-weight: 600; }
+.tab-dirty { color: var(--accent); margin-left: 6px; }
+.tab-close { width: 28px; font-size: 17px; }
+.tab-add { width: 35px; flex: none; font-size: 20px; }
+.tab-select:hover, .tab-close:hover, .tab-add:hover { background: var(--code-bg); color: var(--fg); }
+.tab-select:focus-visible, .tab-close:focus-visible, .tab-add:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- code tokens (fenced blocks; also source mode) ---------- */
 

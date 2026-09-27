@@ -3,7 +3,7 @@
 // on the reading view's startup path.
 import './styles/editor.css';
 import { createDocumentController, type ImportOutcome } from './app/controller';
-import type { Platform, Prompter } from './app/ports';
+import type { Platform, Prompter, RecoveryScope, RecoveryCopy } from './app/ports';
 import type { EditorHandle } from './app/workspace';
 import { createEditor, type Editor } from './editor/setup';
 import type { FileTransfer } from './editor/attachments';
@@ -20,6 +20,10 @@ export interface EditorAppOptions {
   readonly fileUrl: (path: string) => string;
   readonly domFileDrop: boolean;
   readonly onDocumentPathChanged: (path: string | null) => void;
+  readonly onStateChanged?: () => void;
+  readonly recoveryScope?: RecoveryScope | (() => RecoveryScope);
+  readonly onSaveAsFinished?: (saved: boolean, currentPath: string | null, target: string | null) => void;
+  readonly allowRecovery?: (copy: RecoveryCopy) => Promise<boolean>;
   /** Workspace-level commands, so mode and title stay consistent. */
   readonly commands: {
     readonly toggleReading: () => void;
@@ -34,6 +38,7 @@ export interface EditorApp extends EditorHandle {
   readonly editor: Editor;
   /** The editor surface became visible. */
   shown(): void;
+  dispose(): void;
 }
 
 export function createEditorApp(options: EditorAppOptions): EditorApp {
@@ -91,10 +96,17 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     },
     domFileDrop: options.domFileDrop,
   });
-  const showSaveStatus = createSaveIndicator(options.status, options.commands.save);
+  const renderSaveStatus = createSaveIndicator(options.status, options.commands.save);
+  const showSaveStatus = (state: Parameters<typeof renderSaveStatus>[0]) => {
+    renderSaveStatus(state);
+    options.onStateChanged?.();
+  };
   const controller = createDocumentController({
     platform, prompter, editor: editor.port,
     onSaveStatus: showSaveStatus,
+    recoveryScope: options.recoveryScope,
+    onSaveAsFinished: options.onSaveAsFinished,
+    allowRecovery: options.allowRecovery,
   });
   const words = wordCounter(options.status, () => editor.view.state.doc.iter(), () => (editor.sourceMode() ? 'Source' : ''));
 
@@ -120,6 +132,10 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     shown() {
       editor.view.requestMeasure();
       words.update(0);
+    },
+    dispose() {
+      words.cancel();
+      editor.view.destroy();
     },
   };
 }

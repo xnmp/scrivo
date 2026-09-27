@@ -1,5 +1,88 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: W1 independent document tabs
+
+The active objective remains `docs/FILE_EDITOR_PARITY.md`. W1 is implemented:
+multiple local Markdown documents can stay open with independent reader/editor
+surfaces, CodeMirror states, undo histories, selection, scroll, save/recovery
+state, and watcher subscriptions. Opening the same canonical file, including a
+symlink alias, activates its existing tab. `Ctrl+Tab` and `Ctrl+Shift+Tab`
+switch tabs; `Ctrl+W` closes the active tab and prompts only for that dirty
+document. Local Markdown links and dropped Markdown files open tabs. D1 editing
+outline/properties and E3 editor preferences remain to finish the broader goal.
+
+### Implementation and safety decisions
+
+- Foundation commit `4200a97` added the immutable tab registry
+  (`src/app/tab-registry.ts`), keyed watcher subscriptions (`src-tauri/src/watch.rs`,
+  `src/platform/{tauri,memory}.ts`), and native canonical document identity
+  (`src-tauri/src/commands.rs`). The subsequent W1 integration adds
+  `src/tab-window.ts`, `src/ui/tabs.ts`, and per-session DOM panels. Each session
+  reuses the existing `Workspace` and `DocumentController`; editing remains lazy
+  so CodeMirror is absent from the first-paint bundle.
+- `src/boot.ts` paints the prefetched reading document before importing the tab
+  manager. It queues early links and shortcuts until the manager is ready.
+  `src/app/workspace.ts` hydrates that first view, opens document links through
+  the manager, and keeps the reader's file path current after Save As.
+- Save As reserves its target identity while the dialog/write is in progress;
+  writes reject an identity owned by another tab. Recovery matching uses
+  canonical aliases in `src/app/recovery-match.ts` and is scoped to the owning
+  session. Failed opens remove their tab. A cancelled whole-window close
+  re-protects dirty documents without autosaving text the user had chosen to
+  discard before cancelling another tab's prompt.
+- Tab state remains in `src/tab-window.ts`; `src/app/tab-registry.ts` is the pure
+  identity/order/activation model. `docs/W1_DESIGN.md` explains ownership. The
+  tab manager currently keeps every opened editor mounted; this preserves
+  CodeMirror history and scroll but memory grows with the number of large tabs.
+
+### Verification and performance
+
+- Browser E2E covers independent edits/undo/saves, canonical path deduplication,
+  dirty close, retained selection/scroll, inactive external edits, cancelled
+  window close and recovery, reader Save As, and two 443 KiB editing tabs. The
+  large-tab test measured a 33.0 ms median and 35.4 ms maximum from activation
+  through two animation frames over 10 switches on this host; it also asserts
+  that the intended document is visible after each switch.
+- Native WebKitGTK E2E passed all 22 spec files. The W1 native spec opens a
+  second file through a link, verifies a symlink alias selects that tab, saves
+  edits to two separate files, detects an atomic external replacement on
+  activation, discards only the dirty second tab, relaunches, and checks both
+  files' exact outcomes. The focused tab suite passed 7/7, including keyboard
+  tab navigation and focus return. The full browser run passed 110/113; three existing
+  heavy reading tests timed out while 12 workers competed for CPU, and all four
+  tests in those spec files passed on a serial rerun. Run those serially when
+  interpreting future full-suite failures.
+- Vitest passed 408/408; Rust passed 60/60. App and native E2E TypeScript checks,
+  `build:web`, release `tauri build --no-bundle`, and the bundle gate passed:
+  28/41 KiB static startup and 42/56 KiB known prepaint. The reviewed medium
+  and large startup references in `bench/references/` were refreshed for the
+  tab bar. Three verified release runs: medium content median 549 ms, large
+  556 ms. On the same host, the previous installed I2 release measured 509 ms
+  medium and 485 ms large against its own reviewed references. Those small,
+  unpaired samples suggest W1 adds roughly 40–71 ms to complete chrome; the
+  document first appears before the deferred tab controls. Older README
+  startup medians were recorded in a different run and should not be compared
+  directly. PSS on large launches varied widely for both versions; avoid
+  claiming a reliable memory delta from three runs.
+- The release binary is installed at `/home/chong/.local/bin/scrivo`. Both it and
+  the release artifact have SHA-256
+  `d97035bccb02a37151aa2799558939020f596ae6157d29e908250c3ba7b5e882`.
+  An existing window was left running; its next launch uses this build.
+
+### Resume
+
+1. Implement D1: show the heading outline while editing and allow conservative
+   YAML property changes through source-span transactions, preserving comments,
+   key order, unknown values, and malformed input. Keep source mode available.
+2. Implement E3 persistent editor preferences (line numbers, indentation guides,
+   and options justified by the parity contract), then run the release criteria
+   in `docs/FILE_EDITOR_PARITY.md`. Table sort/move/alignment already shipped.
+
+The W1 adversarial read-only review found recovery ownership, identity races,
+Save As conflict, early-link, watcher cleanup, reader path, and cancelled-close
+risks. They were addressed before the verification above; the final review found
+no remaining high-impact issue in those paths.
+
 ## 2026-09-28: I2 local attachments checkpoint
 
 The active objective is still `docs/FILE_EDITOR_PARITY.md`. I2 is implemented:

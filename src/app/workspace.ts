@@ -6,9 +6,10 @@
 // saving, conflicts) and the reading view shows the editor's current text.
 import { displayName, documentDir, sameStamp, windowTitle } from '../domain/document';
 import { linkAction } from '../domain/links';
+import { matchingRecoveryCopies } from './recovery-match';
 import type { DocumentController, ImportOutcome } from './controller';
 import { describeError } from './errors';
-import type { Platform, ViewDocument } from './ports';
+import type { Platform, RecoveryScope, ViewDocument } from './ports';
 
 export type Position = { readonly line: number } | { readonly anchor: string };
 
@@ -57,6 +58,7 @@ export interface Workspace {
   checkDisk(): Promise<void>;
   /** Resolves true when the window may close. */
   requestClose(): Promise<boolean>;
+  resumeAfterCancelledClose(): void;
 }
 
 export interface WorkspaceDeps {
@@ -73,6 +75,10 @@ export interface WorkspaceDeps {
   readonly scheduleIdle?: (run: () => void) => void;
   /** Called when the current document path changes, including at startup. */
   readonly onPathChanged?: (path: string | null) => void;
+  /** Reading view already painted by the startup shell. */
+  readonly preShown?: ViewDocument;
+  readonly recoveryScope?: RecoveryScope | (() => RecoveryScope);
+  readonly openDocumentLink?: (path: string, anchor: string | null) => Promise<void>;
 }
 
 const serialQueue = () => {
@@ -262,14 +268,23 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
   return {
     start: () =>
       serial(async () => {
-        const startup = await platform.render.startupView().catch(() => ({ kind: 'edit' }) as const);
+        const startup = deps.preShown
+          ? { kind: 'view' as const, document: deps.preShown }
+          : await platform.render.startupView().catch(() => ({ kind: 'edit' }) as const);
         if (startup.kind === 'view') {
-          await display(startup.document, undefined, startup.loadTail);
+          if (deps.preShown) {
+            shown = startup.document;
+            platform.window.setTitle(windowTitle(shown.path, false));
+          } else await display(startup.document, undefined, startup.loadTail);
           setMode('view');
           const path = startup.document.path;
           if (path !== null) deps.scheduleIdle?.(() => {
-            void platform.recovery.list().then((copies) => {
-              if (mode === 'view' && shown?.path === path && copies.length > 0) {
+            void platform.recovery.list().then(async (copies) => {
+              const scope = typeof deps.recoveryScope === 'function' ? deps.recoveryScope() : deps.recoveryScope ?? 'all';
+              const hasRecovery = scope === 'none' ? false
+                : scope === 'matching' ? (await matchingRecoveryCopies(platform.fs, path, copies)).length > 0
+                : copies.length > 0;
+              if (mode === 'view' && shown?.path === path && hasRecovery) {
                 void serial(() => editNow());
               }
             }).catch((error) => notify(`Could not check recovery copies: ${describeError(error)}`));
@@ -300,11 +315,25 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       }),
     save: () =>
       serial(async () => {
-        if (editor) await editor.controller.save();
+        if (!editor) return;
+        await editor.controller.save();
+        if (mode === 'view' && editor.controller.info().path !== shown?.path) {
+          if (!(await renderEditor(editor, { line: viewer.topLine() }))) {
+            setMode('edit');
+            editor.focus();
+          }
+        }
       }),
     saveAs: () =>
       serial(async () => {
-        if (editor) await editor.controller.saveAs();
+        if (!editor) return;
+        await editor.controller.saveAs();
+        if (mode === 'view' && editor.controller.info().path !== shown?.path) {
+          if (!(await renderEditor(editor, { line: viewer.topLine() }))) {
+            setMode('edit');
+            editor.focus();
+          }
+        }
       }),
     followLink: (href) =>
       serial(async () => {
@@ -314,7 +343,9 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
             viewer.scrollToAnchor(action.id);
             return;
           case 'document':
-            return openNow(action.path, action.anchor);
+            return deps.openDocumentLink
+              ? deps.openDocumentLink(action.path, action.anchor)
+              : openNow(action.path, action.anchor);
           case 'external':
             return platform.shell.openUrl(action.url).catch((err) => notify(`Could not open the link: ${describeError(err)}`));
           case 'reveal':
@@ -325,5 +356,6 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       }),
     checkDisk: () => serial(checkDiskNow),
     requestClose: () => serial(async () => (editor ? editor.controller.requestClose() : true)),
+    resumeAfterCancelledClose: () => editor?.controller.resumeAfterCancelledClose(),
   };
 }

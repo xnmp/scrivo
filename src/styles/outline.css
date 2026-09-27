@@ -1,7 +1,7 @@
 .outline-toggle {
   position: fixed;
   z-index: 11;
-  top: 12px;
+  top: calc(var(--tab-bar-height) + 12px);
   left: 12px;
   padding: 5px 10px;
   border: 1px solid var(--border);
@@ -19,7 +19,7 @@
 .outline-panel {
   position: fixed;
   z-index: 10;
-  top: 48px;
+  top: calc(var(--tab-bar-height) + 48px);
   bottom: 12px;
   left: 12px;
   width: 240px;
@@ -61,10 +61,10 @@
 
 body[data-mode='edit'] .outline-toggle,
 body[data-mode='edit'] .outline-panel { display: none; }
-body[data-mode='view'][data-outline='open'] #viewer { margin-left: 264px; }
+body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 264px; }
 
 @media (max-width: 900px) {
-  body[data-mode='view'][data-outline='open'] #viewer { margin-left: 0; }
+  body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 0; }
   .outline-panel { width: min(240px, calc(100vw - 24px)); }
 }
 

@@ -15,6 +15,7 @@ import {
 } from '../domain/document';
 import { decideExternalChange } from '../domain/external';
 import { attachmentLink } from '../domain/attachment';
+import { matchingRecoveryCopies } from './recovery-match';
 import { decode, encode } from '../domain/text-format';
 import {
   FileError,
@@ -24,6 +25,7 @@ import {
   type Prompter,
   type ReadResult,
   type RecoveryCopy,
+  type RecoveryScope,
   type StartupDocument,
   type WriteCondition,
 } from './ports';
@@ -56,6 +58,8 @@ export interface DocumentController {
   newDocument(): Promise<void>;
   /** Resolves true when the window may close. */
   requestClose(): Promise<boolean>;
+  /** Re-protect a dirty buffer if a later tab vetoes window close. */
+  resumeAfterCancelledClose(): void;
   /** Look for changes made by other programs (call on window focus). */
   checkDisk(): Promise<void>;
   /** Notify the controller that the editor content changed. */
@@ -79,6 +83,10 @@ export function createDocumentController<S extends Snapshot>(deps: {
   readonly prompter: Prompter;
   readonly editor: EditorPort<S>;
   readonly onSaveStatus?: (status: SaveStatus) => void;
+  /** Additional tabs only inspect recovery copies belonging to their file. */
+  readonly recoveryScope?: RecoveryScope | (() => RecoveryScope);
+  readonly onSaveAsFinished?: (saved: boolean, currentPath: string | null, target: string | null) => void;
+  readonly allowRecovery?: (copy: RecoveryCopy) => Promise<boolean>;
 }): DocumentController {
   const { platform, prompter, editor } = deps;
   const serial = serialQueue();
@@ -99,6 +107,7 @@ export function createDocumentController<S extends Snapshot>(deps: {
   let contentVersion = 0;
   let recoveredNeedsSave = false;
   let recoveryChecked = false;
+  let discardedPendingClose = false;
 
   const setStatus = (status: SaveStatus) => {
     saveStatus = status;
@@ -169,6 +178,8 @@ export function createDocumentController<S extends Snapshot>(deps: {
   };
 
   const offerRecovery = async () => {
+    const scope = typeof deps.recoveryScope === 'function' ? deps.recoveryScope() : deps.recoveryScope ?? 'all';
+    if (scope === 'none') return;
     let copies: readonly RecoveryCopy[];
     try {
       copies = await platform.recovery.list();
@@ -176,12 +187,15 @@ export function createDocumentController<S extends Snapshot>(deps: {
       prompter.notify(`Could not check recovery copies: ${describeError(error)}`);
       return;
     }
-    const includeUnmatched = !recoveryChecked;
+    const includeUnmatched = !recoveryChecked && scope === 'all';
     recoveryChecked = true;
+    const matching = await matchingRecoveryCopies(platform.fs, doc.path, copies);
+    const matchingIds = new Set(matching.map((copy) => copy.id));
     const candidates = includeUnmatched
-      ? [...copies.filter((copy) => copy.path === doc.path), ...copies.filter((copy) => copy.path !== doc.path)]
-      : copies.filter((copy) => copy.path === doc.path);
+      ? [...matching, ...copies.filter((copy) => !matchingIds.has(copy.id))]
+      : matching;
     for (const copy of candidates) {
+      if (deps.allowRecovery && !(await deps.allowRecovery(copy))) continue;
       if (copy.path === doc.path && copy.text === editor.toText(editor.snapshot()) && copy.stamp === doc.stamp) {
         await removeRecovery(copy.id);
         continue;
@@ -198,6 +212,7 @@ export function createDocumentController<S extends Snapshot>(deps: {
         await removeRecovery(copy.id);
         continue;
       }
+      if (deps.allowRecovery && !(await deps.allowRecovery(copy))) continue;
       cancelAutosave();
       cancelRecoveryTimer();
       applyingDocument = true;
@@ -278,6 +293,7 @@ export function createDocumentController<S extends Snapshot>(deps: {
     setStatus({ kind: 'saving' });
     try {
       const stamp = await platform.fs.write(path, text, condition);
+      discardedPendingClose = false;
       const moved = path !== doc.path;
       doc = { path, format: { ...doc.format, mixedEol: false }, saved: snapshot, stamp };
       recoveredNeedsSave = false;
@@ -327,12 +343,19 @@ export function createDocumentController<S extends Snapshot>(deps: {
   };
 
   const saveAsNow = async (): Promise<boolean> => {
-    const target = await platform.dialogs.pickSave(doc.path ?? 'Untitled.md');
-    if (target === null) return false;
-    const condition: WriteCondition = target === doc.path && doc.stamp !== null
-      ? { kind: 'unchanged', stamp: doc.stamp }
-      : { kind: 'absent' };
-    return writeTo(target, condition);
+    let saved = false;
+    let target: string | null = null;
+    try {
+      target = await platform.dialogs.pickSave(doc.path ?? 'Untitled.md');
+      if (target === null) return false;
+      const condition: WriteCondition = target === doc.path && doc.stamp !== null
+        ? { kind: 'unchanged', stamp: doc.stamp }
+        : { kind: 'absent' };
+      saved = await writeTo(target, condition);
+      return saved;
+    } finally {
+      deps.onSaveAsFinished?.(saved, doc.path, target);
+    }
   };
 
   const saveNow = (): Promise<boolean> => {
@@ -349,11 +372,19 @@ export function createDocumentController<S extends Snapshot>(deps: {
     cancelRecoveryTimer();
     if (!dirty()) return true;
     const choice = await prompter.unsavedChanges(displayName(doc.path));
-    if (choice === 'cancel') { scheduleAutosave(); scheduleRecovery(); return false; }
-    if (choice === 'discard') { await removeRecovery(); return true; }
+    if (choice === 'cancel') {
+      if (!discardedPendingClose) scheduleAutosave();
+      scheduleRecovery();
+      return false;
+    }
+    if (choice === 'discard') {
+      await removeRecovery();
+      discardedPendingClose = true;
+      return true;
+    }
     const saved = await saveNow();
     if (!saved || dirty()) {
-      scheduleAutosave();
+      if (!discardedPendingClose) scheduleAutosave();
       scheduleRecovery();
       return false;
     }
@@ -522,9 +553,15 @@ export function createDocumentController<S extends Snapshot>(deps: {
       }),
 
     requestClose: () => serial(confirmDiscard),
+    resumeAfterCancelledClose: () => {
+      if (!dirty()) return;
+      if (!discardedPendingClose) scheduleAutosave();
+      scheduleRecovery();
+    },
     checkDisk: () => serial(checkDiskNow),
     contentChanged: () => {
       if (applyingDocument) return;
+      discardedPendingClose = false;
       refreshTitle();
       updateStatus();
       contentVersion++;

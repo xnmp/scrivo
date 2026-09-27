@@ -16,7 +16,10 @@ scrivo                  # start a new document
 In the reading view, `Ctrl+F` finds text, `Enter` and `Shift+Enter` move between
 matches, and `Esc` closes find. Documents with headings have a Contents sidebar;
 fenced code is highlighted after the document appears. `Ctrl+O` opens a file;
-`Ctrl+N` starts a new document. Changes made by another program are detected while
+`Ctrl+N` starts a new document. Each file opens in its own tab. `Ctrl+Tab` and
+`Ctrl+Shift+Tab` switch tabs, and `Ctrl+W` closes the active tab; closing a dirty
+tab asks what to do with that document. Opening the same file through a symlink
+selects its existing tab. Changes made by another program are detected while
 the window stays open; a dirty editor asks before replacing its text.
 The editor supports fenced code, tables, task lists, math, images, and YAML front
 matter. In a rendered table, click a cell to place the text caret; `Tab`/`Shift+Tab`
@@ -112,10 +115,10 @@ check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
-The current web build gate counts 41 KiB of linked static startup JS/CSS against a 41 KiB
-budget. Tauri's window API loads during boot; including it gives 55 KiB of known
+The current web build gate counts 28 KiB of linked static startup JS/CSS against a 41 KiB
+budget. Tauri's window API loads during boot; including it gives 42 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
-1,060 KiB math font referenced by the reading-view stylesheet and a 2,518 KiB
+1,060 KiB math font referenced by the reading-view stylesheet and a 2,752 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
 features loaded later.
 

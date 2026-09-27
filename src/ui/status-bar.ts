@@ -34,5 +34,6 @@ export function wordCounter(status: StatusBar, getText: () => Iterable<string>, 
       clearTimeout(timer);
       timer = setTimeout(render, delayMs);
     },
+    cancel() { clearTimeout(timer); },
   };
 }

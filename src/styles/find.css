@@ -1,7 +1,7 @@
 /* Reading view find bar (ui/find-bar.ts) and match highlights (viewer/find.ts). */
 .find-bar {
   position: fixed;
-  top: 10px;
+  top: calc(var(--tab-bar-height) + 10px);
   right: 16px;
   z-index: 20;
   display: flex;

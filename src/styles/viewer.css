@@ -2,21 +2,21 @@
    between the two keeps the page where it was: same widths, heading sizes, and one
    blank line's worth of space between blocks. */
 
-#viewer {
+.viewer {
   height: 100%;
   overflow-y: auto;
   outline: none;
 }
 
 /* Only the active surface is shown; before the page decides, that's the reader. */
-body[data-mode='edit'] #viewer,
-body:not([data-mode='edit']) #editor {
+.document-session[data-mode='edit'] .viewer,
+.document-session:not([data-mode='edit']) .editor {
   display: none;
 }
 
 /* Keep the editor on screen while the reader builds its first viewport. It must
    have real dimensions: display:none makes the viewer's height stop condition 0. */
-body[data-mode='edit'][data-preparing-view='true'] #viewer {
+.document-session[data-mode='edit'][data-preparing-view='true'] .viewer {
   display: block;
   position: fixed;
   inset: 0;
