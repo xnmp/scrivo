@@ -1,5 +1,81 @@
 # Handover — 2026-09-28
 
+## 2026-09-28: D1 properties WIP handoff
+
+The active goal is still `docs/FILE_EDITOR_PARITY.md`: local Markdown editing
+parity with extensive verification. W1 tabs are complete in `2317b97` (details
+below) and its release binary is installed. This WIP checkpoint begins D1;
+**editing outline, properties UI, and E3 preferences are not implemented**.
+Do not mark D1 or the overall goal complete from this commit.
+
+### Exact WIP state
+
+- `package.json` and `bun.lock` add `yaml` 2.9.1 as a direct runtime dependency.
+  It is intended to load only with the deferred editor, preserving the reading
+  startup bundle. `src/domain/properties.ts` is an unconnected pure helper with
+  `readProperties`, `changeProperty`, and `addProperty`. It finds a leading
+  `---` YAML block (up to 1,000 lines/256 KiB), asks `yaml.parseDocument` to
+  validate its mapping, exposes only single-line string scalar values, and
+  returns offsets for a CodeMirror text transaction. Other YAML types stay in
+  source and are counted as unsupported. Editing replaces only the scalar
+  token with a JSON-quoted YAML string; adding inserts one key line before the
+  closing fence or creates a new fenced block. The helper has no side effects
+  and is not imported by the app, so this commit adds no user-visible feature.
+- `bun run typecheck` and `git diff --check` passed after the WIP files were
+  added. A direct Bun probe read `title: Old # keep` alongside an untouched
+  list, then produced `title: "New" # keep` at the expected source offsets.
+  **No unit, browser, or native test covers this new helper yet.** W1's 408
+  Vitest, 60 Rust, 7 focused browser tab, and 22 native spec results below
+  predate these D1 files. The installed binary also predates them.
+
+### Why this approach
+
+- [Obsidian's properties guide](https://obsidian.md/help/properties) keeps YAML
+  as the file format, offers raw Source mode, and leaves nested properties to
+  source editing. Scrivo's D1 contract requires preserving comments, key order,
+  and unknown values. The [`yaml` Document API](https://github.com/eemeli/yaml/blob/main/docs/04_documents.md)
+  exposes scalar source ranges. Its [parsing guide](https://github.com/eemeli/yaml/blob/main/docs/07_parsing_yaml.md)
+  describes CST use for exact source preservation. Replacing one known scalar
+  span is safer here than serializing the whole front matter, which could alter
+  formatting or comment placement.
+- The reading outline is `src/ui/outline.ts`, fed by renderer headings in
+  `src/tab-window.ts`; it is currently hidden in edit mode. `src/editor/setup.ts`
+  has `onDocChanged`, `onSelectionChanged`, and `revealLine`, which are usable
+  seams for editing outline navigation. Parsing the whole 443 KiB benchmark
+  with `scrivoMarkdown.parser.parse()` took about 109–227 ms per call on this
+  host. Do not run a full parse synchronously on every keystroke. Use an async
+  worker, a bounded incremental strategy, or a dedicated native heading query;
+  coalesce edits and reject stale results. [CodeMirror's reference](https://codemirror.net/docs/ref/)
+  notes that its current syntax tree can be incomplete, so relying on the
+  visible parser prefix would produce an incomplete outline on large files.
+
+### Next agent: finish D1
+
+1. Add behavior tests for `properties.ts` before wiring it: no front matter,
+   empty and malformed blocks, duplicate keys, comments and key order, quoted
+   strings, Unicode, CRLF/BOM, mixed and very large YAML, block scalars, aliases,
+   nested maps, numeric/bool values, and stale offsets. Check the first-line
+   `---` with no newline: `frontMatter()` currently treats it as absent rather
+   than unclosed, so `addProperty()` could prepend a second block. Confirm and
+   fix that edge case. Also decide whether a closing fence with trailing text
+   or a very large block should be reported as invalid or simply left in source.
+2. Add an accessible, document-local Properties UI in the editor. Re-read the
+   current CodeMirror document at commit time, call the pure helper, and dispatch
+   its `{from,to,insert}` as one undoable transaction through the editor. Show
+   unsupported YAML as source-only, keep malformed input untouched, and preserve
+   the current mode and cursor. Test saved bytes, undo/redo, reopen, tab isolation,
+   comments/order/unknown values, and source mode in Chromium and WebKitGTK.
+3. Extend the existing outline UI to editing: derive headings from current
+   Markdown without blocking typing, navigate with `revealLine`, update after
+   edits and tab switches, and keep focus/selection predictable. Test headings
+   inside code/front matter, stale async results, large documents, and native
+   keyboard access. Then complete E3 persistent preferences and the remaining
+   release criteria in `docs/FILE_EDITOR_PARITY.md`.
+
+Keep `src/app/tab-registry.ts` and each session's `Workspace`/`EditorApp` as the
+ownership boundaries. Property edits belong in CodeMirror transactions, and
+preferences should change editor projections rather than Markdown bytes.
+
 ## 2026-09-28: W1 independent document tabs
 
 The active objective remains `docs/FILE_EDITOR_PARITY.md`. W1 is implemented:
