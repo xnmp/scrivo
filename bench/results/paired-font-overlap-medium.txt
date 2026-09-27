@@ -1,0 +1,29 @@
+round 1 scrivo-before-font-overlap: window=213 content=341 complete=341
+round 1 scrivo: window=221 content=367 complete=367
+round 2 scrivo: window=231 content=364 complete=364
+round 2 scrivo-before-font-overlap: window=214 content=359 complete=359
+round 3 scrivo-before-font-overlap: window=210 content=341 complete=341
+round 3 scrivo: window=235 content=365 complete=365
+round 4 scrivo: window=212 content=360 complete=360
+round 4 scrivo-before-font-overlap: window=216 content=362 complete=362
+round 5 scrivo-before-font-overlap: window=217 content=381 complete=381
+round 5 scrivo: window=225 content=389 complete=389
+round 6 scrivo: window=215 content=328 complete=328
+round 6 scrivo-before-font-overlap: window=218 content=346 complete=346
+round 7 scrivo-before-font-overlap: window=244 content=389 complete=389
+round 7 scrivo: window=245 content=379 complete=379
+round 8 scrivo: window=222 content=350 complete=350
+round 8 scrivo-before-font-overlap: window=227 content=341 complete=341
+round 9 scrivo-before-font-overlap: window=209 content=340 complete=340
+round 9 scrivo: window=246 content=378 complete=378
+round 10 scrivo: window=221 content=371 complete=371
+round 10 scrivo-before-font-overlap: window=242 content=371 complete=371
+round 11 scrivo-before-font-overlap: window=274 content=430 complete=430
+round 11 scrivo: window=228 content=360 complete=360
+round 12 scrivo: window=240 content=403 complete=403
+round 12 scrivo-before-font-overlap: window=228 content=398 complete=398
+
+medium.md, 12 rounds
+  scrivo-before-font-overlap n=12  window med=218  content med=361  complete med=361
+  scrivo           n=12  window med=227  content med=366  complete med=366
+  scrivo vs scrivo-before-font-overlap: content +5 ms (paired median), faster in 4/12 rounds

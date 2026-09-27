@@ -26,6 +26,31 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
+## Latest startup investigation (after `eec536a`)
+
+- A synthetic 5.14 MB document was made by appending 16,000 320-character
+  code lines to `bench/fixtures/medium.md` in `/tmp`. Three release launches in
+  the private compositor reported a stable viewport at 411–441 ms and a
+  `document settled` trace at 441–472 ms. The captured final PNG was inspected
+  and showed the correct medium-document first screen. This used `--unverified`,
+  so it intentionally exited 1 and **did not** pass a reviewed screenshot
+  reference; these timings are diagnostic, not a regression gate or A/B claim.
+- Startup traces showed HTML parsing followed by a roughly 9–11 ms math-font
+  wait. An experiment started the font load before first-chunk parsing to
+  overlap them. After typecheck, 302 unit tests, and a release build passed,
+  12 valid paired launches per fixture showed **+5 ms** medium first viewport
+  (candidate faster in 4/12) and **−1 ms** large (7/12). This is no reliable
+  startup gain, so the code was reverted and the baseline release binary was
+  restored. Raw rounds are in `bench/results/paired-font-overlap-medium.txt`
+  and `bench/results/paired-font-overlap-large.txt`. Baseline binary SHA-256:
+  `58a918392ba6e77418e76690e7c2c1969c8b5d5cd0908c6c0279ff686c7d74ba`;
+  candidate: `bf07f9acae0139da47347169133eca9b49c148928b6360a35967235741372b4a`.
+  Both runs used `node bench/ab.mjs <fixture> 12 /tmp/scrivo-before-font-overlap
+  src-tauri/target/release/scrivo` in the private compositor.
+- Startup code remains as in `eec536a`. The next performance change should be
+  supported by a measured bottleneck; window/web-process startup still takes
+  most of the time in the reviewed fixture traces.
+
 ## Current checkpoint: atomic installation of new documents
 
 - `WriteCondition::Absent` and `WriteCondition::Overwrite` when the target was

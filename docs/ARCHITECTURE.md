@@ -239,6 +239,7 @@ Rejected (measured, then reverted):
 |---|---|
 | `content-visibility: auto` on blocks | large.md layout 521 → 967 ms |
 | Reduce first-screen insertion batch from 24 to 16 blocks | medium.md first-viewport paired median +1 ms in 12 pairs; no reliable gain |
+| Start math-font loading before parsing the first HTML chunk | 12-pair release runs gave +5 ms medium and −1 ms large first viewport; no reliable gain |
 | Targeted `content-visibility: auto` on a 5 MB code block | background insertion became fast, but scrolling into it caused a 350 ms frame gap |
 | Streaming a 5 MB code block into one `<pre>` in idle slices | cumulative layout grew and a full-suite run still had a 383 ms frame gap |
 | First blocks prerendered into `index.html` (via `on_web_resource_request`) | +58 ms: WebKitGTK doesn't paint parser-inserted content before the first script-driven layout, and parsing it first delays the script |
