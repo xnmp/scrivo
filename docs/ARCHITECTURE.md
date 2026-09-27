@@ -116,10 +116,15 @@ files it doesn't reference, start programs, or navigate the webview.
 - Writes are atomic: temp file in the same directory → fsync → rename. Existing file
   permissions are preserved. A failed write never truncates the original. Saving a
   writable file in a directory where a temp file cannot be created fails safely.
-- Every read/write returns a `FileStamp` (mtime + size + Unix metadata change time).
-  Reads check that the bytes and stamp came from the same file version. Saving checks
-  the on-disk stamp before and after preparing the replacement. Writes require an
-  explicit condition: unchanged stamp, absent file, or user-confirmed overwrite.
+- Every read/write returns an opaque `FileStamp` string. Rust builds it from exact
+  filesystem integers, including device, inode, size, mtime and ctime on Unix;
+  serializing floating-point millisecond timestamps through JavaScript previously
+  caused false conflicts after rounding a sub-millisecond value by one ULP. Reads
+  check that the bytes and stamp came from the same file version. Saving checks
+  the on-disk stamp before and after preparing the replacement, including after a
+  user-confirmed overwrite. Writes require an explicit condition: unchanged stamp,
+  absent file, or user-confirmed overwrite. Symlink saves verify that the link still
+  resolves to the original target; dangling links are not replaced.
   Save As first requires an absent target and asks before replacing an existing file.
   No cross-process compare-and-rename is atomic, so a
   writer racing in the final gap before rename can still be overwritten. On Windows,

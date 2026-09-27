@@ -6,21 +6,17 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(unix))]
 use std::time::UNIX_EPOCH;
 
-/// What we last observed about a file. Equality means "unchanged since then".
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileStamp {
-    /// Modification time in ms since the epoch, with sub-millisecond precision.
-    pub mtime_ms: f64,
-    pub size: u64,
-    /// Unix metadata change time catches same-size edits that restore mtime.
-    pub change_ms: Option<f64>,
-}
+/// Opaque revision token. Keep exact filesystem integers inside a JSON string so
+/// JavaScript cannot round a sub-millisecond timestamp during IPC.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FileStamp(String);
 
 /// Disk state that a save may replace. Overwrite must be chosen explicitly.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum WriteCondition {
     Unchanged { stamp: FileStamp },
@@ -76,21 +72,20 @@ impl From<io::Error> for DocError {
     }
 }
 
-fn stamp_of(meta: &fs::Metadata) -> FileStamp {
-    let mtime_ms = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as f64 * 1000.0 + f64::from(d.subsec_nanos()) / 1_000_000.0)
-        .unwrap_or(0.0);
+fn stamp_of(meta: &fs::Metadata) -> Result<FileStamp, DocError> {
     #[cfg(unix)]
-    let change_ms = {
+    {
         use std::os::unix::fs::MetadataExt;
-        Some(meta.ctime() as f64 * 1000.0 + meta.ctime_nsec() as f64 / 1_000_000.0)
-    };
+        Ok(FileStamp(format!("v1:{}:{}:{}:{}:{}:{}:{}", meta.dev(), meta.ino(), meta.len(), meta.mtime(), meta.mtime_nsec(), meta.ctime(), meta.ctime_nsec())))
+    }
     #[cfg(not(unix))]
-    let change_ms = None;
-    FileStamp { mtime_ms, size: meta.len(), change_ms }
+    {
+        let time = match meta.modified()?.duration_since(UNIX_EPOCH) {
+            Ok(d) => format!("after:{}:{}", d.as_secs(), d.subsec_nanos()),
+            Err(e) => format!("before:{}:{}", e.duration().as_secs(), e.duration().subsec_nanos()),
+        };
+        Ok(FileStamp(format!("v1:{}:{time}", meta.len())))
+    }
 }
 
 fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
@@ -101,7 +96,7 @@ fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     }
     #[cfg(not(unix))]
     {
-        stamp_of(a) == stamp_of(b)
+        stamp_of(a).ok() == stamp_of(b).ok()
     }
 }
 
@@ -121,14 +116,17 @@ pub fn read_document(path: &Path) -> Result<ReadDocument, DocError> {
     file.read_to_end(&mut bytes)?;
     let after = file.metadata()?;
     let at_path = fs::metadata(&path)?;
+    let before_stamp = stamp_of(&before)?;
+    let after_stamp = stamp_of(&after)?;
+    let path_stamp = stamp_of(&at_path)?;
     // The bytes and stamp must describe the same version of the file. A path
     // lookup after reading alone can stamp old bytes with a replacement's metadata.
     if !same_file(&before, &after) || !same_file(&after, &at_path)
-        || stamp_of(&before) != stamp_of(&after) || stamp_of(&after) != stamp_of(&at_path)
+        || before_stamp != after_stamp || after_stamp != path_stamp
     {
         return Err(DocError::Conflict);
     }
-    let stamp = stamp_of(&after);
+    let stamp = after_stamp;
     let text = String::from_utf8(bytes).map_err(|_| DocError::NotUtf8)?;
     Ok(ReadDocument { path: path.to_string_lossy().into_owned(), text, stamp })
 }
@@ -136,7 +134,7 @@ pub fn read_document(path: &Path) -> Result<ReadDocument, DocError> {
 pub fn stat_document(path: &Path) -> Result<Option<FileStamp>, DocError> {
     match fs::metadata(path) {
         Ok(meta) if meta.is_dir() => Err(DocError::IsDirectory),
-        Ok(meta) => Ok(Some(stamp_of(&meta))),
+        Ok(meta) => Ok(Some(stamp_of(&meta)?)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -153,10 +151,20 @@ static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 ///
 /// Caveat: a replaced file gets a new inode, so other hard links keep the old content.
 pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Result<FileStamp, DocError> {
+    write_document_with(path, text, condition, || {})
+}
+
+fn write_document_with(path: &Path, text: &str, condition: WriteCondition, before_replace: impl FnOnce()) -> Result<FileStamp, DocError> {
     let path = absolute(path)?;
     let target = match fs::canonicalize(&path) {
         Ok(resolved) => resolved,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => path.clone(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => match fs::symlink_metadata(&path) {
+            // The path exists, but its target does not. Replacing the link itself
+            // would violate the rule that saves follow and preserve symlinks.
+            Ok(_) => return Err(DocError::NotFound),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => path.clone(),
+            Err(e) => return Err(e.into()),
+        },
         Err(e) => return Err(e.into()),
     };
     let existing = match fs::metadata(&target) {
@@ -165,8 +173,9 @@ pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Res
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
     };
-    match (condition, &existing) {
-        (WriteCondition::Unchanged { stamp }, Some(meta)) if stamp_of(meta) == stamp => {}
+    let existing_stamp = existing.as_ref().map(stamp_of).transpose()?;
+    match (&condition, &existing_stamp) {
+        (WriteCondition::Unchanged { stamp }, Some(observed)) if observed == stamp => {}
         (WriteCondition::Absent, None) | (WriteCondition::Overwrite, _) => {}
         _ => return Err(DocError::Conflict),
     }
@@ -183,22 +192,23 @@ pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Res
         }
         tmp.sync_all()?;
         drop(tmp);
+        before_replace();
         // Check again after the potentially slow write. This cannot make a
         // cross-process compare-and-rename atomic, but catches changes during it.
-        match condition {
+        match &condition {
             WriteCondition::Unchanged { stamp } => {
                 let current = match fs::metadata(&target) {
                     Ok(meta) => meta,
                     Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(DocError::Conflict),
                     Err(e) => return Err(e.into()),
                 };
-                if stamp_of(&current) != stamp
+                if stamp_of(&current)?.ne(stamp)
                     || existing.as_ref().is_some_and(|old| !same_file(old, &current))
                 {
                     return Err(DocError::Conflict);
                 }
             }
-            WriteCondition::Absent => match fs::metadata(&target) {
+            WriteCondition::Absent => match fs::symlink_metadata(&target) {
                 Ok(_) => return Err(DocError::Conflict),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e.into()),
@@ -206,13 +216,35 @@ pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Res
             WriteCondition::Overwrite if existing.is_none() => {
                 // Even an explicit overwrite must not clobber a file that appeared
                 // after the user's choice but before the temporary file was ready.
-                match fs::metadata(&target) {
+                match fs::symlink_metadata(&target) {
                     Ok(_) => return Err(DocError::Conflict),
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                     Err(e) => return Err(e.into()),
                 }
             }
-            WriteCondition::Overwrite => {}
+            WriteCondition::Overwrite => {
+                // Confirmation applies to the version observed when this write
+                // began, not to a later edit or replacement by another writer.
+                let current = match fs::metadata(&target) {
+                    Ok(meta) => meta,
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(DocError::Conflict),
+                    Err(e) => return Err(e.into()),
+                };
+                let current_stamp = stamp_of(&current)?;
+                if existing_stamp.as_ref() != Some(&current_stamp)
+                    || existing.as_ref().is_some_and(|old| !same_file(old, &current))
+                {
+                    return Err(DocError::Conflict);
+                }
+            }
+        }
+        if existing.is_some() {
+            match fs::canonicalize(&path) {
+                Ok(current_target) if current_target == target => {}
+                Ok(_) => return Err(DocError::Conflict),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(DocError::Conflict),
+                Err(e) => return Err(e.into()),
+            }
         }
         fs::rename(&tmp_path, &target)?;
         sync_dir(dir);
@@ -222,7 +254,7 @@ pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Res
         let _ = fs::remove_file(&tmp_path);
         return Err(e);
     }
-    Ok(stamp_of(&fs::metadata(&target)?))
+    stamp_of(&fs::metadata(&target)?)
 }
 
 fn create_temp(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
@@ -265,8 +297,20 @@ mod tests {
         fs::write(&p, "# hi\r\n").unwrap();
         let doc = read_document(&p).unwrap();
         assert_eq!(doc.text, "# hi\r\n");
-        assert_eq!(doc.stamp.size, 6);
         assert_eq!(Some(doc.stamp), stat_document(&p).unwrap());
+    }
+
+    #[test]
+    fn a_stamp_survives_json_ipc_and_allows_a_conditional_save() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        fs::write(&p, "old").unwrap();
+        let stamp = read_document(&p).unwrap().stamp;
+        let wire = serde_json::to_value(&stamp).unwrap();
+        assert!(wire.is_string());
+        let returned: FileStamp = serde_json::from_value(wire).unwrap();
+        write_document(&p, "new", WriteCondition::Unchanged { stamp: returned }).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "new");
     }
 
     #[test]
@@ -308,6 +352,18 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_overwrite_refuses_changes_during_the_write() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        fs::write(&p, "theirs").unwrap();
+        let result = write_document_with(&p, "mine", WriteCondition::Overwrite, || {
+            fs::write(&p, "their newer edit").unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "their newer edit");
+    }
+
+    #[test]
     fn absent_condition_refuses_recreated_file() {
         let d = tmp();
         let p = d.path().join("a.md");
@@ -326,9 +382,9 @@ mod tests {
         fs::write(&p, "evil").unwrap();
         File::open(&p).unwrap().set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
         let observed = stat_document(&p).unwrap().unwrap();
-        assert_eq!(stale.mtime_ms, observed.mtime_ms);
-        assert_eq!(stale.size, observed.size);
-        assert_ne!(stale.change_ms, observed.change_ms);
+        assert_eq!(fs::metadata(&p).unwrap().modified().unwrap(), modified);
+        assert_eq!(fs::metadata(&p).unwrap().len(), 4);
+        assert_ne!(stale, observed);
         assert!(matches!(write_document(&p, "edit", WriteCondition::Unchanged { stamp: stale }), Err(DocError::Conflict)));
         assert_eq!(fs::read_to_string(&p).unwrap(), "evil");
     }
@@ -380,6 +436,53 @@ mod tests {
         write_document(&link, "new", WriteCondition::Unchanged { stamp: s }).unwrap();
         assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         assert_eq!(fs::read_to_string(&real).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_write_an_old_target_after_a_symlink_is_retargeted() {
+        let d = tmp();
+        let old = d.path().join("old.md");
+        let new = d.path().join("new.md");
+        let link = d.path().join("link.md");
+        fs::write(&old, "old content").unwrap();
+        fs::write(&new, "new content").unwrap();
+        std::os::unix::fs::symlink(&old, &link).unwrap();
+        let stamp = read_document(&link).unwrap().stamp;
+        let result = write_document_with(&link, "my edit", WriteCondition::Unchanged { stamp }, || {
+            fs::remove_file(&link).unwrap();
+            std::os::unix::fs::symlink(&new, &link).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&old).unwrap(), "old content");
+        assert_eq!(fs::read_to_string(&new).unwrap(), "new content");
+        assert_eq!(fs::canonicalize(&link).unwrap(), new);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_replace_a_dangling_symlink_on_save() {
+        let d = tmp();
+        let target = d.path().join("missing.md");
+        let link = d.path().join("link.md");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(matches!(write_document(&link, "mine", WriteCondition::Absent), Err(DocError::NotFound)));
+        assert_eq!(fs::read_link(&link).unwrap(), target);
+        assert!(!target.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_dangling_symlink_that_appears_during_a_new_file_save() {
+        let d = tmp();
+        let target = d.path().join("missing.md");
+        let link = d.path().join("link.md");
+        let result = write_document_with(&link, "mine", WriteCondition::Absent, || {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+        });
+        assert!(matches!(result, Err(DocError::Conflict)));
+        assert_eq!(fs::read_link(&link).unwrap(), target);
+        assert!(!target.exists());
     }
 
     #[cfg(unix)]

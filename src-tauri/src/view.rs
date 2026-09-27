@@ -42,7 +42,7 @@ pub fn render_text(text: &str, path: Option<&str>) -> ViewDocument {
 }
 
 pub fn render_document(doc: &ReadDocument) -> ViewDocument {
-    ViewDocument { stamp: Some(doc.stamp), ..render_text(&doc.text, Some(&doc.path)) }
+    ViewDocument { stamp: Some(doc.stamp.clone()), ..render_text(&doc.text, Some(&doc.path)) }
 }
 
 #[cfg(test)]

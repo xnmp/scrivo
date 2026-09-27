@@ -1,18 +1,11 @@
 import type { TextFormat } from './text-format';
 import { DEFAULT_FORMAT } from './text-format';
 
-/** What we last observed about a file on disk. */
-export interface FileStamp {
-  /** Modification time in milliseconds since the epoch, with sub-millisecond precision. */
-  readonly mtimeMs: number;
-  readonly size: number;
-  /** Unix metadata change time; catches edits that restore mtime. */
-  readonly changeMs?: number | null;
-}
+/** Opaque disk revision token supplied by the file adapter. */
+export type FileStamp = string;
 
 export const sameStamp = (a: FileStamp | null, b: FileStamp | null): boolean =>
-  a === b || (a !== null && b !== null && a.mtimeMs === b.mtimeMs && a.size === b.size
-    && (a.changeMs ?? null) === (b.changeMs ?? null));
+  a === b;
 
 /**
  * An immutable document snapshot. CodeMirror's `Text` satisfies this structurally,

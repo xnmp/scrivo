@@ -33,17 +33,16 @@ describe('isDirty', () => {
 });
 
 describe('sameStamp', () => {
-  it('compares both mtime and size', () => {
-    expect(sameStamp({ mtimeMs: 1.5, size: 3 }, { mtimeMs: 1.5, size: 3 })).toBe(true);
-    expect(sameStamp({ mtimeMs: 1.5, size: 3, changeMs: 2 }, { mtimeMs: 1.5, size: 3, changeMs: 3 })).toBe(false);
-    expect(sameStamp({ mtimeMs: 1.5, size: 3 }, { mtimeMs: 1.5, size: 4 })).toBe(false);
-    expect(sameStamp({ mtimeMs: 1.5, size: 3 }, { mtimeMs: 1.25, size: 3 })).toBe(false);
+  it('requires the exact opaque revision token', () => {
+    expect(sameStamp('v1|large|123', 'v1|large|123')).toBe(true);
+    expect(sameStamp('v1|large|123', 'v1|large|124')).toBe(false);
+    expect(sameStamp('v1|large|123', 'v1|large|123 ')).toBe(false);
   });
 
   it('treats a missing stamp as equal only to another missing stamp', () => {
     expect(sameStamp(null, null)).toBe(true);
-    expect(sameStamp(null, { mtimeMs: 0, size: 0 })).toBe(false);
-    expect(sameStamp({ mtimeMs: 0, size: 0 }, null)).toBe(false);
+    expect(sameStamp(null, 'v1|empty')).toBe(false);
+    expect(sameStamp('v1|empty', null)).toBe(false);
   });
 });
 

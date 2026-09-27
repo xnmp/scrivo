@@ -3,13 +3,13 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. This checkpoint uses renderer-supplied
-top-level block boundaries to parse only the first HTML chunk before paint, then
-parses the rest in idle slices. The previous checkpoint (`722c68b`) added viewer
-phase traces; `1dec5d8` batched postpaint code highlighting and kept Find
-responsive. Earlier commits established reviewed startup benchmarks and a
-manifest-based bundle gate. The broader goal is ongoing; there is no release or
-deployment.
+verified, and exceptionally fast at startup. The current work fixes false save
+conflicts caused by lossy JavaScript serialization of filesystem timestamps,
+hardens conditional writes, and proves Find can open while a large document is
+still highlighting. Earlier checkpoints added renderer-supplied HTML chunk
+boundaries, viewer phase traces, batched postpaint code highlighting, reviewed
+startup benchmarks, and a manifest-based bundle gate. The broader goal is
+ongoing; there is no release or deployment.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -18,6 +18,70 @@ Read `README.md` for usage and the latest performance table,
 transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
+
+## Current checkpoint: exact file revisions and active Find
+
+- Native runs intermittently displayed a save conflict when an untouched file was
+  edited and saved. The key event reached the editor, but the disk bytes stayed
+  unchanged. A targeted Rust trace in a failing native run captured a `FileStamp`
+  timestamp whose bits changed by one `f64` ULP after Rust → JSON → JavaScript →
+  Rust (`...9116` became `...9117`). Filesystem nanosecond precision is not
+  reliably preserved by a JSON number.
+  The false conflict appeared in different native specs, so it was not a fixture
+  or key-dispatch issue. Temporary diagnostic listeners and traces were removed.
+- `FileStamp` is now an opaque JSON string. Rust encodes exact filesystem integers:
+  device, inode, size, mtime seconds/nanoseconds, and ctime seconds/nanoseconds on
+  Unix. Other platforms encode size and exact modified time with an epoch sign;
+  failure to obtain modified time fails closed. The domain compares token strings;
+  the in-memory platform issues monotonic string tokens. A Rust test round-trips a
+  token through JSON and uses it for a conditional save. Domain tests now use the
+  public opaque-string contract.
+- The Rust write path checks for changes both before and after writing the temp
+  file, including user-confirmed overwrites. It re-resolves symlinks before rename
+  and refuses a retargeted or dangling link. Deterministic tests change the target
+  between temp-file completion and rename, including a newly introduced dangling
+  link and an external edit after overwrite confirmation. Existing link targets and
+  external content remain intact on conflict. A final check → rename race across
+  processes remains because the filesystem has no atomic compare-and-rename here.
+- `e2e-native/specs/reading-large.spec.ts` atomically samples partial highlighting
+  of the real 800-code-block fixture, dispatches Ctrl+F in that same browser task,
+  and checks that Find opens and focuses before all blocks are highlighted. It
+  then finds `fib_400` as `1 of 1`. A separate existing test uses a real Control+F
+  keypress and checks every block's final highlighted text.
+- `e2e-native/specs/save-bytes.spec.ts` now tests a dirty editor plus an external
+  write: Ctrl+S prompts instead of replacing the external bytes, and `Load Theirs`
+  updates the editor. Failure diagnostics include the editor and disk state.
+
+### Validation for this checkpoint
+
+| Check | Result |
+|---|---|
+| `bun run typecheck`; native E2E TypeScript check | Pass |
+| `bun run test` | 295/295 Vitest tests passed |
+| `cargo test -q` in `src-tauri` | 31/31 app Rust tests passed |
+| `cargo test -q -p scrivo-render` | 35/35 renderer Rust tests passed |
+| `bun run test:e2e` | 54/54 Chromium tests passed on the opaque-token change before the final Rust-only overwrite guard |
+| `bun run build:native-test` | Pass; bundle gate 34/40 KiB static, 48/56 KiB known prepaint JS/CSS, 1,060 KiB conditional font, 2,517 KiB deferred graph |
+| Native WebKitGTK | 11/11 specs, 14 tests passed against final rebuilt debug binary; an earlier full run also passed before the final Rust-only overwrite guard |
+| `bunx tauri build --no-bundle` | Pass; final release binary built |
+| Verified release startup smoke | 5/5 medium and 5/5 large first-viewport reference matches; medians 358 ms and 371 ms respectively |
+| `git diff --check` | Pass |
+
+An independent adversarial review found the symlink and confirmed-overwrite races;
+the resulting checks and focused Rust tests are included. Native tests run under
+isolated Xvfb/DBus. The startup smoke uses the current release binary and reviewed
+fixture references, but is a single-app check under this host's current load, not
+a controlled paired comparison with Typora. Raw current-run logs are in
+`/tmp/scrivo-smoke-medium-final.log` and `/tmp/scrivo-smoke-large-final.log` (not
+committed); retain the paired measurements below as the comparison baseline.
+
+The next agent should prioritize the 5 MB visible-block layout gap described in
+“Remaining limits” if continuing performance work. Profile the visible scroll
+interaction and total layout cost before changing insertion policy. For data
+safety, validate save conflict behavior on Windows and consider a stronger Windows
+revision identity than size and modified time. Keep the final check → rename race
+in mind when changing the write path; the current tests cover changes during temp
+file creation, not an adversarial writer in that final syscall gap.
 
 ## Earlier product checkpoint (`8eeead5`)
 
@@ -172,7 +236,7 @@ reference checks. The first Chromium attempt could not bind the local dev server
 inside the restricted sandbox (`listen EPERM`); the same command passed with local
 networking permitted. No native feature behavior or Rust source changed.
 
-## Current checkpoint: chunked HTML parsing before first paint
+## Earlier checkpoint: chunked HTML parsing before first paint (`129cd13`)
 
 - The Rust renderer (`src-tauri/render/src/lib.rs`) now records UTF-16 offsets only
   after complete top-level Markdown blocks. It starts another chunk after 32 blocks
@@ -309,10 +373,10 @@ measure how long that takes. A prior single startup trace is in
   suite under load; later full concurrent and sequential reruns passed, but its
   exact cause was not established.
 - `document settled` times insertion only. Code highlighting completes later.
-  The new native test verifies the final 800-block outcome, while its runtime is
-  not a stable performance gate. If changing the idle policy further, measure
-  interaction latency and full highlighting time with a controlled trace. The
-  existing Find test does not guarantee that Find opens during highlighting.
+  Native tests verify Find opening during partial highlighting and the final
+  800-block outcome, while their runtimes are not stable performance gates. If
+  changing the idle policy further, measure interaction latency and full
+  highlighting time with a controlled trace.
 - Chunk boundaries require complete top-level blocks; a single very large code,
   table, or paragraph block can still take longer than an 8 ms idle budget to parse
   or lay out. An additional Chromium test with one 1 MB code block observed a

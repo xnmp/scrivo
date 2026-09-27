@@ -1,5 +1,5 @@
 import { $, browser, expect } from '@wdio/globals';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import type { SaveBytesFixture } from '../fixtures';
 import { state } from '../state';
 
@@ -34,7 +34,40 @@ describe('edit and save preserves bytes', () => {
     } catch (error) {
       const actual = readFileSync(fixture.docPath);
       const visible = await content.getText();
-      throw new Error(`${String(error)}; expected=${expected.toString('hex')}; actual=${actual.toString('hex')}; editor=${JSON.stringify(visible)}`);
+      const diagnostic = await browser.execute(() => ({
+        focus: document.hasFocus(),
+        active: (document.activeElement as Element | null)?.className,
+        mode: document.body.dataset.mode,
+        modal: document.querySelector('.modal')?.textContent,
+        toast: document.querySelector('.toast-stack')?.textContent,
+      }));
+      throw new Error(`${String(error)}; path=${fixture.docPath}; expected=${expected.toString('hex')}; actual=${actual.toString('hex')}; editor=${JSON.stringify(visible)}; diagnostic=${JSON.stringify(diagnostic)}`);
     }
+  });
+
+  it('asks before replacing an externally changed file and can load theirs', async () => {
+    const fixture = state.fixture as SaveBytesFixture;
+    const content = $('.cm-content');
+    await content.click();
+    await browser.keys(['Control', 'End']);
+    await browser.keys(' mine');
+    await browser.waitUntil(() => content.getText().then((text) => text.includes('mine')), {
+      timeout: 5_000,
+      timeoutMsg: 'local edit never appeared in the editor',
+    });
+
+    const theirs = Buffer.from('\ufeffExternal change\r\n', 'utf8');
+    writeFileSync(fixture.docPath, theirs);
+    await browser.keys(['Control', 's']);
+    const prompt = $('.modal h2');
+    await prompt.waitForDisplayed({ timeout: 10_000 });
+    expect(['doc.md changed on disk', 'doc.md conflicts with disk']).toContain(await prompt.getText());
+    expect(readFileSync(fixture.docPath).equals(theirs)).toBe(true);
+    await $('button[data-choice="reload"]').click();
+    await browser.waitUntil(() => $('.cm-content').getText().then((text) => text.includes('External change')), {
+      timeout: 10_000,
+      timeoutMsg: 'loading the external version did not update the editor',
+    });
+    expect(readFileSync(fixture.docPath).equals(theirs)).toBe(true);
   });
 });

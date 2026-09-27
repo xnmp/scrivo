@@ -5,6 +5,34 @@ const expectedCode = [...readFileSync(new URL('../../bench/fixtures/large.md', i
   .matchAll(/```(?:python|rust)\n([\s\S]*?)```/g)].map((match) => match[1]);
 
 describe('large file in the native reading view', () => {
+  it('opens Find while code highlighting is still in progress', async () => {
+    await $('#document h1').waitForExist({ timeout: 15_000 });
+    let openedAt = 0;
+    await browser.waitUntil(async () => {
+      const result = await browser.execute(() => {
+        const codes = document.querySelectorAll('#document pre[data-lang] > code');
+        const highlighted = document.querySelectorAll('#document pre[data-lang] > code:has(.tok-keyword)').length;
+        if (codes.length !== 800 || highlighted === 0 || highlighted === 800) return null;
+        // Sample and open in one webview task, so highlighting cannot finish between them.
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }));
+        const input = document.querySelector<HTMLInputElement>('input[aria-label="Find in document"]');
+        return { highlighted, open: input !== null && !input.closest('.find-bar')?.hasAttribute('hidden') && document.activeElement === input };
+      });
+      if (!result?.open) return false;
+      openedAt = result.highlighted;
+      return true;
+    }, { timeout: 20_000, timeoutMsg: 'Find did not open during partial code highlighting' });
+    const find = $('input[aria-label="Find in document"]');
+    await find.waitForDisplayed();
+    expect(openedAt).toBeLessThan(800);
+    await find.setValue('fib_400');
+    await browser.waitUntil(async () => (await $('.find-count').getText()) === '1 of 1', {
+      timeout: 10_000,
+      timeoutMsg: 'find did not locate text in the final code block while highlighting',
+    });
+    await browser.keys(['Escape']);
+  });
+
   it('renders the fixture-specific tail and can scroll it into view', async () => {
     const heading = $('#document h1');
     await heading.waitForExist({ timeout: 15_000 });

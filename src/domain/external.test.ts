@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FileStamp } from './document';
 import { decideExternalChange } from './external';
 
-const stamp = (mtimeMs: number, size: number): FileStamp => ({ mtimeMs, size });
+const stamp = (mtime: number, size: number): FileStamp => `${mtime}:${size}`;
 
 describe('decideExternalChange', () => {
   it('does nothing while the disk matches our last read or write', () => {
@@ -32,7 +32,7 @@ describe('decideExternalChange', () => {
   });
 
   it('never discards unsaved edits without asking', () => {
-    const arbStamp = fc.option(fc.record({ mtimeMs: fc.double({ noNaN: true }), size: fc.nat() }), { nil: null });
+    const arbStamp = fc.option(fc.string(), { nil: null });
     fc.assert(
       fc.property(arbStamp, arbStamp, (known, observed) => {
         expect(decideExternalChange({ known, observed, dirty: true })).not.toBe('reload');

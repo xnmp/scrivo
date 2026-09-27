@@ -73,8 +73,8 @@ export function createMemoryPlatform(options: {
   const renderFn = options.render ?? fakeRender;
   let clock = 1_000;
   const files = new Map<string, Entry>();
-  const stampFor = (text: string): FileStamp => ({ mtimeMs: (clock += 1), changeMs: clock, size: new TextEncoder().encode(text).length });
-  for (const [path, text] of Object.entries(options.files ?? {})) files.set(path, { text, stamp: stampFor(text) });
+  const stampFor = (): FileStamp => String(++clock);
+  for (const [path, text] of Object.entries(options.files ?? {})) files.set(path, { text, stamp: stampFor() });
 
   const writes: Array<{ path: string; text: string }> = [];
   let pendingFailure: FileError | null = null;
@@ -119,7 +119,7 @@ export function createMemoryPlatform(options: {
         if (condition.kind === 'unchanged' && (!current || !sameStamp(current.stamp, condition.stamp))) {
           throw new FileError('conflict', path);
         }
-        const entry = { text, stamp: stampFor(text) };
+        const entry = { text, stamp: stampFor() };
         files.set(path, entry);
         writes.push({ path, text });
         if (writeGate && gatePhase === 'after-landing') await writeGate();
@@ -176,7 +176,7 @@ export function createMemoryPlatform(options: {
     },
     disk: {
       get: (path) => files.get(path)?.text,
-      put: (path, text) => void files.set(path, { text, stamp: stampFor(text) }),
+      put: (path, text) => void files.set(path, { text, stamp: stampFor() }),
       remove: (path) => void files.delete(path),
       notify: (path) => { if (watched?.path === path) watched.onChange(); },
       failNextWrite: (error) => void (pendingFailure = error),
