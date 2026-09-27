@@ -24,8 +24,8 @@ export interface Finder {
 export interface FindSource {
   /** Insert any blocks still pending, so the whole document can be searched. */
   loadAll(): void;
-  /** Bumped whenever a different document (or version) is shown. */
-  version(): number;
+  /** Bumped whenever indexed text nodes may have changed. */
+  textVersion(): number;
 }
 
 const HIGHLIGHT_ALL = 'scrivo-find';
@@ -122,7 +122,7 @@ export function createFinder(scroller: HTMLElement, article: HTMLElement, source
     search(query) {
       clear();
       source.loadAll();
-      const version = source.version();
+      const version = source.textVersion();
       if (index?.version !== version) index = indexText(article, version);
       const idx = index;
       matches = findAll(idx.text, query, MAX_MATCHES + 1);

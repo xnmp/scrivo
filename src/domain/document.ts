@@ -6,10 +6,13 @@ export interface FileStamp {
   /** Modification time in milliseconds since the epoch, with sub-millisecond precision. */
   readonly mtimeMs: number;
   readonly size: number;
+  /** Unix metadata change time; catches edits that restore mtime. */
+  readonly changeMs?: number | null;
 }
 
 export const sameStamp = (a: FileStamp | null, b: FileStamp | null): boolean =>
-  a === b || (a !== null && b !== null && a.mtimeMs === b.mtimeMs && a.size === b.size);
+  a === b || (a !== null && b !== null && a.mtimeMs === b.mtimeMs && a.size === b.size
+    && (a.changeMs ?? null) === (b.changeMs ?? null));
 
 /**
  * An immutable document snapshot. CodeMirror's `Text` satisfies this structurally,

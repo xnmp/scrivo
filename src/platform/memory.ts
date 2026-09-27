@@ -1,6 +1,6 @@
 // In-memory Platform: backs unit tests, the browser dev build and the Playwright suite.
 // It mimics the Tauri adapter's contract, including stamp-based conflict detection.
-import type { FileStamp } from '../domain/document';
+import { sameStamp, type FileStamp } from '../domain/document';
 import { FileError, type Heading, type Platform, type StartupDocument, type ViewDocument } from '../app/ports';
 
 /** Markdown → HTML, as the backend's renderer does it. */
@@ -41,6 +41,8 @@ export interface MemoryPlatform extends Platform {
     /** Simulate another program writing the file. */
     put(path: string, text: string): void;
     remove(path: string): void;
+    /** Simulate a filesystem notification for a path after changing the fake disk. */
+    notify(path: string): void;
     /** The next write rejects with this error. */
     failNextWrite(error: FileError): void;
     /**
@@ -71,7 +73,7 @@ export function createMemoryPlatform(options: {
   const renderFn = options.render ?? fakeRender;
   let clock = 1_000;
   const files = new Map<string, Entry>();
-  const stampFor = (text: string): FileStamp => ({ mtimeMs: (clock += 1), size: new TextEncoder().encode(text).length });
+  const stampFor = (text: string): FileStamp => ({ mtimeMs: (clock += 1), changeMs: clock, size: new TextEncoder().encode(text).length });
   for (const [path, text] of Object.entries(options.files ?? {})) files.set(path, { text, stamp: stampFor(text) });
 
   const writes: Array<{ path: string; text: string }> = [];
@@ -84,6 +86,7 @@ export function createMemoryPlatform(options: {
   let closeHandler: (() => Promise<boolean>) | null = null;
   const focusHandlers: Array<() => void> = [];
   let destroyed = false;
+  let watched: { path: string; onChange: () => void } | null = null;
 
   const read = async (path: string) => {
     const entry = files.get(path);
@@ -104,7 +107,7 @@ export function createMemoryPlatform(options: {
   const platform: MemoryPlatform = {
     fs: {
       read,
-      async write(path, text, expected) {
+      async write(path, text, condition) {
         if (writeGate && gatePhase === 'before-landing') await writeGate();
         if (pendingFailure) {
           const error = pendingFailure;
@@ -112,9 +115,9 @@ export function createMemoryPlatform(options: {
           throw error;
         }
         const current = files.get(path);
-        if (expected !== null) {
-          const same = current && current.stamp.mtimeMs === expected.mtimeMs && current.stamp.size === expected.size;
-          if (!same) throw new FileError('conflict', path);
+        if (condition.kind === 'absent' && current) throw new FileError('conflict', path);
+        if (condition.kind === 'unchanged' && (!current || !sameStamp(current.stamp, condition.stamp))) {
+          throw new FileError('conflict', path);
         }
         const entry = { text, stamp: stampFor(text) };
         files.set(path, entry);
@@ -124,6 +127,9 @@ export function createMemoryPlatform(options: {
       },
       async stat(path) {
         return files.get(path)?.stamp ?? null;
+      },
+      async watch(path, onChange) {
+        watched = path === null ? null : { path, onChange };
       },
     },
     dialogs: {
@@ -172,6 +178,7 @@ export function createMemoryPlatform(options: {
       get: (path) => files.get(path)?.text,
       put: (path, text) => void files.set(path, { text, stamp: stampFor(text) }),
       remove: (path) => void files.delete(path),
+      notify: (path) => { if (watched?.path === path) watched.onChange(); },
       failNextWrite: (error) => void (pendingFailure = error),
       setWriteGate: (gate, phase = 'before-landing') => {
         writeGate = gate;

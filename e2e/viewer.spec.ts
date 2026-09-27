@@ -29,6 +29,16 @@ const SAMPLE = [
 ].join('\n');
 
 test.describe('reading view', () => {
+  test('highlights fenced code after opening without changing its text', async ({ page }) => {
+    const source = 'def greet(name):\n    return "<b>"\n';
+    await openApp(page, { text: `# Code\n\n\`\`\`python\n${source}\`\`\``, mode: 'view' });
+    const code = doc(page).locator('pre code');
+    await expect(code.locator('.tok-keyword', { hasText: 'def' })).toBeVisible();
+    await expect(code).toHaveText(source);
+    await expect(code.locator('b')).toHaveCount(0);
+    await expect(page.locator('.cm-editor')).toHaveCount(0);
+  });
+
   test('opens a file rendered, without loading the editor', async ({ page }) => {
     await openApp(page, { text: SAMPLE, mode: 'view' });
     await expect(doc(page).locator('h1')).toHaveText('Guide');
@@ -43,6 +53,32 @@ test.describe('reading view', () => {
     await expect(page.locator('.cm-editor')).toHaveCount(0);
     await expect(page.locator('.status-bar')).toContainText('to edit');
     await expect(page).toHaveTitle('inline.md — Scrivo');
+  });
+
+  test('contents sidebar jumps to a heading and closes with Escape', async ({ page }) => {
+    await openApp(page, { text: SAMPLE, mode: 'view' });
+    const toggle = page.getByRole('button', { name: 'Contents', exact: true });
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    const panel = page.locator('#outline-panel');
+    await expect(panel).toBeVisible();
+    await panel.getByRole('button', { name: 'Heading level 2: Part two' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).__scrivo.viewer.topLine())).toBeGreaterThan(60);
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(toggle).toBeFocused();
+  });
+
+  test('contents sidebar works on a narrow window', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await openApp(page, { text: SAMPLE, mode: 'view' });
+    await page.getByRole('button', { name: 'Contents', exact: true }).click();
+    const panel = page.locator('#outline-panel');
+    await expect(panel).toBeVisible();
+    await panel.getByRole('button', { name: 'Heading level 2: Part two' }).click();
+    await expect(panel).toBeHidden();
+    await expect(page.locator('#viewer')).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 
   test('never runs markup from the document', async ({ page }) => {

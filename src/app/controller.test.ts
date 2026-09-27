@@ -110,6 +110,27 @@ describe('saving', () => {
     expect(editor.path()).toBe('/n/draft.md');
   });
 
+  it('asks before Save As replaces another file', async () => {
+    const { editor, controller, platform, asked } = await setup({ '/n/a.md': 'original', '/n/b.md': 'theirs' }, '/n/a.md');
+    editor.type('-mine');
+    platform.dialogAnswers.save.push('/n/b.md');
+    expect(await controller.saveAs()).toBe(false);
+    expect(platform.disk.get('/n/b.md')).toBe('theirs');
+    expect(editor.value()).toBe('original-mine');
+    expect(asked).toContain('conflict:b.md');
+  });
+
+  it('loads the Save As target when that conflict is resolved with Load Theirs', async () => {
+    const { editor, controller, platform, answers } = await setup({ '/n/a.md': 'original', '/n/b.md': 'theirs' }, '/n/a.md');
+    editor.type('-mine');
+    answers.conflict.push('reload');
+    platform.dialogAnswers.save.push('/n/b.md');
+    expect(await controller.saveAs()).toBe(false);
+    expect(editor.value()).toBe('theirs');
+    expect(controller.info().path).toBe('/n/b.md');
+    expect(platform.disk.get('/n/a.md')).toBe('original');
+  });
+
   it('leaves untitled documents alone when the save dialog is dismissed', async () => {
     const { editor, controller, platform } = await setup();
     editor.type('draft');
@@ -143,6 +164,18 @@ describe('saving', () => {
     answers.conflict.push('overwrite');
     expect(await controller.save()).toBe(true);
     expect(platform.disk.get('/n/a.md')).toBe('a-mine');
+  });
+
+  it('does not overwrite a file recreated after deletion before a disk check', async () => {
+    const { editor, controller, platform, asked } = await setup({ '/n/a.md': 'old' }, '/n/a.md');
+    editor.type('-mine');
+    platform.disk.remove('/n/a.md');
+    await controller.checkDisk();
+    platform.disk.put('/n/a.md', 'theirs');
+
+    expect(await controller.save()).toBe(false);
+    expect(platform.disk.get('/n/a.md')).toBe('theirs');
+    expect(asked).toContain('conflict:a.md');
   });
 
   it('can resolve a save conflict by taking the disk version', async () => {
@@ -248,6 +281,18 @@ describe('changes made by other programs', () => {
     expect(notices).toHaveLength(1);
     expect(await controller.save()).toBe(true);
     expect(platform.disk.get('/n/a.md')).toBe('a');
+  });
+
+  it('asks before replacing the retained buffer when a deleted file reappears', async () => {
+    const { platform, editor, controller, answers, asked } = await setup({ '/n/a.md': 'old' }, '/n/a.md');
+    platform.disk.remove('/n/a.md');
+    await controller.checkDisk();
+    platform.disk.put('/n/a.md', 'recreated');
+    answers.disk.push('reload');
+    await controller.checkDisk();
+    expect(asked).toEqual(['disk:a.md']);
+    expect(editor.value()).toBe('recreated');
+    expect(controller.info().dirty).toBe(false);
   });
 
   it('never mistakes its own in-flight save for an external change', async () => {

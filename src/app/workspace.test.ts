@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createMemoryPlatform, type MemoryPlatform } from '../platform/memory';
 import { createDocumentController } from './controller';
 import type { ViewDocument } from './ports';
@@ -27,7 +27,7 @@ function fakeViewer() {
 }
 
 async function setup(
-  opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number } = {},
+  opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number; watch?: boolean } = {},
 ) {
   const platform: MemoryPlatform = createMemoryPlatform({
     files: opts.files ?? {},
@@ -42,11 +42,13 @@ async function setup(
   let editorTop = 1;
   let loads = 0;
   let failuresLeft = opts.failEditorLoads ?? 0;
-  const workspace = createWorkspace({
+  let workspace: ReturnType<typeof createWorkspace>;
+  workspace = createWorkspace({
     platform,
     viewer: viewer.port,
     showSurface: (m) => void surfaces.push(m),
     notify: p.prompter.notify,
+    ...(opts.watch ? { onPathChanged: (path: string | null) => void platform.fs.watch(path, () => void workspace.checkDisk()) } : {}),
     loadEditor: async () => {
       loads += 1;
       if (failuresLeft-- > 0) throw new Error('chunk failed to load');
@@ -144,11 +146,17 @@ describe('switching between reading and editing', () => {
   });
 
   it('stays in the reading view when the file vanished before editing', async () => {
-    const t = await setup({ files, startupPath: '/d/a.md' });
+    const t = await setup({ files, startupPath: '/d/a.md', watch: true });
     t.platform.disk.remove('/d/a.md');
     await t.workspace.edit();
     expect(t.workspace.mode()).toBe('view');
     expect(t.notices.join()).toMatch(/does not exist/);
+    t.platform.disk.put('/d/a.md', '# A\nrestored');
+    t.platform.disk.notify('/d/a.md');
+    await vi.waitFor(() => expect(t.viewer.text()).toBe('A\nrestored'));
+    await t.workspace.edit();
+    expect(t.workspace.mode()).toBe('edit');
+    expect(t.editorPort.value()).toBe('# A\nrestored');
   });
 
   it('reports an editor that fails to load and can retry', async () => {
@@ -247,6 +255,45 @@ describe('following links', () => {
 });
 
 describe('changes made by other programs', () => {
+  it('reacts to a watched file change and follows the current document', async () => {
+    const t = await setup({ files: { '/d/a.md': 'one', '/d/b.md': 'bee' }, startupPath: '/d/a.md', watch: true });
+    t.platform.disk.put('/d/a.md', 'two');
+    t.platform.disk.notify('/d/a.md');
+    await vi.waitFor(() => expect(t.viewer.text()).toBe('two'));
+
+    await t.workspace.open('/d/b.md');
+    t.platform.disk.put('/d/a.md', 'three');
+    t.platform.disk.notify('/d/a.md');
+    expect(t.viewer.text()).toBe('bee');
+    t.platform.disk.put('/d/b.md', 'new');
+    t.platform.disk.notify('/d/b.md');
+    await vi.waitFor(() => expect(t.viewer.text()).toBe('new'));
+  });
+
+  it('reloads a watched file that is deleted and recreated', async () => {
+    const t = await setup({ files: { '/d/a.md': 'old' }, startupPath: '/d/a.md', watch: true });
+    t.platform.disk.remove('/d/a.md');
+    t.platform.disk.notify('/d/a.md');
+    await vi.waitFor(() => expect(t.notices).toHaveLength(1));
+    expect(t.viewer.text()).toBe('old');
+
+    t.platform.disk.put('/d/a.md', 'recreated');
+    t.platform.disk.notify('/d/a.md');
+    await vi.waitFor(() => expect(t.viewer.text()).toBe('recreated'));
+  });
+
+  it('watches the path assigned by Save As', async () => {
+    const t = await setup({ watch: true });
+    t.typeInEditor('mine');
+    t.platform.dialogAnswers.save.push('/d/new.md');
+    await t.workspace.saveAs();
+    expect(t.platform.disk.get('/d/new.md')).toBe('mine');
+
+    t.platform.disk.put('/d/new.md', 'external');
+    t.platform.disk.notify('/d/new.md');
+    await vi.waitFor(() => expect(t.editorPort.value()).toBe('external'));
+  });
+
   it('re-renders the reading view where the reader was', async () => {
     const t = await setup({ files: { '/d/a.md': 'one' }, startupPath: '/d/a.md' });
     t.viewer.scrollTo(7);
@@ -304,6 +351,10 @@ describe('closing and new documents', () => {
     expect(t.workspace.mode()).toBe('edit');
     expect(t.editorPort.value()).toBe('');
     expect(t.editorPort.path()).toBeNull();
+    t.typeInEditor('draft');
+    t.platform.dialogAnswers.save.push('/d/draft.md');
+    await t.workspace.save();
+    expect(t.platform.disk.get('/d/draft.md')).toBe('draft');
   });
 
   it('saves from the reading view', async () => {

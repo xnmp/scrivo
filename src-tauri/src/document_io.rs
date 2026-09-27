@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
@@ -15,6 +15,17 @@ pub struct FileStamp {
     /// Modification time in ms since the epoch, with sub-millisecond precision.
     pub mtime_ms: f64,
     pub size: u64,
+    /// Unix metadata change time catches same-size edits that restore mtime.
+    pub change_ms: Option<f64>,
+}
+
+/// Disk state that a save may replace. Overwrite must be chosen explicitly.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum WriteCondition {
+    Unchanged { stamp: FileStamp },
+    Absent,
+    Overwrite,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,7 +83,26 @@ fn stamp_of(meta: &fs::Metadata) -> FileStamp {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as f64 * 1000.0 + f64::from(d.subsec_nanos()) / 1_000_000.0)
         .unwrap_or(0.0);
-    FileStamp { mtime_ms, size: meta.len() }
+    #[cfg(unix)]
+    let change_ms = {
+        use std::os::unix::fs::MetadataExt;
+        Some(meta.ctime() as f64 * 1000.0 + meta.ctime_nsec() as f64 / 1_000_000.0)
+    };
+    #[cfg(not(unix))]
+    let change_ms = None;
+    FileStamp { mtime_ms, size: meta.len(), change_ms }
+}
+
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        a.dev() == b.dev() && a.ino() == b.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        stamp_of(a) == stamp_of(b)
+    }
 }
 
 /// `path` made absolute (without resolving symlinks, so titles show what the user opened).
@@ -82,14 +112,23 @@ pub fn absolute(path: &Path) -> io::Result<PathBuf> {
 
 pub fn read_document(path: &Path) -> Result<ReadDocument, DocError> {
     let path = absolute(path)?;
-    let meta = fs::metadata(&path)?;
-    if meta.is_dir() {
+    let mut file = File::open(&path)?;
+    let before = file.metadata()?;
+    if before.is_dir() {
         return Err(DocError::IsDirectory);
     }
-    let bytes = fs::read(&path)?;
-    // Stamp from the same moment as the bytes as closely as we can: re-stat after
-    // reading so a write racing with our read is seen as a change later, not lost.
-    let stamp = stamp_of(&fs::metadata(&path)?);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let after = file.metadata()?;
+    let at_path = fs::metadata(&path)?;
+    // The bytes and stamp must describe the same version of the file. A path
+    // lookup after reading alone can stamp old bytes with a replacement's metadata.
+    if !same_file(&before, &after) || !same_file(&after, &at_path)
+        || stamp_of(&before) != stamp_of(&after) || stamp_of(&after) != stamp_of(&at_path)
+    {
+        return Err(DocError::Conflict);
+    }
+    let stamp = stamp_of(&after);
     let text = String::from_utf8(bytes).map_err(|_| DocError::NotUtf8)?;
     Ok(ReadDocument { path: path.to_string_lossy().into_owned(), text, stamp })
 }
@@ -110,11 +149,10 @@ static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 ///
 /// - Symlinks are followed: the link's target is replaced and the link survives.
 /// - The existing file's permissions are kept.
-/// - With `expected`, the write is refused (`Conflict`) if the file on disk no longer
-///   matches it — including when it has been deleted.
+/// - `Unchanged` and `Absent` refuse (`Conflict`) when disk state changed.
 ///
 /// Caveat: a replaced file gets a new inode, so other hard links keep the old content.
-pub fn write_document(path: &Path, text: &str, expected: Option<FileStamp>) -> Result<FileStamp, DocError> {
+pub fn write_document(path: &Path, text: &str, condition: WriteCondition) -> Result<FileStamp, DocError> {
     let path = absolute(path)?;
     let target = match fs::canonicalize(&path) {
         Ok(resolved) => resolved,
@@ -127,40 +165,62 @@ pub fn write_document(path: &Path, text: &str, expected: Option<FileStamp>) -> R
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
     };
-    if let Some(expected) = expected {
-        match &existing {
-            Some(meta) if stamp_of(meta) == expected => {}
-            _ => return Err(DocError::Conflict),
-        }
+    match (condition, &existing) {
+        (WriteCondition::Unchanged { stamp }, Some(meta)) if stamp_of(meta) == stamp => {}
+        (WriteCondition::Absent, None) | (WriteCondition::Overwrite, _) => {}
+        _ => return Err(DocError::Conflict),
     }
 
     let dir = target.parent().ok_or_else(|| DocError::Io(io::Error::other("path has no parent directory")))?;
     let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
 
-    let (tmp_path, mut tmp) = match create_temp(dir, &name) {
-        Ok(created) => created,
-        // A writable file in a directory we can't create files in: fall back to an
-        // in-place write rather than refusing to save at all.
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied && existing.is_some() => {
-            return write_in_place(&target, text);
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let (tmp_path, mut tmp) = create_temp(dir, &name)?;
 
-    let result = (|| -> io::Result<()> {
+    let result = (|| -> Result<(), DocError> {
         tmp.write_all(text.as_bytes())?;
         if let Some(meta) = &existing {
             fs::set_permissions(&tmp_path, meta.permissions())?;
         }
         tmp.sync_all()?;
         drop(tmp);
+        // Check again after the potentially slow write. This cannot make a
+        // cross-process compare-and-rename atomic, but catches changes during it.
+        match condition {
+            WriteCondition::Unchanged { stamp } => {
+                let current = match fs::metadata(&target) {
+                    Ok(meta) => meta,
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(DocError::Conflict),
+                    Err(e) => return Err(e.into()),
+                };
+                if stamp_of(&current) != stamp
+                    || existing.as_ref().is_some_and(|old| !same_file(old, &current))
+                {
+                    return Err(DocError::Conflict);
+                }
+            }
+            WriteCondition::Absent => match fs::metadata(&target) {
+                Ok(_) => return Err(DocError::Conflict),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            },
+            WriteCondition::Overwrite if existing.is_none() => {
+                // Even an explicit overwrite must not clobber a file that appeared
+                // after the user's choice but before the temporary file was ready.
+                match fs::metadata(&target) {
+                    Ok(_) => return Err(DocError::Conflict),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            WriteCondition::Overwrite => {}
+        }
         fs::rename(&tmp_path, &target)?;
         sync_dir(dir);
         Ok(())
     })();
     if let Err(e) = result {
         let _ = fs::remove_file(&tmp_path);
-        return Err(e.into());
+        return Err(e);
     }
     Ok(stamp_of(&fs::metadata(&target)?))
 }
@@ -177,13 +237,6 @@ fn create_temp(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
             Err(e) => return Err(e),
         }
     }
-}
-
-fn write_in_place(target: &Path, text: &str) -> Result<FileStamp, DocError> {
-    let mut file = OpenOptions::new().write(true).truncate(true).open(target)?;
-    file.write_all(text.as_bytes())?;
-    file.sync_all()?;
-    Ok(stamp_of(&fs::metadata(target)?))
 }
 
 /// Make the rename durable. Best effort: not every platform/filesystem supports it.
@@ -235,9 +288,9 @@ mod tests {
     fn creates_and_replaces_files_without_leaving_temp_files() {
         let d = tmp();
         let p = d.path().join("a.md");
-        let s1 = write_document(&p, "one", None).unwrap();
+        let s1 = write_document(&p, "one", WriteCondition::Absent).unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "one");
-        let s2 = write_document(&p, "two", Some(s1)).unwrap();
+        let s2 = write_document(&p, "two", WriteCondition::Unchanged { stamp: s1 }).unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "two");
         assert_eq!(Some(s2), stat_document(&p).unwrap());
         let names: Vec<_> = fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
@@ -248,19 +301,45 @@ mod tests {
     fn refuses_to_clobber_external_changes() {
         let d = tmp();
         let p = d.path().join("a.md");
-        let stale = write_document(&p, "mine", None).unwrap();
+        let stale = write_document(&p, "mine", WriteCondition::Absent).unwrap();
         fs::write(&p, "theirs, and longer").unwrap();
-        assert!(matches!(write_document(&p, "mine v2", Some(stale)), Err(DocError::Conflict)));
+        assert!(matches!(write_document(&p, "mine v2", WriteCondition::Unchanged { stamp: stale }), Err(DocError::Conflict)));
         assert_eq!(fs::read_to_string(&p).unwrap(), "theirs, and longer");
+    }
+
+    #[test]
+    fn absent_condition_refuses_recreated_file() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        fs::write(&p, "theirs").unwrap();
+        assert!(matches!(write_document(&p, "mine", WriteCondition::Absent), Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "theirs");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detects_same_size_change_with_restored_mtime() {
+        let d = tmp();
+        let p = d.path().join("a.md");
+        let stale = write_document(&p, "mine", WriteCondition::Absent).unwrap();
+        let modified = fs::metadata(&p).unwrap().modified().unwrap();
+        fs::write(&p, "evil").unwrap();
+        File::open(&p).unwrap().set_times(fs::FileTimes::new().set_modified(modified)).unwrap();
+        let observed = stat_document(&p).unwrap().unwrap();
+        assert_eq!(stale.mtime_ms, observed.mtime_ms);
+        assert_eq!(stale.size, observed.size);
+        assert_ne!(stale.change_ms, observed.change_ms);
+        assert!(matches!(write_document(&p, "edit", WriteCondition::Unchanged { stamp: stale }), Err(DocError::Conflict)));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "evil");
     }
 
     #[test]
     fn expected_stamp_on_a_deleted_file_is_a_conflict() {
         let d = tmp();
         let p = d.path().join("a.md");
-        let s = write_document(&p, "x", None).unwrap();
+        let s = write_document(&p, "x", WriteCondition::Absent).unwrap();
         fs::remove_file(&p).unwrap();
-        assert!(matches!(write_document(&p, "y", Some(s)), Err(DocError::Conflict)));
+        assert!(matches!(write_document(&p, "y", WriteCondition::Unchanged { stamp: s }), Err(DocError::Conflict)));
         assert!(!p.exists());
     }
 
@@ -268,13 +347,13 @@ mod tests {
     fn missing_parent_directory_is_not_found() {
         let d = tmp();
         let p = d.path().join("no/such/dir/a.md");
-        assert!(matches!(write_document(&p, "x", None), Err(DocError::NotFound)));
+        assert!(matches!(write_document(&p, "x", WriteCondition::Absent), Err(DocError::NotFound)));
     }
 
     #[test]
     fn writing_to_a_directory_fails() {
         let d = tmp();
-        assert!(matches!(write_document(d.path(), "x", None), Err(DocError::IsDirectory)));
+        assert!(matches!(write_document(d.path(), "x", WriteCondition::Overwrite), Err(DocError::IsDirectory)));
     }
 
     #[cfg(unix)]
@@ -285,7 +364,7 @@ mod tests {
         let p = d.path().join("a.md");
         fs::write(&p, "x").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o640)).unwrap();
-        write_document(&p, "y", None).unwrap();
+        write_document(&p, "y", WriteCondition::Overwrite).unwrap();
         assert_eq!(fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o640);
     }
 
@@ -298,14 +377,14 @@ mod tests {
         fs::write(&real, "old").unwrap();
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let s = read_document(&link).unwrap().stamp;
-        write_document(&link, "new", Some(s)).unwrap();
+        write_document(&link, "new", WriteCondition::Unchanged { stamp: s }).unwrap();
         assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         assert_eq!(fs::read_to_string(&real).unwrap(), "new");
     }
 
     #[cfg(unix)]
     #[test]
-    fn falls_back_to_in_place_write_in_read_only_directories() {
+    fn refuses_non_atomic_write_in_read_only_directories() {
         use std::os::unix::fs::PermissionsExt;
         let d = tmp();
         let dir = d.path().join("ro");
@@ -313,11 +392,13 @@ mod tests {
         let p = dir.join("a.md");
         fs::write(&p, "old").unwrap();
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
-        let result = write_document(&p, "new", None);
+        let result = write_document(&p, "new", WriteCondition::Overwrite);
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-        // Running as root bypasses directory permissions; either way the content lands.
-        result.unwrap();
-        assert_eq!(fs::read_to_string(&p).unwrap(), "new");
+        // Root can still create a temp file. Otherwise the write must fail without
+        // truncating the existing file.
+        if result.is_err() {
+            assert_eq!(fs::read_to_string(&p).unwrap(), "old");
+        }
     }
 
     #[cfg(unix)]
@@ -331,7 +412,7 @@ mod tests {
         fs::write(&p, "precious").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o444)).unwrap();
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
-        let result = write_document(&p, "clobber", None);
+        let result = write_document(&p, "clobber", WriteCondition::Overwrite);
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
         if result.is_err() {
             assert_eq!(fs::read_to_string(&p).unwrap(), "precious");
@@ -345,7 +426,7 @@ mod tests {
             let text = if crlf { text.replace('\n', "\r\n") } else { text };
             let d = tmp();
             let p = d.path().join("doc.md");
-            let stamp = write_document(&p, &text, None).unwrap();
+            let stamp = write_document(&p, &text, WriteCondition::Absent).unwrap();
             let doc = read_document(&p).unwrap();
             prop_assert_eq!(doc.text, text);
             prop_assert_eq!(doc.stamp, stamp);

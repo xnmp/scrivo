@@ -47,6 +47,7 @@ export interface Workspace {
   open(path?: string): Promise<void>;
   newDocument(): Promise<void>;
   save(): Promise<void>;
+  saveAs(): Promise<void>;
   followLink(href: string): Promise<void>;
   /** Pick up changes made by other programs (on window focus, file watch events). */
   checkDisk(): Promise<void>;
@@ -62,6 +63,8 @@ export interface WorkspaceDeps {
   /** Make the given surface the visible one. */
   readonly showSurface: (mode: Mode) => void;
   readonly notify: (message: string) => void;
+  /** Called when the current document path changes, including at startup. */
+  readonly onPathChanged?: (path: string | null) => void;
 }
 
 const serialQueue = () => {
@@ -75,7 +78,7 @@ const serialQueue = () => {
 
 export function createWorkspace(deps: WorkspaceDeps): Workspace {
   const { platform, viewer, showSurface, notify } = deps;
-  const serial = serialQueue();
+  const enqueue = serialQueue();
 
   let mode: Mode = 'view';
   /** What the reading view shows. */
@@ -84,9 +87,22 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
   let shownText: string | null = null;
   let editor: EditorHandle | null = null;
   let loading: Promise<EditorHandle> | null = null;
+  let reportedPath: string | null | undefined;
+
+  const serial = <T>(op: () => Promise<T>): Promise<T> => enqueue(async () => {
+    try {
+      return await op();
+    } finally {
+      const path = editor ? editor.controller.info().path : shown?.path ?? null;
+      if (path !== reportedPath) {
+        reportedPath = path;
+        deps.onPathChanged?.(path);
+      }
+    }
+  });
 
   const ensureEditor = (): Promise<EditorHandle> => {
-    loading ??= deps.loadEditor().then((e) => (editor = e));
+    loading ??= deps.loadEditor();
     // A failed load (e.g. a chunk that won't import) may be retried later.
     loading.catch(() => (loading = null));
     return loading;
@@ -145,6 +161,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       // The file couldn't be read (the controller said why): stay in the reading view.
       if (e.controller.info().path !== path) return;
     }
+    editor = e;
     setMode('edit');
     e.revealLine(target);
     e.focus();
@@ -181,7 +198,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       return;
     }
     const path = shown?.path;
-    if (!path || !shown?.stamp) return;
+    if (!path || !shown) return;
     let stamp;
     try {
       stamp = await platform.fs.stat(path);
@@ -189,8 +206,10 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       return; // can't tell; keep showing what we have
     }
     if (stamp === null) {
-      notify(`${displayName(path)} was deleted or moved; showing the last version.`);
-      shown = { ...shown, stamp: null };
+      if (shown.stamp !== null) {
+        notify(`${displayName(path)} was deleted or moved; showing the last version.`);
+        shown = { ...shown, stamp: null };
+      }
       return;
     }
     if (!sameStamp(stamp, shown.stamp)) await openInViewer(path, { line: viewer.topLine() });
@@ -207,6 +226,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         }
         const e = await ensureEditor();
         await e.controller.start(await platform.startupDocument());
+        editor = e;
         setMode('edit');
         e.focus();
       }),
@@ -220,6 +240,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         const e = await ensureEditor();
         await e.controller.newDocument();
         if (e.controller.info().path === null && !e.controller.info().dirty) {
+          editor = e;
           setMode('edit');
           e.focus();
         }
@@ -227,6 +248,10 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
     save: () =>
       serial(async () => {
         if (editor) await editor.controller.save();
+      }),
+    saveAs: () =>
+      serial(async () => {
+        if (editor) await editor.controller.saveAs();
       }),
     followLink: (href) =>
       serial(async () => {

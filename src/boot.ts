@@ -18,6 +18,7 @@ import { createPrompter } from './ui/prompter';
 import { createStatusBar } from './ui/status-bar';
 import { createFinder } from './viewer/find';
 import { createViewer } from './viewer/viewer';
+import type { Outline } from './ui/outline';
 
 traceMark('js start');
 
@@ -32,6 +33,9 @@ const status = createStatusBar(document.body);
 const viewer = createViewer(byId('viewer'), byId('document'), (href) => void workspace.followLink(href));
 const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
 let editorApp: EditorApp | null = null;
+let outline: Outline | null = null;
+let watchVersion = 0;
+let watchTail: Promise<void> = Promise.resolve();
 
 // Find in the reading view. Its code is small and in the startup chunk so the first
 // Ctrl+F opens synchronously: with a lazy chunk, keys typed right after it were lost.
@@ -45,10 +49,60 @@ const getFindBar = (): FindBar => {
   return findBar;
 };
 
+// Keep grammar loading and token DOM work off the startup path. The viewer has
+// already painted when idle callbacks run, and large documents finish progressive
+// insertion before highlighting starts.
+viewer.onShown(() => {
+  const version = viewer.version();
+  requestIdleCallback(() => {
+    void viewer.settled()
+      .then(async () => {
+        if (version !== viewer.version()) return;
+        if (!byId('document').querySelector('pre[data-lang] > code')) return;
+        const { highlightCodeBlocks } = await import('./viewer/code-highlight');
+        await highlightCodeBlocks(byId('document'), () => version === viewer.version(), () => {
+          viewer.invalidateTextNodes();
+          findBar?.refresh();
+        });
+      })
+      .catch(() => undefined);
+  });
+});
+
+viewer.onShown((doc) => {
+  outline?.setHeadings(doc.headings);
+  if (outline || doc.headings.length === 0) return;
+  const version = viewer.version();
+  requestIdleCallback(() => {
+    void import('./ui/outline')
+      .then(({ createOutline }) => {
+        if (version !== viewer.version()) return;
+        outline ??= createOutline(document.body, (id) => viewer.scrollToAnchor(id), () => viewer.focus());
+        outline.setHeadings(doc.headings);
+      })
+      .catch(() => undefined);
+  });
+});
+
 const workspace = createWorkspace({
   platform,
   viewer,
   notify: prompter.notify,
+  onPathChanged(path) {
+    const version = ++watchVersion;
+    requestIdleCallback(() => {
+      if (version !== watchVersion) return;
+      watchTail = watchTail
+        .then(async () => {
+          if (version !== watchVersion) return;
+          await platform.fs.watch(path, () => void workspace.checkDisk());
+          // Catch a write that landed after the document was read but before the
+          // watcher was installed; such a write has no event for this watcher.
+          if (version === watchVersion && path !== null) await workspace.checkDisk();
+        })
+        .catch(() => undefined); // focus still checks disk if a watcher is unavailable
+    }, { timeout: 2000 });
+  },
   showSurface(mode) {
     document.body.dataset.mode = mode;
     if (mode === 'view') {
@@ -56,6 +110,7 @@ const workspace = createWorkspace({
       viewer.focus();
     } else {
       findBar?.close();
+      outline?.close();
       editorApp?.shown();
     }
   },
@@ -69,6 +124,8 @@ const workspace = createWorkspace({
       fileUrl: tauri ? fileUrl : (path) => path,
       commands: {
         toggleReading: () => void workspace.toggle(),
+        save: () => void workspace.save(),
+        saveAs: () => void workspace.saveAs(),
         open: () => void workspace.open(),
         newDocument: () => void workspace.newDocument(),
       },

@@ -18,6 +18,8 @@ export interface EditorAppOptions {
   /** Workspace-level commands, so mode and title stay consistent. */
   readonly commands: {
     readonly toggleReading: () => void;
+    readonly save: () => void;
+    readonly saveAs: () => void;
     readonly open: () => void;
     readonly newDocument: () => void;
   };
@@ -35,8 +37,8 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     parent: options.parent,
     fileUrl: options.fileUrl,
     commands: {
-      save: () => void controller.save(),
-      saveAs: () => void controller.saveAs(),
+      save: options.commands.save,
+      saveAs: options.commands.saveAs,
       open: options.commands.open,
       newDocument: options.commands.newDocument,
       toggleReading: options.commands.toggleReading,

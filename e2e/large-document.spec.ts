@@ -16,10 +16,6 @@ test.describe('large document performance', () => {
 
     await page.click('.cm-content');
     await page.keyboard.press('Control+End');
-    await nextFrame(page);
-
-    const lastSectionIndex = 399;
-    const visibleText = await page.evaluate(() => document.querySelector('.cm-content')?.textContent ?? '');
-    expect(visibleText).toContain(`Section ${lastSectionIndex}`);
+    await expect(page.locator('.cm-content')).toContainText('Section 399');
   });
 });

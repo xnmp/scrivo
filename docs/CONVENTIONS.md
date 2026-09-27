@@ -27,9 +27,13 @@ codebase consistent.
   a framework requires them (CodeMirror widgets, view plugins).
 - Match the surrounding code: 2-space indent, single quotes, semicolons, trailing commas.
 - Comments explain *why*; don't narrate what the code says.
-- Anything not needed for the first paint is a dynamic `import()` (the editor, search,
-  KaTeX, dialogs, code grammars). A failed lazy import must degrade, never wedge the UI.
-  `scripts/check-bundle.mjs` enforces a 40 KiB startup budget (JS + CSS).
+- Anything not needed for the first paint is a dynamic `import()` (the editor,
+  outline, KaTeX, dialogs, code grammars). Reading-view find stays in the startup
+  chunk so typing immediately after Ctrl+F is captured. A failed lazy import must
+  degrade, never wedge the UI.
+  `scripts/check-bundle.mjs` enforces a 40 KiB budget over linked JS/CSS assets and
+  transitive static JS imports. It does not count conditional fonts, dynamic imports,
+  or CSS imports; account for those separately when changing the first-paint path.
 
 ## Editing semantics
 
@@ -49,7 +53,8 @@ codebase consistent.
   (`scripts/vite-render-plugin.ts`). `window.__scrivo` exposes `workspace`, `viewer`,
   `platform`, `editor`, `controller`. `openApp(page, { mode: 'view' })` starts in the
   reading view; specs default to the editor.
-- Native E2E: tauri-driver (`e2e-native/`), headless only.
+- Native E2E: tauri-driver (`e2e-native/`), headless only. Run the package script;
+  it provides an isolated X display and window manager.
 - Rust: `cargo test` in `src-tauri`.
 
 ## Commands
@@ -59,11 +64,13 @@ codebase consistent.
 | Unit tests | `bunx vitest run` |
 | Typecheck | `bunx tsc --noEmit -p .` |
 | Rust tests | `cd src-tauri && cargo test` |
+| Browser E2E | `bun run test:e2e` (Chromium) |
+| Native E2E | `bun run test:e2e:native` |
 | Dev (browser, in-memory files) | `bun run dev` → http://localhost:1420 |
 | Release build | `bunx tauri build --no-bundle` (runs the bundle check) |
 | Startup benchmark | `node bench/bench.mjs scrivo bench/fixtures/medium.md` |
 | Compare builds | `node bench/ab.mjs bench/fixtures/medium.md 12 old-binary new-binary` |
-| Startup trace | `SCRIVO_TRACE=1 scrivo file.md` (prints phase marks) |
+| Headless startup trace | `node bench/bench.mjs scrivo bench/fixtures/medium.md 1 --trace` |
 
 ## Performance changes
 

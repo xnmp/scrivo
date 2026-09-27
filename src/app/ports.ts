@@ -29,16 +29,24 @@ export interface ReadResult {
   readonly stamp: FileStamp;
 }
 
+/** The disk state a save is allowed to replace. */
+export type WriteCondition =
+  | { readonly kind: 'unchanged'; readonly stamp: FileStamp }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'overwrite' };
+
 export interface FileSystem {
   /** Rejects with FileError. */
   read(path: string): Promise<ReadResult>;
   /**
-   * Atomically replace (or create) the file. When `expected` is non-null and the file
-   * on disk no longer matches it, rejects with FileError('conflict') and writes nothing.
+   * Atomically replace (or create) the file. `unchanged` and `absent` reject with
+   * FileError('conflict') when the disk state differs. `overwrite` is explicit.
    */
-  write(path: string, text: string, expected: FileStamp | null): Promise<FileStamp>;
+  write(path: string, text: string, condition: WriteCondition): Promise<FileStamp>;
   /** null when the file does not exist. */
   stat(path: string): Promise<FileStamp | null>;
+  /** Watch the current document; null stops watching. Notifications are hints: stat before acting. */
+  watch(path: string | null, onChange: () => void): Promise<void>;
 }
 
 export interface Dialogs {

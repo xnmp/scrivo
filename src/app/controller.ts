@@ -22,6 +22,7 @@ import {
   type Prompter,
   type ReadResult,
   type StartupDocument,
+  type WriteCondition,
 } from './ports';
 
 export interface DocumentInfo {
@@ -87,13 +88,13 @@ export function createDocumentController<S extends Snapshot>(deps: {
     refreshTitle();
   };
 
-  const writeTo = async (path: string, expected: FileStamp | null): Promise<boolean> => {
+  const writeTo = async (path: string, condition: WriteCondition): Promise<boolean> => {
     // The snapshot we send is what's on disk afterwards; edits made while the write is
     // in flight must stay dirty.
     const snapshot = editor.snapshot();
     const text = encode(editor.toText(snapshot), doc.format);
     try {
-      const stamp = await platform.fs.write(path, text, expected);
+      const stamp = await platform.fs.write(path, text, condition);
       const moved = path !== doc.path;
       doc = { path, format: { ...doc.format, mixedEol: false }, saved: snapshot, stamp };
       if (moved) editor.setDocumentPath(path);
@@ -102,8 +103,17 @@ export function createDocumentController<S extends Snapshot>(deps: {
     } catch (e) {
       if (e instanceof FileError && e.code === 'conflict') {
         const choice = await prompter.saveConflict(displayName(path));
-        if (choice === 'overwrite') return writeTo(path, null);
-        if (choice === 'reload') await reloadNow();
+        if (choice === 'overwrite') return writeTo(path, { kind: 'overwrite' });
+        if (choice === 'reload') {
+          if (path === doc.path) await reloadNow();
+          else {
+            try {
+              adopt(await platform.fs.read(path));
+            } catch (error) {
+              prompter.notify(`Could not reload ${displayName(path)}: ${describeError(error)}`);
+            }
+          }
+        }
         return false;
       }
       prompter.notify(`Could not save ${displayName(path)}: ${describeError(e)}`);
@@ -113,10 +123,17 @@ export function createDocumentController<S extends Snapshot>(deps: {
 
   const saveAsNow = async (): Promise<boolean> => {
     const target = await platform.dialogs.pickSave(doc.path ?? 'Untitled.md');
-    return target === null ? false : writeTo(target, null);
+    if (target === null) return false;
+    const condition: WriteCondition = target === doc.path && doc.stamp !== null
+      ? { kind: 'unchanged', stamp: doc.stamp }
+      : { kind: 'absent' };
+    return writeTo(target, condition);
   };
 
-  const saveNow = (): Promise<boolean> => (doc.path === null ? saveAsNow() : writeTo(doc.path, doc.stamp));
+  const saveNow = (): Promise<boolean> => (doc.path === null ? saveAsNow() : writeTo(
+    doc.path,
+    doc.stamp === null ? { kind: 'absent' } : { kind: 'unchanged', stamp: doc.stamp },
+  ));
 
   /** True when it's fine to drop the current buffer. */
   const confirmDiscard = async (): Promise<boolean> => {
@@ -141,7 +158,7 @@ export function createDocumentController<S extends Snapshot>(deps: {
   };
 
   const checkDiskNow = async (): Promise<void> => {
-    if (doc.path === null || doc.stamp === null) return;
+    if (doc.path === null) return;
     let observed: FileStamp | null;
     try {
       observed = await platform.fs.stat(doc.path);

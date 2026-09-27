@@ -61,11 +61,29 @@ export function createTauriPlatform(): Platform {
   // backend sets the initial title. Load it on first use.
   let win: Promise<import('@tauri-apps/api/window').Window> | null = null;
   const currentWindow = () => (win ??= import('@tauri-apps/api/window').then((m) => m.getCurrentWindow()));
+  let watchedPath: string | null = null;
+  let watchHandler: (() => void) | null = null;
+  let watchListener: Promise<void> | null = null;
+  const ensureWatchListener = () => (watchListener ??= import('@tauri-apps/api/event')
+    .then(({ listen }) => listen<string>('document-changed', ({ payload }) => {
+      if (payload === watchedPath) watchHandler?.();
+    }))
+    .then(() => undefined)
+    .catch((error) => {
+      watchListener = null;
+      throw error;
+    }));
   return {
     fs: {
       read: (path) => call<ReadResult>('read_document', path, { path }),
-      write: (path, text, expected) => call<FileStamp>('write_document', path, { path, text, expected }),
+      write: (path, text, condition) => call<FileStamp>('write_document', path, { path, text, condition }),
       stat: (path) => call<FileStamp | null>('stat_document', path, { path }),
+      async watch(path, onChange) {
+        watchedPath = path;
+        watchHandler = path === null ? null : onChange;
+        if (path !== null) await ensureWatchListener();
+        await call<void>('watch_document', path ?? '', { path });
+      },
     },
     dialogs: {
       async pickOpen() {

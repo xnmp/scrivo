@@ -5,6 +5,7 @@ mod prewarm;
 mod startup;
 mod trace;
 mod view;
+mod watch;
 
 use std::path::Path;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -47,6 +48,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(startup)
+        .manage(watch::WatchState::default())
         .invoke_handler(tauri::generate_handler![
             commands::read_document,
             commands::write_document,
@@ -56,6 +58,7 @@ pub fn run() {
             commands::render_file,
             commands::render_markdown,
             commands::trace_mark,
+            watch::watch_document,
         ])
         .setup(move |app| {
             trace::mark("tauri setup");

@@ -25,8 +25,9 @@ describe('decideExternalChange', () => {
     expect(decideExternalChange({ known: stamp(1, 10), observed: null, dirty: true })).toBe('deleted');
   });
 
-  it('ignores the disk for a document we never read or wrote', () => {
-    expect(decideExternalChange({ known: null, observed: stamp(5, 5), dirty: true })).toBe('unchanged');
+  it('handles a file appearing at a new or previously deleted path', () => {
+    expect(decideExternalChange({ known: null, observed: stamp(5, 5), dirty: true })).toBe('ask');
+    expect(decideExternalChange({ known: null, observed: stamp(5, 5), dirty: false })).toBe('reload');
     expect(decideExternalChange({ known: null, observed: null, dirty: false })).toBe('unchanged');
   });
 

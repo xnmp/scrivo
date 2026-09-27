@@ -87,8 +87,8 @@ export function createPrompter(host: HTMLElement): Prompter {
     saveConflict: (name) =>
       ask<ConflictChoice>(
         host,
-        `${name} changed on disk`,
-        'Another program modified this file after you opened it. Overwrite their changes with yours, or load theirs and discard yours?',
+        `${name} conflicts with disk`,
+        'A file at this path changed or already exists. Overwrite it with yours, or load its contents and discard yours?',
         [
           { value: 'reload', label: 'Load Theirs', kind: 'danger' },
           { value: 'cancel', label: 'Cancel' },

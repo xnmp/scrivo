@@ -19,8 +19,11 @@ export interface Viewer extends ViewerPort {
   loadAll(): void;
   /** Changes whenever the page starts showing different content. */
   version(): number;
+  /** Changes when text nodes are replaced without changing the document. */
+  textVersion(): number;
+  invalidateTextNodes(): void;
   /** Called after each show() has put its content in the page. */
-  onShown(listener: () => void): void;
+  onShown(listener: (doc: ViewDocument) => void): void;
 }
 
 /** Time budget per idle slice for appending blocks. */
@@ -69,7 +72,8 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
   let generation = 0;
   /** Bumped when content is actually replaced (after show()'s awaits). */
   let contentVersion = 0;
-  const shownListeners: Array<() => void> = [];
+  let textRevision = 0;
+  const shownListeners: Array<(doc: ViewDocument) => void> = [];
   let settledWaiters: Array<() => void> = [];
 
   const appendBlocks = (count: number) => {
@@ -172,6 +176,7 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
 
       pending = template.content;
       contentVersion++;
+      textRevision++;
       article.replaceChildren();
       scroller.scrollTop = 0;
       // The first screenful (and a bit) now; checking the height lays it out.
@@ -183,7 +188,7 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
       }
       if (pending) appendInBackground(gen);
       else appendBlocks(0); // resolves settled() waiters
-      shownListeners.forEach((listener) => listener());
+      shownListeners.forEach((listener) => listener(doc));
     },
     topLine,
     scrollToAnchor,
@@ -191,6 +196,8 @@ export function createViewer(scroller: HTMLElement, article: HTMLElement, onLink
     settled: () => (pending ? new Promise<void>((resolve) => settledWaiters.push(resolve)) : Promise.resolve()),
     loadAll: () => appendUntil(() => false),
     version: () => contentVersion,
+    textVersion: () => textRevision,
+    invalidateTextNodes: () => void textRevision++,
     onShown: (listener) => void shownListeners.push(listener),
   };
 }

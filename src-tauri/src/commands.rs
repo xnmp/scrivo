@@ -1,7 +1,7 @@
 //! Thin IPC adapters over `document_io`. Blocking file work runs on the blocking pool
 //! so the main thread (and with it, window events) never waits on the disk.
 
-use crate::document_io::{self, DocError, FileStamp, ReadDocument};
+use crate::document_io::{self, DocError, FileStamp, ReadDocument, WriteCondition};
 use crate::startup::{Startup, StartupDocument, StartupView};
 use crate::view::{self, ViewDocument};
 use crate::trace;
@@ -15,6 +15,12 @@ pub struct CommandError {
     message: String,
 }
 
+impl CommandError {
+    pub fn internal(message: impl ToString) -> Self {
+        Self { code: "io", message: message.to_string() }
+    }
+}
+
 impl From<DocError> for CommandError {
     fn from(e: DocError) -> Self {
         CommandError { code: e.code(), message: e.to_string() }
@@ -22,7 +28,7 @@ impl From<DocError> for CommandError {
 }
 
 fn internal(message: impl ToString) -> CommandError {
-    CommandError { code: "io", message: message.to_string() }
+    CommandError::internal(message)
 }
 
 async fn blocking<T: Send + 'static>(
@@ -58,10 +64,10 @@ pub async fn write_document(
     app: AppHandle,
     path: String,
     text: String,
-    expected: Option<FileStamp>,
+    condition: WriteCondition,
 ) -> Result<FileStamp, CommandError> {
     let target = path.clone();
-    let stamp = blocking(move || document_io::write_document(Path::new(&target), &text, expected)).await?;
+    let stamp = blocking(move || document_io::write_document(Path::new(&target), &text, condition)).await?;
     allow_assets_near(&app, &path);
     Ok(stamp)
 }

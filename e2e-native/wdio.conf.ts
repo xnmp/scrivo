@@ -8,6 +8,7 @@
 // script + docs/ARCHITECTURE.md "Testing"). Never on a live desktop session.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixtureBySpec } from './fixtures';
@@ -17,8 +18,32 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const application = path.resolve(here, '..', 'src-tauri', 'target', 'debug', 'scrivo');
 
 const tauriDriverBin = path.join(process.env.HOME ?? '', '.cargo', 'bin', 'tauri-driver');
-const driverPort = 4444;
 const logDir = path.join(here, 'logs');
+
+// Another project on this machine may already have a tauri-driver/WebKitWebDriver
+// pair bound to the default 4444/4445 ports at the same time, so both ports are
+// picked fresh at runtime instead of hardcoded. WDIO's `port` option (below) is set
+// from the same value tauri-driver is told to `--port`.
+function reservePort(): Promise<{ port: number; server: net.Server }> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as net.AddressInfo;
+      resolve({ port, server });
+    });
+  });
+}
+
+// Hold both sockets until both ports are chosen, so the OS cannot return the
+// same ephemeral port for the second request.
+const driverReservation = await reservePort();
+const nativeReservation = await reservePort();
+const driverPort = driverReservation.port;
+const nativePort = nativeReservation.port;
+await Promise.all([driverReservation, nativeReservation].map(({ server }) =>
+  new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+));
 
 let driverProcess: ChildProcess | undefined;
 
@@ -81,7 +106,7 @@ export const config: WebdriverIO.Config = {
       'tauri:options': { application, args: [] },
     } as WebdriverIO.Capabilities,
   ],
-  logLevel: 'info',
+  logLevel: 'warn',
   bail: 0,
   waitforTimeout: 15_000,
   connectionRetryTimeout: 60_000,
@@ -110,13 +135,17 @@ export const config: WebdriverIO.Config = {
     // "New Session" request made after beforeSession returns.
     (capabilities as Record<string, unknown>)['tauri:options'] = {
       application,
-      args: [fixture.docPath],
+      args: [...(fixture.launchArgs ?? []), fixture.docPath],
     };
 
-    driverProcess = spawn(tauriDriverBin, ['--port', String(driverPort)], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
+    driverProcess = spawn(
+      tauriDriverBin,
+      ['--port', String(driverPort), '--native-port', String(nativePort)],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      },
+    );
     const logPath = path.join(logDir, `${base}.tauri-driver.log`);
     const { createWriteStream } = await import('node:fs');
     const logStream = createWriteStream(logPath, { flags: 'a' });

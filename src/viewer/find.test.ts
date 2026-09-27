@@ -11,7 +11,7 @@ let version: number;
 
 const source: FindSource = {
   loadAll: () => void loadAllCalls++,
-  version: () => version,
+  textVersion: () => version,
 };
 
 const selected = () => getSelection()?.toString() ?? '';
@@ -56,6 +56,20 @@ describe('finder', () => {
     article.innerHTML = '<p>beta</p>';
     version = 2;
     expect(finder.search('beta').count).toBe(1);
+  });
+
+  it('finds text again after a code highlighter replaces its text nodes', () => {
+    article.innerHTML = '<pre><code>def value</code></pre>';
+    const finder = createFinder(scroller, article, source);
+    expect(finder.search('value').count).toBe(1);
+    const code = article.querySelector('code')!;
+    const span = document.createElement('span');
+    span.textContent = 'def value';
+    code.replaceChildren(span);
+    version++;
+    expect(finder.search('value').count).toBe(1);
+    expect(selected()).toBe('value');
+    expect(getSelection()?.anchorNode?.isConnected).toBe(true);
   });
 
   it('reports no match, and nothing for an empty query', () => {

@@ -19,7 +19,7 @@ export function decideExternalChange(input: {
   readonly dirty: boolean;
 }): ExternalDecision {
   const { known, observed, dirty } = input;
-  if (known === null) return 'unchanged'; // never on disk from our point of view
+  if (known === null) return observed === null ? 'unchanged' : dirty ? 'ask' : 'reload';
   if (observed === null) return 'deleted';
   if (sameStamp(known, observed)) return 'unchanged';
   return dirty ? 'ask' : 'reload';

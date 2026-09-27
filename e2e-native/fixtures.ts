@@ -12,6 +12,8 @@ import path from 'node:path';
 export interface Fixture {
   dir: string;
   docPath: string;
+  /** Extra CLI args passed before the doc path (e.g. `--edit`). */
+  launchArgs?: readonly string[];
 }
 
 export interface SaveBytesFixture extends Fixture {
@@ -31,11 +33,17 @@ const ONE_PIXEL_PNG = Buffer.from(
   'base64',
 );
 
+// A file that exists is opened in the reading view by default (view-first); these
+// fixtures exercise the editor (live preview, typing, saving), so they launch with
+// `--edit` to land there directly instead of routing every spec through a manual
+// Ctrl+E toggle first.
+const EDIT = ['--edit'] as const;
+
 export function headingFixture(): Fixture {
   const dir = freshDir();
   const docPath = path.join(dir, 'doc.md');
   writeFileSync(docPath, '# Hello World\n\nSome body text.\n');
-  return { dir, docPath };
+  return { dir, docPath, launchArgs: EDIT };
 }
 
 export function saveBytesFixture(): SaveBytesFixture {
@@ -45,15 +53,16 @@ export function saveBytesFixture(): SaveBytesFixture {
   const body = Buffer.from('Line one\r\nLine two\r\n', 'utf8');
   const original = Buffer.concat([bom, body]);
   writeFileSync(docPath, original);
-  return { dir, docPath, original };
+  return { dir, docPath, original, launchArgs: EDIT };
 }
 
 export function missingFileFixture(): Fixture {
   const dir = freshDir();
   // Deliberately not created: the app should start with an empty document and
-  // create this file on first save.
+  // create this file on first save. (A missing path already starts in the editor;
+  // `--edit` is added anyway so this spec doesn't depend on that incidental behaviour.)
   const docPath = path.join(dir, 'new.md');
-  return { dir, docPath };
+  return { dir, docPath, launchArgs: EDIT };
 }
 
 // 0xFF/0xFE are never valid anywhere in UTF-8.
@@ -63,7 +72,9 @@ export function invalidUtf8Fixture(): Fixture {
   const dir = freshDir();
   const docPath = path.join(dir, 'bad.md');
   writeFileSync(docPath, INVALID_UTF8_BYTES);
-  return { dir, docPath };
+  // An unreadable file already starts in the editor (see startup.rs); `--edit` is
+  // added anyway so this spec doesn't depend on that incidental behaviour.
+  return { dir, docPath, launchArgs: EDIT };
 }
 
 export function imageFixture(): Fixture {
@@ -71,13 +82,48 @@ export function imageFixture(): Fixture {
   const docPath = path.join(dir, 'doc.md');
   writeFileSync(docPath, '# Pic\n\n![alt](pic.png)\n');
   writeFileSync(path.join(dir, 'pic.png'), ONE_PIXEL_PNG);
-  return { dir, docPath };
+  return { dir, docPath, launchArgs: EDIT };
 }
 
 export function checkboxFixture(): Fixture {
   const dir = freshDir();
   const docPath = path.join(dir, 'doc.md');
   writeFileSync(docPath, '# Tasks\n\n- [ ] Buy milk\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
+// --- Reading-view fixtures (view-first: launched with no extra args). ---
+
+export function readingHeadingFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '# Hello World\n\nSome body text.\n');
+  return { dir, docPath };
+}
+
+export function readingImageFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  // `pic.png` is a real sibling file (loads through the asset protocol). The empty
+  // `![missing]()` reference can never resolve to a URL (see render/src/url.rs
+  // `ImageSource::Unavailable`), so the renderer emits `.image-missing` for it
+  // regardless of whether anything on disk is actually missing.
+  writeFileSync(docPath, '# Pics\n\n![alt](pic.png)\n\n![missing]()\n');
+  writeFileSync(path.join(dir, 'pic.png'), ONE_PIXEL_PNG);
+  return { dir, docPath };
+}
+
+export function readingToggleFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '# Hello World\n\nSome body text.\n');
+  return { dir, docPath };
+}
+
+export function readingWatchFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'doc.md');
+  writeFileSync(docPath, '# Before\n\nOriginal text.\n');
   return { dir, docPath };
 }
 
@@ -88,4 +134,8 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'invalid-utf8.spec.ts': invalidUtf8Fixture,
   'image.spec.ts': imageFixture,
   'checkbox.spec.ts': checkboxFixture,
+  'reading-heading.spec.ts': readingHeadingFixture,
+  'reading-image.spec.ts': readingImageFixture,
+  'reading-toggle.spec.ts': readingToggleFixture,
+  'reading-watch.spec.ts': readingWatchFixture,
 };

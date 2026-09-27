@@ -19,7 +19,7 @@
 //                    but windows pop up and take focus. Animations are disabled for the
 //                    duration and restored afterwards.
 //
-// Usage: node bench/bench.mjs <typora|scrivo> <file.md> [runs=8] [--desktop] [--dump=DIR]
+// Usage: node bench/bench.mjs <typora|scrivo> <file.md> [runs=8] [--desktop] [--dump=DIR] [--trace]
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
@@ -32,8 +32,9 @@ const flags = argv.filter((a) => a.startsWith('--'));
 const [appName, fileArg, runsArg = '8'] = argv.filter((a) => !a.startsWith('--'));
 const dumpDir = flags.find((f) => f.startsWith('--dump='))?.slice('--dump='.length);
 const desktop = flags.includes('--desktop');
+const trace = flags.includes('--trace');
 if (!appName || !fileArg) {
-  console.error('usage: bench.mjs <typora|scrivo> <file.md> [runs] [--desktop] [--dump=DIR]');
+  console.error('usage: bench.mjs <typora|scrivo> <file.md> [runs] [--desktop] [--dump=DIR] [--trace]');
   process.exit(2);
 }
 const file = path.resolve(fileArg);
@@ -300,7 +301,13 @@ const results = { window: [], content: [], complete: [], pss: [] };
 try {
   for (let i = 0; i < runs; i++) {
     const t0 = performance.now();
-    const child = spawn(app.cmd, [file], { env: display.env, stdio: 'ignore', detached: true });
+    const child = spawn(app.cmd, [file], {
+      env: trace ? { ...display.env, SCRIVO_TRACE: '1' } : display.env,
+      stdio: trace ? ['ignore', 'pipe', 'ignore'] : 'ignore',
+      detached: true,
+    });
+    const traceChunks = [];
+    child.stdout?.on('data', (chunk) => traceChunks.push(chunk));
     try {
       const r = await display.sample();
       await sleep(1500);
@@ -318,6 +325,10 @@ try {
     } finally {
       await killTree(child.pid);
       await display.settle();
+      if (trace) {
+        const marks = Buffer.concat(traceChunks).toString('utf8').split('\n').filter((line) => line.startsWith('SCRIVO_TRACE'));
+        for (const mark of marks) console.log(mark);
+      }
     }
   }
 } finally {

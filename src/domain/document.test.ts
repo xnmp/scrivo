@@ -35,6 +35,7 @@ describe('isDirty', () => {
 describe('sameStamp', () => {
   it('compares both mtime and size', () => {
     expect(sameStamp({ mtimeMs: 1.5, size: 3 }, { mtimeMs: 1.5, size: 3 })).toBe(true);
+    expect(sameStamp({ mtimeMs: 1.5, size: 3, changeMs: 2 }, { mtimeMs: 1.5, size: 3, changeMs: 3 })).toBe(false);
     expect(sameStamp({ mtimeMs: 1.5, size: 3 }, { mtimeMs: 1.5, size: 4 })).toBe(false);
     expect(sameStamp({ mtimeMs: 1.5, size: 3 }, { mtimeMs: 1.25, size: 3 })).toBe(false);
   });
