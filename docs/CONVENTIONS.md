@@ -31,10 +31,13 @@ codebase consistent.
   outline, KaTeX, dialogs, code grammars). Reading-view find stays in the startup
   chunk so typing immediately after Ctrl+F is captured. A failed lazy import must
   degrade, never wedge the UI.
-  `scripts/check-bundle.mjs` enforces a 40 KiB budget over linked JS/CSS assets,
-  transitive static JS imports, and CSS `@import` files. It separately reports CSS
-  URL assets such as the conditional math font. Awaited dynamic imports still require
-  a runtime first-paint check.
+  `scripts/check-bundle.mjs` uses Vite's build manifest to enforce a 40 KiB budget
+  over linked static JS/CSS, including CSS `@import` files. The known boot-time
+  Tauri window import counts toward a separate 56 KiB prepaint JS/CSS budget.
+  Manifest assets, stylesheet URLs, and the declared deferred graph are validated
+  and reported. Standalone CSS manifest entries need separate traversal because
+  Vite omits their dynamic import edge. Audit the prepaint import list when boot or
+  platform code changes.
 
 ## Editing semantics
 

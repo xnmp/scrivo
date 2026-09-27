@@ -3,12 +3,13 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. Work continues on `main` after commit
-`8eeead5 WIP: reader enhancements, file safety, and startup benchmarks`. This
-continuation hardened the startup comparison, made the large fixture visibly
-distinct, added a native large-file outcome test, and made the build gate report a
-conditional font dependency. The broader goal is ongoing; there is no release or
-deployment.
+verified, and exceptionally fast at startup. The latest checkpoint on `main`
+accounts for prepaint and deferred bundle assets. The prior commit,
+`1565334 Validate startup screens and large-document rendering`, hardened the
+startup comparison, made the large fixture visibly distinct, and
+added a native large-file outcome test. This checkpoint makes the build gate use
+Vite's manifest, validates deferred assets, and counts known prepaint imports.
+The broader goal is ongoing; there is no release or deployment.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -18,9 +19,9 @@ transitions), `src/app/controller.ts` (actions), `src/platform/tauri.ts` (native
 adapter), `src/viewer/viewer.ts` (progressive reading view), and
 `src-tauri/src/document_io.rs` (atomic conditional writes).
 
-## Product work in the preceding checkpoint
+## Earlier product checkpoint (`8eeead5`)
 
-The preceding commit made native E2E match view-first startup; hardened Rust file
+Commit `8eeead5` made native E2E match view-first startup; hardened Rust file
 reads, stamps, and atomic writes; added parent-directory watching with clean reload
 and dirty-buffer prompts; added postpaint code highlighting and a Contents sidebar;
 and updated Save As conflict handling. It passed 279 unit tests, 26 Rust tests,
@@ -29,7 +30,7 @@ A/B rounds and a linked JS/CSS bundle budget. Its startup claims were provisiona
 because a stable splash screen could be timed as content, failed runs could exit 0,
 and the budget omitted a conditional 1 MB math font.
 
-## This continuation
+## Previous continuation (`1565334`)
 
 - `bench/bench.mjs` now waits through intermediate stable screens until the first
   viewport matches a manually reviewed fixture-specific reference, then stays
@@ -52,16 +53,35 @@ and the budget omitted a conditional 1 MB math font.
   contract, median calculation, and the minimum-pair rule. An independent reviewer
   rechecked the final implementation and found no substantive validity issue within
   this first-viewport metric.
-- `scripts/check-bundle.mjs` now includes CSS `@import` files in the 40 KiB linked
-  JS/CSS budget and separately reports CSS `url()` assets. The current build reports
-  **34 KiB / 40 KiB** linked startup JS/CSS and **1,060 KiB** conditional CSS assets:
-  `libertinus-math` loads for math in the reading view. A synthetic CSS-import/font
-  test was added. Awaited dynamic imports remain outside this static budget.
+- `scripts/check-bundle.mjs` began reporting the conditional 1,060 KiB math font.
 - `e2e-native/specs/reading-large.spec.ts` opens the real 443 KB fixture in the
   native WebKitGTK app, waits for its distinct end heading, scrolls it into view,
   and verifies it is visible. This separately validates the large file outcome.
   The first attempt used a stale WebDriver element handle while progressive blocks
   were appending; the final test polls the live DOM and passed with the full suite.
+
+## Current checkpoint
+
+- `vite.config.ts` now emits Vite's build manifest. `scripts/check-bundle.mjs`
+  traverses manifest `imports`, `dynamicImports`, `css`, and `assets`, plus CSS
+  `@import` and `url()` references. It fails on missing files anywhere in the
+  reachable static or dynamic graph. The static JS/CSS budget is **34/40 KiB**.
+- Review found that `src/app/workspace.ts` calls `window.setTitle` during initial
+  display and `src/boot.ts` registers window handlers before the first-frame mark.
+  Both can request `@tauri-apps/api/window` before paint. The checker now includes
+  that known dynamic root and its static dependencies in a **47/56 KiB prepaint
+  JS/CSS** budget. The root list in `scripts/check-bundle.mjs` needs review when
+  boot-time imports change. This budget measures uncompressed files; it does not
+  measure network latency or parse/evaluation cost.
+- The gate validates and reports **1,060 KiB** of startup-referenced assets (the
+  reading-view math font) separately from JS/CSS, and **2,517 KiB** in the declared
+  deferred graph across eight JS roots and one standalone CSS root. Vite emits the
+  dynamically imported KaTeX stylesheet as a manifest entry without an import edge,
+  so the checker traverses standalone CSS entries as well. The deferred figure
+  includes the prepaint window files and referenced KaTeX fonts. Synthetic tests
+  cover each graph and missing references. An independent reviewer rechecked the
+  three initial findings against the final checker and found them resolved, with
+  no remaining substantive gate or documentation issue.
 
 ## Validation
 
@@ -69,15 +89,16 @@ and the budget omitted a conditional 1 MB math font.
 |---|---|
 | `bun run typecheck` | Pass |
 | `bunx tsc --noEmit -p e2e-native/tsconfig.json` | Pass |
-| `bun run test` | 287 tests across 16 files passed |
+| `bun run test` | 292 tests across 16 files passed |
 | `bun run test:e2e:native` | 11/11 passed, including large-file tail |
-| `bun run build:web` | Pass as the native test build prerequisite; 34 KiB JS/CSS gate plus 1,060 KiB conditional asset report |
+| `bun run build:web` | Pass; 34/40 KiB static, 47/56 KiB known prepaint JS/CSS, 1,060 KiB referenced assets, 2,517 KiB deferred graph |
+| `bunx tauri build --no-bundle` | Pass; release binary rebuilt with manifest-bearing web assets |
 | `node --check bench/bench.mjs` and `bench/ab.mjs` | Pass |
-| `git diff --check` | Pass before this handover update; rerun before commit |
+| `git diff --check` | Pass before commit |
 
-The Rust source and browser app source did not change in this continuation. The
-preceding checkpoint's `cargo test -q` (26 passed), Chromium E2E (52 passed), and
-release `tauri build --no-bundle` remain the relevant evidence. The full native
+The Rust source and browser app source did not change in this checkpoint. The
+preceding checkpoint's `cargo test -q` (26 passed) and Chromium E2E (52 passed)
+remain the relevant evidence. The full native
 suite initially had 10 pass and one new test fail from its stale handle, then passed
 11/11 after the test correction. Playwright WebKit cannot start on this host because
 `libicu74`, `libxml2`, and `libflite1` are missing; native WebKitGTK was exercised.
@@ -112,12 +133,11 @@ measure how long that takes. A prior single startup trace is in
 
 ## Remaining limits and useful next work
 
-- The build gate does not infer whether a dynamic import is awaited before first
-  paint. The production `src/boot.ts` path currently awaits no such chunk before
-  showing the reading view; re-audit when that path changes. The math font is
-  intentionally separate from the 40 KiB JS/CSS budget and remains a 1,060 KiB
-  conditional first-paint dependency for documents with math. Measure a proposed
-  font change in paired release runs and check math-heavy rendering before adopting.
+- The prepaint list is maintained from source review rather than inferred from
+  JavaScript execution. Re-audit it whenever boot, workspace display, or platform
+  adapters change. The math font remains a 1,060 KiB conditional first-paint
+  dependency for documents with math. Measure a proposed font change in paired
+  release runs and check math-heavy rendering before adopting.
 - Reviewed screenshot references are sensitive to compositor geometry, fonts, app
   theme, and deliberate UI changes. Regenerate them only after inspecting the new
   PNGs. The 0.3% tile threshold is strict by design; a new machine may need its

@@ -74,9 +74,12 @@ retained as [medium](bench/results/pre-readiness-medium.txt) and
 [large](bench/results/pre-readiness-large.txt) historical logs; they are not directly
 comparable with these results.
 
-The web build gate counts 34 KiB of linked startup JS/CSS and static imports against
-a 40 KiB budget. It separately reports a 1,060 KiB math font that loads when math is
-used in the reading view.
+The web build gate counts 34 KiB of linked static startup JS/CSS against a 40 KiB
+budget. Tauri's window API loads during boot; including it gives 47 KiB of known
+prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
+1,060 KiB math font referenced by the reading-view stylesheet and a 2,517 KiB
+declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
+features loaded later.
 
 Run the comparison locally with:
 

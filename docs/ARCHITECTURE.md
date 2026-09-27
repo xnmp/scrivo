@@ -204,4 +204,4 @@ after warm-up), NVIDIA's EGL init (Mesa's is ~35 ms faster on the same machine).
 | app in a browser | Playwright (chromium) | what the user sees, with the real renderer via the `scrivo-render` CLI |
 | native app | tauri-driver + WebKitWebDriver (`e2e-native/`) | real binary opens, edits and saves real files |
 | performance | `bench/bench.mjs`, `bench/ab.mjs` | window / content / complete / PSS; paired A/B |
-| startup bundle | `scripts/check-bundle.mjs` + Vitest fixture | 40 KiB budget over linked JS/CSS, transitive static JS imports, and CSS `@import`; shims first; CSS assets reported separately (awaited dynamic imports uncounted) |
+| startup bundle | Vite manifest + `scripts/check-bundle.mjs` + Vitest fixture | 40 KiB static JS/CSS budget, 56 KiB budget including known prepaint window import; shims first; manifest/CSS assets and deferred graph validated and reported |

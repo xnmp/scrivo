@@ -8,6 +8,7 @@ export default defineConfig({
   build: {
     target: 'safari16',
     sourcemap: false,
+    manifest: true,
     rolldownOptions: {
       output: {
         // Shims patch globals that libraries read when they load (CodeMirror checks for
