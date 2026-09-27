@@ -3,9 +3,10 @@
 ## Objective and current state
 
 The user wants Scrivo, a Typora-like markdown reader/editor, working, thoroughly
-verified, and exceptionally fast at startup. The current checkpoint closes the
-late-creation overwrite race when saving to a previously absent path. The previous
-checkpoint makes the
+verified, and exceptionally fast at startup. The latest product-code checkpoint
+closes the late-creation overwrite race when saving to a previously absent path.
+The latest test checkpoint checks Unicode text across a real native renderer chunk
+boundary. Earlier work makes the
 edit-to-reader transition progressive for large documents and keeps edits typed
 during rendering. The previous checkpoint bounded large-document insertion under
 continuous main-thread activity; the one before it strengthened Windows file
@@ -18,7 +19,7 @@ HTML chunk boundaries, viewer phase traces, batched postpaint code highlighting,
 reviewed startup benchmarks, and a manifest-based bundle gate. The broader goal
 is ongoing; there is no release or deployment.
 
-**Resume point (this trace checkpoint):** the working
+**Resume point (Unicode boundary test checkpoint):** the working
 startup path remains the JSON `startup_view` response. A raw binary Tauri response
 was implemented and tested, then reverted after paired startup results failed to
 show a consistent first-viewport gain. The release binary was restored to the
@@ -29,6 +30,14 @@ reference are kept. A later first-layout experiment was also reverted after a
 paired large-file regression; the product path still matches this checkpoint.
 The restored release binary currently has SHA-256
 `60d13b8e46171297babc0397397f5ba456132582e4d94ae8d81f486958e7570f`.
+
+The native giant-document fixture now places `😀` before the first renderer
+chunk boundary. A direct `scrivo-render` inspection put paragraphs 0–31 in the
+first chunk and paragraph 32 in the next. The WebKitGTK test checks all 40
+opening paragraphs after the tail appears, as well as its existing exact code
+text, Find, scroll, and tail outcomes. Native typecheck and the rebuilt full
+native suite passed: 12/12 specs, 16/16 tests. This is a regression guard for
+the current JSON startup response and any future transport change.
 
 Read `README.md` for usage and the latest performance table,
 `docs/ARCHITECTURE.md` for layers and safety/performance decisions, and
@@ -82,9 +91,9 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
   a TypeScript decoder reconstructed the existing view contract. The code handled
   both `ArrayBuffer` and Tauri's number-array postMessage fallback. Rust and
   TypeScript contract tests, typechecks, release build, bundle gate, and the full
-  rebuilt native WebKitGTK suite passed (12 specs, 16 tests). The giant-code
-  native fixture temporarily included an astral character before the first
-  renderer chunk boundary; that test change was also reverted with the codec.
+  rebuilt native WebKitGTK suite passed (12 specs, 16 tests). The candidate's
+  Unicode fixture change was reverted with the codec; an independent permanent
+  native boundary regression test was added later, as described above.
 - **Paired release outcomes:** 12/12 valid visual-reference pairs per fixture.
   Candidate minus baseline first-viewport median was **−11 ms** for medium
   (8/12 faster), **+5 ms** for the 1.12 MB large fixture (4/12 faster), and
@@ -125,6 +134,20 @@ adapter), `src/viewer/viewer.ts` (progressive reading view), and
   cancellation, and editor handoff. Keep the existing native and Chromium outcome
   gates when trying that design. Windows runtime checks and the existing-target
   final save check→rename race also remain open from the I/O work below.
+
+  A concrete transport design needs to keep `viewer.settled()` pending until the
+  tail has arrived and entered the DOM: Find waits on that contract, while code
+  highlighting and startup tracing also use it. `scrollToAnchor()` currently searches
+  pending chunks synchronously and returns a boolean, so an anchor requested
+  before tail receipt needs an explicit queued or asynchronous outcome. The
+  viewer must ignore late tails after a new document, edit handoff, or suspension,
+  and expose a tail-load error without claiming the document is complete. Keep
+  UTF-16 HTML offsets through Unicode and ensure the first response ends at a
+  complete renderer block. [Tauri Channels](https://v2.tauri.app/develop/calling-frontend/)
+  provide ordered streaming if more than a two-command preview/tail exchange is
+  needed; a simple two-command design may have less maintenance cost. Neither
+  design is implemented yet. The existing medium, large, and synthetic 5 MB
+  visual references and early Find/anchor/native tests should gate it.
 
 - A later trace split the time between Rust's `startup_view` return and the
   viewer's first HTML parse. Temporary marks at JavaScript receipt and viewer

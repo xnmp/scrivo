@@ -4,6 +4,9 @@ describe('giant code block in the native reading view', () => {
   it('keeps all text and reveals a middle search result', async () => {
     await $('#document p').waitForExist({ timeout: 20_000 });
     await $('#document h1').waitForExist({ timeout: 30_000 });
+    const paragraphs = await browser.execute(() => [...document.querySelectorAll('#document > p')]
+      .map((paragraph) => paragraph.textContent));
+    expect(paragraphs).toEqual(Array.from({ length: 40 }, (_, i) => `Paragraph ${i}${i === 0 ? ' 😀' : ''}`));
     const state = await browser.execute(() => {
       const code = document.querySelector('#document pre > code');
       return {

@@ -272,6 +272,6 @@ The current `startup_view` command therefore still returns its JSON view contrac
 | renderer | cargo test (+ proptest) | markup/attribute allowlist over random input, XSS corpus, ids, lines |
 | Rust I/O, startup | cargo test | atomic write, permissions, UTF-8 errors, stamps, argv, prefetch |
 | app in a browser | Playwright (chromium) | what the user sees, with the real renderer via the `scrivo-render` CLI |
-| native app | tauri-driver + WebKitWebDriver (`e2e-native/`) | real binary opens, edits and saves real files |
+| native app | tauri-driver + WebKitWebDriver (`e2e-native/`) | real binary opens, edits and saves real files; giant-document test checks Unicode text across the first renderer chunk boundary |
 | performance | `bench/bench.mjs`, `bench/ab.mjs` | window / content / complete / PSS; paired A/B |
 | startup bundle | Vite manifest + `scripts/check-bundle.mjs` + Vitest fixture | 40 KiB static JS/CSS budget, 56 KiB budget including known prepaint window import; shims first; manifest/CSS assets and deferred graph validated and reported |

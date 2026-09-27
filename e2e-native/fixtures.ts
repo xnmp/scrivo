@@ -142,7 +142,9 @@ export function readingGiantCodeFixture(): Fixture {
     + `\t${'W'.repeat(1000)}far-right-marker\n`
     + `\t${'漢'.repeat(350)}\t${'漢'.repeat(350)}unicode-right-marker\n` + line.repeat(25_000);
   const boundaryCode = `${'漢'.repeat(19)}\tZ\n` + '0123456789abcdefghij\n'.repeat(50_000);
-  writeFileSync(docPath, Array.from({ length: 40 }, (_, i) => `Paragraph ${i}\n\n`).join('')
+  // An astral character before the first renderer chunk exercises UTF-16
+  // offsets through the Rust response and native WebKit insertion path.
+  writeFileSync(docPath, Array.from({ length: 40 }, (_, i) => `Paragraph ${i}${i === 0 ? ' 😀' : ''}\n\n`).join('')
     + `\n\`\`\`\n${code}\`\`\`\n\n\`\`\`\n${boundaryCode}\`\`\`\n\n# Tail\n`);
   return { dir, docPath };
 }
