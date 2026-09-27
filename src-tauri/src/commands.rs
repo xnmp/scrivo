@@ -94,6 +94,30 @@ pub async fn read_document(app: AppHandle, path: String) -> Result<ReadDocument,
     Ok(doc)
 }
 
+fn canonical_identity(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = document_io::absolute(path)?;
+    match std::fs::canonicalize(&absolute) {
+        Ok(canonical) => Ok(canonical),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let parent = absolute.parent().ok_or(error)?;
+            let name = absolute.file_name().ok_or_else(|| std::io::Error::other("document path has no file name"))?;
+            Ok(std::fs::canonicalize(parent)?.join(name))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[tauri::command]
+pub async fn document_identity(path: String) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        canonical_identity(Path::new(&path))?.into_os_string().into_string()
+            .map_err(|_| std::io::Error::other("document path is not UTF-8"))
+    })
+    .await
+    .map_err(internal)?
+    .map_err(internal)
+}
+
 #[tauri::command]
 pub async fn write_document(
     app: AppHandle,
@@ -235,6 +259,24 @@ pub fn trace_mark(label: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identity_resolves_aliases_and_missing_save_as_targets() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let note = real.join("note.md");
+        std::fs::write(&note, "# note").unwrap();
+        assert_eq!(canonical_identity(&real.join("../real/note.md")).unwrap(), note);
+
+        #[cfg(unix)]
+        {
+            let alias = root.path().join("alias");
+            std::os::unix::fs::symlink(&real, &alias).unwrap();
+            assert_eq!(canonical_identity(&alias.join("note.md")).unwrap(), note);
+            assert_eq!(canonical_identity(&alias.join("future.md")).unwrap(), real.join("future.md"));
+        }
+    }
 
     #[test]
     fn preview_ends_at_a_unicode_safe_chunk_boundary_and_keeps_metadata() {

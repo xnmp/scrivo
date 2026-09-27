@@ -1,7 +1,8 @@
 //! Watch the parent directory, not the file inode: editors commonly save by
 //! replacing a file, which would leave an inode watch attached to the old file.
 use notify::{RecursiveMode, Watcher};
-use std::collections::HashSet;
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -11,7 +12,14 @@ use crate::commands::CommandError;
 use crate::document_io;
 
 #[derive(Default)]
-pub struct WatchState(Mutex<Option<notify::RecommendedWatcher>>);
+pub struct WatchState(Mutex<HashMap<String, notify::RecommendedWatcher>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentChanged {
+    subscription: String,
+    path: String,
+}
 
 fn parents(path: &Path) -> std::io::Result<HashSet<PathBuf>> {
     let absolute = document_io::absolute(path)?;
@@ -28,15 +36,20 @@ pub fn watch_document(
     app: AppHandle,
     state: State<'_, WatchState>,
     path: Option<String>,
+    subscription: Option<String>,
 ) -> Result<(), CommandError> {
+    let subscription = subscription.unwrap_or_else(|| "main".to_string());
     let next = if let Some(path) = path {
-        let watched_path = path.clone();
+        let event_payload = DocumentChanged {
+            subscription: subscription.clone(),
+            path: path.clone(),
+        };
         let mut watcher =
             notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
                 if event.is_ok() {
                     // Notifications are hints. The frontend stats the current path and
                     // compares stamps before reloading or prompting.
-                    let _ = app.emit("document-changed", &watched_path);
+                    let _ = app.emit("document-changed", &event_payload);
                 }
             })
             .map_err(|e| CommandError::internal(e))?;
@@ -49,9 +62,14 @@ pub fn watch_document(
     } else {
         None
     };
-    *state
+    let mut watches = state
         .0
         .lock()
-        .map_err(|e| CommandError::internal(e.to_string()))? = next;
+        .map_err(|e| CommandError::internal(e.to_string()))?;
+    if let Some(watcher) = next {
+        watches.insert(subscription, watcher);
+    } else {
+        watches.remove(&subscription);
+    }
     Ok(())
 }

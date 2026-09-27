@@ -67,12 +67,12 @@ export function createTauriPlatform(): Platform {
   // backend sets the initial title. Load it on first use.
   let win: Promise<import('@tauri-apps/api/window').Window> | null = null;
   const currentWindow = () => (win ??= import('@tauri-apps/api/window').then((m) => m.getCurrentWindow()));
-  let watchedPath: string | null = null;
-  let watchHandler: (() => void) | null = null;
+  const watched = new Map<string, { path: string; onChange: () => void }>();
   let watchListener: Promise<void> | null = null;
   const ensureWatchListener = () => (watchListener ??= import('@tauri-apps/api/event')
-    .then(({ listen }) => listen<string>('document-changed', ({ payload }) => {
-      if (payload === watchedPath) watchHandler?.();
+    .then(({ listen }) => listen<{ subscription: string; path: string }>('document-changed', ({ payload }) => {
+      const watcher = watched.get(payload.subscription);
+      if (watcher?.path === payload.path) watcher.onChange();
     }))
     .then(() => undefined)
     .catch((error) => {
@@ -89,11 +89,19 @@ export function createTauriPlatform(): Platform {
       read: (path) => call<ReadResult>('read_document', path, { path }),
       write: (path, text, condition) => call<FileStamp>('write_document', path, { path, text, condition }),
       stat: (path) => call<FileStamp | null>('stat_document', path, { path }),
-      async watch(path, onChange) {
-        watchedPath = path;
-        watchHandler = path === null ? null : onChange;
+      identity: (path) => call<string>('document_identity', path, { path }),
+      async watch(path, onChange, subscription = 'main') {
         if (path !== null) await ensureWatchListener();
-        await call<void>('watch_document', path ?? '', { path });
+        const prior = watched.get(subscription);
+        if (path === null) watched.delete(subscription);
+        else watched.set(subscription, { path, onChange });
+        try {
+          await call<void>('watch_document', path ?? '', { path, subscription });
+        } catch (error) {
+          if (prior) watched.set(subscription, prior);
+          else watched.delete(subscription);
+          throw error;
+        }
       },
     },
     attachments: {

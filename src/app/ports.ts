@@ -46,8 +46,14 @@ export interface FileSystem {
   write(path: string, text: string, condition: WriteCondition): Promise<FileStamp>;
   /** null when the file does not exist. */
   stat(path: string): Promise<FileStamp | null>;
-  /** Watch the current document; null stops watching. Notifications are hints: stat before acting. */
-  watch(path: string | null, onChange: () => void): Promise<void>;
+  /** Stable key for an existing file, resolving symlinks and relative components. */
+  identity(path: string): Promise<string>;
+  /**
+   * Watch one document per subscription. Null removes only that subscription.
+   * The default subscription preserves the single-document caller contract.
+   * Notifications are hints: stat before acting.
+   */
+  watch(path: string | null, onChange: () => void, subscription?: string): Promise<void>;
 }
 
 export interface ImportedAttachment {

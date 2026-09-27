@@ -66,6 +66,7 @@ export interface MemoryPlatform extends Platform {
   focus(): void;
   dropPaths(paths: readonly string[], position?: { readonly x: number; readonly y: number }): Promise<void>;
   watchedPath(): string | null;
+  watchedPaths(): ReadonlyMap<string, string>;
   readonly destroyed: boolean;
 }
 
@@ -97,7 +98,7 @@ export function createMemoryPlatform(options: {
   const focusHandlers: Array<() => void> = [];
   let dropHandler: ((drop: { paths: readonly string[]; position: { x: number; y: number } }) => Promise<void>) | null = null;
   let destroyed = false;
-  let watched: { path: string; onChange: () => void } | null = null;
+  const watched = new Map<string, { path: string; onChange: () => void }>();
 
   const read = async (path: string) => {
     const entry = files.get(path);
@@ -178,8 +179,10 @@ export function createMemoryPlatform(options: {
       async stat(path) {
         return files.get(path)?.stamp ?? null;
       },
-      async watch(path, onChange) {
-        watched = path === null ? null : { path, onChange };
+      identity: async (path) => path,
+      async watch(path, onChange, subscription = 'main') {
+        if (path === null) watched.delete(subscription);
+        else watched.set(subscription, { path, onChange });
       },
     },
     dialogs: {
@@ -229,7 +232,11 @@ export function createMemoryPlatform(options: {
       get: (path) => files.get(path)?.text,
       put: (path, text) => void files.set(path, { text, stamp: stampFor() }),
       remove: (path) => void files.delete(path),
-      notify: (path) => { if (watched?.path === path) watched.onChange(); },
+      notify: (path) => {
+        for (const watcher of [...watched.values()]) {
+          if (watcher.path === path) watcher.onChange();
+        }
+      },
       failNextWrite: (error) => void (pendingFailure = error),
       setWriteGate: (gate, phase = 'before-landing') => {
         writeGate = gate;
@@ -250,7 +257,8 @@ export function createMemoryPlatform(options: {
     },
     focus: () => focusHandlers.forEach((h) => h()),
     dropPaths: (paths, position = { x: 0, y: 0 }) => dropHandler?.({ paths, position }) ?? Promise.resolve(),
-    watchedPath: () => watched?.path ?? null,
+    watchedPath: () => watched.get('main')?.path ?? null,
+    watchedPaths: () => new Map([...watched].map(([id, watcher]) => [id, watcher.path])),
     get destroyed() {
       return destroyed;
     },

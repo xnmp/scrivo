@@ -58,6 +58,7 @@ pub fn run() {
             commands::read_document,
             commands::write_document,
             commands::stat_document,
+            commands::document_identity,
             commands::import_attachment_bytes,
             commands::import_attachment_path,
             commands::rollback_attachment,
