@@ -1,0 +1,32 @@
+# Rejected scheduling experiment; not the shipping release.
+# Baseline SHA-256: d58d5be3fbf26809182157883f6b6193120c5b56c9cf134a8f2e0dbe7dd519ca
+# Candidate SHA-256: c2e63b9d0122231039e41c3da08eb5e3f88b76e88ea96ff1de1a00ae87748e03
+round 1 scrivo-startup-baseline: window=213 content=393 complete=393
+round 1 scrivo: window=228 content=392 complete=392
+round 2 scrivo: window=231 content=414 complete=414
+round 2 scrivo-startup-baseline: window=237 content=400 complete=400
+round 3 scrivo-startup-baseline: window=229 content=392 complete=392
+round 3 scrivo: window=240 content=405 complete=405
+round 4 scrivo: window=702 content=867 complete=867
+round 4 scrivo-startup-baseline: window=237 content=402 complete=402
+round 5 scrivo-startup-baseline: window=234 content=398 complete=398
+round 5 scrivo: window=212 content=390 complete=390
+round 6 scrivo: window=242 content=402 complete=402
+round 6 scrivo-startup-baseline: window=240 content=389 complete=389
+round 7 scrivo-startup-baseline: window=222 content=402 complete=402
+round 7 scrivo: window=233 content=413 complete=413
+round 8 scrivo: window=250 content=399 complete=399
+round 8 scrivo-startup-baseline: window=220 content=400 complete=400
+round 9 scrivo-startup-baseline: window=216 content=393 complete=393
+round 9 scrivo: window=235 content=420 complete=420
+round 10 scrivo: window=215 content=412 complete=412
+round 10 scrivo-startup-baseline: window=221 content=385 complete=385
+round 11 scrivo-startup-baseline: window=240 content=386 complete=386
+round 11 scrivo: window=230 content=394 complete=394
+round 12 scrivo: window=225 content=404 complete=404
+round 12 scrivo-startup-baseline: window=242 content=407 complete=407
+
+large.md, 12 rounds
+  scrivo-startup-baseline n=12  window med=232  content med=396  complete med=396
+  scrivo           n=12  window med=232  content med=405  complete med=405
+  scrivo vs scrivo-startup-baseline: content +12 ms (paired median), faster in 4/12 rounds

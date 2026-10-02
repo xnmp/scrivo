@@ -1,8 +1,145 @@
 # Handover — 2026-10-02
 
+## 2026-10-02: appearance system, gutter fix, startup follow-up
+
+This checkpoint follows `5ffab9e`. The user's additional requests were to remove
+the bright left editor line, reduce startup time, and add Obsidian-style theming.
+
+### Appearance behavior and ownership
+
+- The tab strip's Appearance button is available in reading and editing. It opens
+  a native modal dialog with system/light/dark mode, imported theme selection,
+  accent color, text/monospace fonts, font size (12–24), and reset. Escape closes
+  it and restores focus. Ctrl/⌘+, opens it; Ctrl/⌘+Shift+, resets before opening,
+  providing a recovery path if imported CSS hides controls. Document shortcuts
+  do not operate on background tabs while a native dialog is open.
+- Imports local self-contained CSS files, up to 1 MiB each; the library is bounded
+  to 20 themes and 4 MiB serialized. Imported CSS is user-authored/trusted styling,
+  not Markdown. Existing native CSP remains in effect. Relative companion assets,
+  Obsidian plugins/Style Settings, a theme marketplace, and Obsidian-specific
+  layout selectors are not implemented. This is CSS-variable compatibility, not
+  a promise that arbitrary community themes reproduce all Obsidian chrome.
+- `domain/appearance.ts` validates bounded immutable values and imported themes.
+  `platform/appearance.ts` owns WebView-local persistence, cross-window storage
+  events, and application of CSS. Small preferences use `scrivo.appearance.v1`;
+  the deferred theme library uses `scrivo.themes.v1`. An authoritative atomic
+  `scrivo.active-theme.v1` snapshot contains selected ID, name, and CSS together.
+  That snapshot is reconciled into the library after partial storage mutations,
+  keeping the Theme selector consistent with the CSS actually being used.
+- Ordinary preference changes only write small settings. CSS and library data
+  are rewritten when selection or library content changes. Denied/quota storage
+  leaves session controls usable and reports that saving failed. Invalid storage
+  falls back safely. CSS JSON expansion is bounded separately from decoded CSS.
+- Appearance applies synchronously before first document layout; the library
+  and UI remain deferred. System mode listens for OS changes. `theme-light` and
+  `theme-dark` classes are placed on HTML and body. `base.css` bridges Obsidian
+  surface, text, accent, border, code, selection, caret, font, line-height, and
+  readable-width variables into existing app tokens. Per-level `--h1-color`
+  through `--h6-color` apply to both reading and live preview headings. Theme
+  changes never touch Markdown or undo history.
+- `ui/appearance-settings.ts` owns controls and imports. An import generation
+  invalidates an obsolete asynchronous file read after a newer selection/reset.
+  The existing per-editor Settings panel still owns editor projections only.
+
+### Border and startup work
+
+- Reproduced the white line as CodeMirror's default light-base gutter separator,
+  which remained under Scrivo's dark tokens. `editor/theme.ts` explicitly sets
+  `.cm-gutters` border to none; browser and native checks verify width 0px while
+  fold controls remain available. A border-only release was installed early.
+- Preserved the prior installed release as `/tmp/scrivo-startup-baseline`, SHA-256
+  `d58d5be3fbf26809182157883f6b6193120c5b56c9cf134a8f2e0dbe7dd519ca`.
+  Independent sequential native profiling found window build around 190 ms,
+  JavaScript start around 317 ms, and first layout around 364 ms. Large Markdown
+  prefetch completed around 16 ms. Native window/WebKit startup dominates.
+- Added tab-shell import/ready trace marks. The deferred shell took roughly
+  30 ms to load and 25–30 ms to initialize. Two earlier-loading experiments were
+  measured and rejected (results below). Shipping keeps the prior deferred shell
+  scheduling. Pending keyboard/link handling includes Appearance shortcuts pressed
+  during boot. A failed controls import/init now reports recovery, retains readable
+  content, and releases buffered shortcuts instead of leaving them captured.
+- Shipping bundle gate: about 33/41 KiB static startup and 47/56 KiB known
+  prepaint. The experiment counted the earlier tab shell explicitly at 79/84 KiB;
+  that increase was reverted with the scheduling experiment. CodeMirror, code
+  highlighting, appearance UI, and the theme library remain deferred. Conditional
+  math font remains about 1,060 KiB; declared deferred graph is about 3,085 KiB.
+- The first eager-import experiment initialized sessions after two animation
+  frames. Twelve verified medium pairs found +1 ms paired median (faster 6/12),
+  so that scheduling alone did not help. Retained raw trial:
+  `bench/results/paired-appearance-double-frame-medium.txt`, candidate SHA-256
+  `14c722cf725d38dd2c269575640f221061634fb5934d05a6207a33513271afc6`.
+  The second experiment mounted in the first idle slot after initial layout,
+  using the existing WebKit shim and a 100 ms starvation deadline. Twelve pairs
+  per fixture found medium baseline/candidate medians 397/393 ms, paired delta
+  −8 ms (faster 8/12), but large 396/405 ms, paired delta +12 ms (faster 4/12).
+  All 24 pairs passed viewport references. This was rejected because it did not
+  improve both workloads. Logs: `paired-appearance-startup-{medium,large}.txt`;
+  measured candidate SHA-256
+  `c2e63b9d0122231039e41c3da08eb5e3f88b76e88ea96ff1de1a00ae87748e03`.
+  The idle deadline also does not guarantee a paint before mount under frame
+  starvation. No new first-viewport speed improvement is claimed for shipping.
+
+### Verification and release status
+
+- Unit suite: 455 passing, including malformed preferences, bounded CSS, escaped
+  boundary-sized persistence, partial writes, library reconciliation, denied
+  storage, cross-window updates, and disposing subscriptions.
+- Production Chromium regression suite: 129 passing with one worker. An earlier
+  run used stale assets for the new heading-color assertion and had a separate
+  Chromium page crash on settings reload; rebuilt final assets passed. A final
+  focused appearance run also checks modal shortcut routing, reset via keyboard,
+  font overrides, and actual failed controls-module recovery. The latter retains
+  readable content without an unhandled error and releases the shortcut listener.
+- Native appearance spec passes: File API import, actual WebKit theme/heading
+  colors, reader→editor gutter width, native relaunch persistence, reset, and
+  unchanged real file bytes. It uses an isolated Xvfb/DBus session and the browser
+  File API instead of interacting with the host file chooser. The first attempt
+  failed solely because of an invalid test selector; corrected XPath passed.
+- App and native test typechecks, release/debug builds, bundle gate, and
+  `git diff --check` pass. Independent adversarial review found and verified the
+  persistence/import ordering/library-write/heading-color fixes above; no concrete
+  appearance selection consistency issue remained in the final focused review.
+- Final installed checksum and release smoke measurements are recorded below.
+  Temporary detailed logs are under `/tmp/scrivo-appearance-*`; reproduce tests
+  rather than depending on those files.
+- Further cold-start investigation should target native GTK/WebKit initialization,
+  not Markdown rendering or deferred editor logic. A separate warm-launch design
+  could reuse an existing window/process; this is not implemented and would change
+  launch semantics, requiring reliable request queueing and real multi-process
+  native tests. Do not present warm-open timings as cold-start measurements.
+
+### Shipping artifact
+
+Release `src-tauri/target/release/scrivo` is installed as
+`/home/chong/.local/bin/scrivo`, SHA-256
+`73eec8f20ec2efc4fb1ca79ccdbfae8cc43e40351339917641edec93bb0942bf`.
+Three isolated, reviewed-reference native launches per fixture gave content medians
+389 ms (medium) and 396 ms (large), with all six viewports verified. These are smoke
+measurements, not evidence of an improvement over the previous release. Raw phase
+logs: `bench/results/appearance-shipping-{medium,large}.txt`.
+The existing `dev.scrivo.editor.desktop` remains the default for both
+`text/markdown` and `text/x-markdown`; its launcher executes the installed binary.
+
+### Reproduction
+
+```sh
+bun run typecheck
+bunx tsc -p e2e-native/tsconfig.json --noEmit
+bun run test
+bunx playwright test --project=chromium --workers=1
+bun run build:native-test
+env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE GDK_BACKEND=x11 \
+  xvfb-run -a dbus-run-session -- e2e-native/with-wm.sh bunx wdio run \
+  e2e-native/wdio.conf.ts --spec e2e-native/specs/appearance.spec.ts
+bunx tauri build --no-bundle
+```
+
+Use private compositor benchmarks; never automate or close the user's desktop
+windows. Installing a binary changes subsequent launches, not existing processes.
+
 ## 2026-10-02: D1 and E3 delivered; scoped file-editor parity complete
 
-This is the latest checkpoint. The historical sections below describe earlier
+This checkpoint closed the scoped file-editor parity work. Sections below describe earlier
 states and must not be read as current outstanding work. The objective was
 local Markdown file editing parity defined by `docs/FILE_EDITOR_PARITY.md`, with
 extensive outcome verification. P1–P4, E1–E3, I1–I2, W1 and D1 are implemented.

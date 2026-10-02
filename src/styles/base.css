@@ -1,23 +1,23 @@
 /* Design tokens. Themes override these; nothing below hard-codes colours. */
-:root {
+:where(:root) {
   color-scheme: light;
-  --bg: #ffffff;
-  --fg: #24292f;
-  --fg-muted: #6a737d;
-  --heading: #1f2328;
-  --accent: #0969da;
-  --link: #0969da;
-  --border: #d8dee4;
-  --code-bg: #f6f8fa;
-  --inline-code-bg: rgba(175, 184, 193, 0.2);
-  --selection: #cfe3ff;
-  --caret: #24292f;
-  --quote-bar: #d0d7de;
-  --table-stripe: #f6f8fa;
-  --mark-muted: #8c959f;
-  --danger: #cf222e;
+  --background-primary: #ffffff;
+  --text-normal: #24292f;
+  --text-muted: #6a737d;
+  --text-title: #1f2328;
+  --interactive-accent: #0969da;
+  --text-accent: #0969da;
+  --background-modifier-border: #d8dee4;
+  --background-secondary: #f6f8fa;
+  --code-background: rgba(175, 184, 193, 0.2);
+  --text-selection: #cfe3ff;
+  --caret-color: #24292f;
+  --blockquote-border-color: #d0d7de;
+  --table-row-alt-background: #f6f8fa;
+  --text-faint: #8c959f;
+  --text-error: #cf222e;
   --overlay: rgba(27, 31, 36, 0.35);
-  --surface: #ffffff;
+  --background-secondary-alt: #ffffff;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   --find-match: rgba(255, 213, 0, 0.45);
   --find-current: rgba(255, 140, 0, 0.75);
@@ -35,33 +35,33 @@
   /* system-ui first: it resolves in one lookup everywhere (SF, Segoe UI, the desktop's
      UI font on Linux); each unavailable family before it costs a fontconfig match on
      Linux (measured ~20 ms on first layout). */
-  --font-body: system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
-  --font-size: 16px;
-  --line-height: 1.65;
-  --content-width: 860px;
+  --font-text-theme: system-ui, -apple-system, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-monospace-theme: ui-monospace, 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-text-size: 16px;
+  --line-height-normal: 1.65;
+  --file-line-width: 860px;
   --tab-bar-height: 35px;
 }
 
-:root[data-theme='dark'] {
+:where(:root[data-theme='dark']) {
   color-scheme: dark;
-  --bg: #1d1f23;
-  --fg: #d4d7dd;
-  --fg-muted: #8b929c;
-  --heading: #eceef1;
-  --accent: #6cb6ff;
-  --link: #6cb6ff;
-  --border: #3a3f47;
-  --code-bg: #25282e;
-  --inline-code-bg: rgba(110, 118, 129, 0.3);
-  --selection: #2f4a6d;
-  --caret: #eceef1;
-  --quote-bar: #464c55;
-  --table-stripe: #22252a;
-  --mark-muted: #6b727c;
-  --danger: #ff7b72;
+  --background-primary: #1d1f23;
+  --text-normal: #d4d7dd;
+  --text-muted: #8b929c;
+  --text-title: #eceef1;
+  --interactive-accent: #6cb6ff;
+  --text-accent: #6cb6ff;
+  --background-modifier-border: #3a3f47;
+  --background-secondary: #25282e;
+  --code-background: rgba(110, 118, 129, 0.3);
+  --text-selection: #2f4a6d;
+  --caret-color: #eceef1;
+  --blockquote-border-color: #464c55;
+  --table-row-alt-background: #22252a;
+  --text-faint: #6b727c;
+  --text-error: #ff7b72;
   --overlay: rgba(0, 0, 0, 0.5);
-  --surface: #26292f;
+  --background-secondary-alt: #26292f;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   --find-match: rgba(187, 128, 9, 0.45);
   --find-current: rgba(240, 136, 62, 0.8);
@@ -78,25 +78,25 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :where(:root:not([data-theme='light'])) {
     color-scheme: dark;
-    --bg: #1d1f23;
-    --fg: #d4d7dd;
-    --fg-muted: #8b929c;
-    --heading: #eceef1;
-    --accent: #6cb6ff;
-    --link: #6cb6ff;
-    --border: #3a3f47;
-    --code-bg: #25282e;
-    --inline-code-bg: rgba(110, 118, 129, 0.3);
-    --selection: #2f4a6d;
-    --caret: #eceef1;
-    --quote-bar: #464c55;
-    --table-stripe: #22252a;
-    --mark-muted: #6b727c;
-    --danger: #ff7b72;
+    --background-primary: #1d1f23;
+    --text-normal: #d4d7dd;
+    --text-muted: #8b929c;
+    --text-title: #eceef1;
+    --interactive-accent: #6cb6ff;
+    --text-accent: #6cb6ff;
+    --background-modifier-border: #3a3f47;
+    --background-secondary: #25282e;
+    --code-background: rgba(110, 118, 129, 0.3);
+    --text-selection: #2f4a6d;
+    --caret-color: #eceef1;
+    --blockquote-border-color: #464c55;
+    --table-row-alt-background: #22252a;
+    --text-faint: #6b727c;
+    --text-error: #ff7b72;
     --overlay: rgba(0, 0, 0, 0.5);
-    --surface: #26292f;
+    --background-secondary-alt: #26292f;
     --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   --find-match: rgba(187, 128, 9, 0.45);
   --find-current: rgba(240, 136, 62, 0.8);
@@ -111,6 +111,33 @@
     --tok-operator: #d4d7dd;
     --tok-meta: #8b949e;
   }
+}
+
+/* Obsidian variable bridge resolves on body, where community themes set their palette. */
+html, body {
+  --bg: var(--background-primary);
+  --fg: var(--text-normal);
+  --fg-muted: var(--text-muted);
+  --heading: var(--text-title);
+  --accent: var(--interactive-accent);
+  --link: var(--text-accent);
+  --border: var(--background-modifier-border);
+  --code-bg: var(--background-secondary);
+  --inline-code-bg: var(--code-background);
+  --selection: var(--text-selection);
+  --caret: var(--caret-color);
+  --quote-bar: var(--blockquote-border-color);
+  --table-stripe: var(--table-row-alt-background);
+  --mark-muted: var(--text-faint);
+  --danger: var(--text-error);
+  --surface: var(--background-secondary-alt);
+  --font-size: var(--font-text-size);
+  --line-height: var(--line-height-normal);
+  --content-width: var(--file-line-width);
+  --font-text: var(--font-text-override, var(--font-text-theme));
+  --font-body: var(--font-text);
+  --font-monospace: var(--font-monospace-override, var(--font-monospace-theme));
+  --font-mono: var(--font-monospace);
 }
 
 * {

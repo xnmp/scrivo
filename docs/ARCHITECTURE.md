@@ -100,6 +100,15 @@ guides, spellcheck, wrapping, and visual tab width without editing source/histor
 The settings and properties panels are mutually exclusive and document-local;
 preference values are shared across all documents.
 
+Appearance is a separate window-level store. Small validated preferences persist
+in `scrivo.appearance.v1`; the theme library is loaded lazily from `scrivo.themes.v1`.
+The selected theme's ID, name, and CSS form one atomic `scrivo.active-theme.v1`
+snapshot, applied before layout and reconciled into the library after partial
+storage failures. Ordinary controls do not rewrite theme CSS. Native storage events
+update other windows. Obsidian CSS variables bridge to the app's existing tokens;
+`theme-light`/`theme-dark` classes and per-level heading colors cover both reader
+and live preview. Imported CSS has the same native CSP as the rest of the app.
+
 ## Layers
 
 ```
@@ -230,6 +239,12 @@ files it doesn't reference, start programs, or navigate the webview.
   visible and recreation is detected on a later check.
 
 ## Startup path
+
+Appearance preferences and selected theme CSS apply before document layout. The
+theme library and controls remain deferred. Tab-shell import start/end and readiness
+trace marks help diagnose the deferred application controls. Earlier shell loading
+was tried and rejected after paired measurements showed mixed results. The bundle
+gate retains its 41 KiB static and 56 KiB known prepaint budgets.
 
 Timeline for `scrivo medium.md` (headless cage, trace marks, ms after process start):
 

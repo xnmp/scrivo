@@ -79,6 +79,18 @@ display. `bun run test:e2e:all` also runs Playwright WebKit when its host depend
 are installed. See [architecture](docs/ARCHITECTURE.md) and [conventions](docs/CONVENTIONS.md)
 for the code layout, safety model, and performance decisions.
 
+## Appearance
+
+Open **Appearance** in the tab strip (Ctrl/⌘+,) to choose system/light/dark mode,
+an accent, text and monospace fonts, and font size. Settings apply to reading and
+editing and persist across launches. Import self-contained Obsidian `theme.css`
+files to use their compatible CSS variables, including per-level heading colors.
+You can retain and switch between imported themes. Reset with Ctrl/⌘+Shift+, if a
+custom theme hides the controls.
+
+Obsidian-specific layouts, plugins, theme marketplaces, and local companion assets
+are not included. Imports are limited to 1 MiB per CSS file.
+
 ## Startup performance
 
 The comparison uses the same 1280×720 private headless compositor for both apps.
@@ -123,10 +135,10 @@ check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
-The current web build gate counts 28 KiB of linked static startup JS/CSS against a 41 KiB
-budget. Tauri's window API loads during boot; including it gives 42 KiB of known
-prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
-1,060 KiB math font referenced by the reading-view stylesheet and a 3,079 KiB
+The current web build gate counts 33 KiB of linked static startup JS/CSS against a 41 KiB
+budget. Tauri's window API loads during boot; including it gives 47 KiB of known
+prepaint JS/CSS against a 56 KiB budget. The tab shell remains deferred. The gate also validates and reports a
+1,060 KiB math font referenced by the reading-view stylesheet and a 3,085 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
 features loaded later.
 

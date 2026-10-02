@@ -259,6 +259,7 @@ export function readingGiantCodeFixture(): Fixture {
 export const fixtureBySpec: Record<string, () => Fixture> = {
   'properties-outline.spec.ts': propertiesFixture,
   'editor-settings.spec.ts': editorSettingsFixture,
+  'appearance.spec.ts': readingWatchFixture,
   'editor-find.spec.ts': editorFindFixture,
   'heading.spec.ts': headingFixture,
   'save-bytes.spec.ts': saveBytesFixture,

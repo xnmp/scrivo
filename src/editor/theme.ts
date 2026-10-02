@@ -20,6 +20,7 @@ export const editorTheme = EditorView.theme({
     caretColor: 'var(--caret)',
   },
   '.cm-line': { padding: '0' },
+  '.cm-gutters': { border: 'none' },
   '.cm-cursor, .cm-dropCursor': { borderLeft: '2px solid var(--caret)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
     { backgroundColor: 'var(--selection)' },

@@ -12,6 +12,7 @@ import { createTabBar } from './ui/tabs';
 import { createFinder } from './viewer/find';
 import { createViewer, type Viewer } from './viewer/viewer';
 import type { Outline } from './ui/outline';
+import { createAppearanceSettings } from './ui/appearance-settings';
 
 export async function startTabWindow(context: {
   readonly platform: Platform;
@@ -85,6 +86,7 @@ const tabBar = createTabBar(document.getElementById('tab-bar')!, {
   create: () => void createUntitled(),
 });
 const renderTabs = () => tabBar.render(tabLabels(), tabs.activeId);
+createAppearanceSettings(document.getElementById('tab-bar')!);
 
 function activate(id: string): void {
   if (!sessions.has(id)) return;
@@ -405,6 +407,7 @@ async function close(id: string): Promise<void> {
 
 window.addEventListener('keydown', (event) => {
   if (event.defaultPrevented || event.altKey) return;
+  if (document.querySelector('dialog[open]')) return;
   const session = activeSession();
   if (!session) return;
   const mod = event.ctrlKey || event.metaKey;
