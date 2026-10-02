@@ -1,0 +1,64 @@
+import { $, browser, expect } from '@wdio/globals';
+import { readFileSync } from 'node:fs';
+import { state } from '../state';
+
+describe('native properties and editing outline', () => {
+  it('edits properties, saves from the panel, and preserves BOM, CRLF, comments and unknown values', async () => {
+    const fixture = state.fixture!;
+    const original = readFileSync(fixture.docPath, 'utf8');
+    await $('.cm-content').waitForDisplayed();
+    await $('.properties-toggle').click();
+    const title = $('[aria-label="Property title"]');
+    await title.click();
+    await browser.keys(['Control', 'a']);
+    await browser.keys('New title');
+    await browser.keys(['Control', 's']);
+    const titled = original.replace('title: Old', 'title: "New title"');
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8') === titled, { timeout: 10_000 });
+    await browser.keys(['Control', 'z']);
+    await browser.keys(['Control', 's']);
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8') === original, { timeout: 10_000 });
+    await browser.keys(['Control', 'Shift', 'z']);
+    await browser.keys(['Control', 's']);
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8') === titled, { timeout: 10_000 });
+    await $('[aria-label="Property done"]').click();
+    await browser.keys(['Control', 's']);
+    const final = titled.replace('done: false', 'done: true');
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8') === final, { timeout: 10_000 });
+    await browser.keys(['Control', 'e']);
+    await $('.viewer').waitForDisplayed();
+    await browser.keys(['Control', 'e']);
+    await $('.cm-content').waitForDisplayed();
+    if (await $('.properties-toggle').getAttribute('aria-expanded') === 'false') await $('.properties-toggle').click();
+    expect(await $('[aria-label="Property title"]').getValue()).toBe('New title');
+    expect(await $('[aria-label="Property done"]').isSelected()).toBe(true);
+    expect(readFileSync(fixture.docPath, 'utf8')).toBe(final);
+    await $('[aria-label="Property title"]').click();
+    await browser.keys('Escape');
+  });
+
+  it('indexes current editing headings in the native worker and unfolds a navigation target', async () => {
+    const before = readFileSync(state.fixture!.docPath, 'utf8');
+    await $('.cm-fold-toggle[aria-label="Fold heading First (line 8)"]').click();
+    await $('.outline-toggle').waitForDisplayed();
+    await $('.outline-toggle').click();
+    expect(await $$('.outline-panel button').length).toBe(3);
+    await $('[aria-label="Heading level 2: Child"]').click();
+    await browser.waitUntil(() => $('.cm-content').getText().then((text) => text.includes('Child')), { timeout: 5_000 });
+    expect(await browser.execute(() => document.activeElement?.classList.contains('cm-content'))).toBe(true);
+    await browser.keys(['Control', '/']);
+    await $('.cm-source-mode').waitForDisplayed();
+    await $('.outline-toggle').click();
+    await $('[aria-label="Heading level 1: Last"]').click();
+    await $('.cm-content').click();
+    await browser.keys(['Control', 'End']);
+    await browser.keys('Enter');
+    await browser.keys('# New native');
+    await browser.waitUntil(() => $('.cm-content').getText().then((text) => text.includes('New native')));
+    if (await $('.outline-toggle').getAttribute('aria-expanded') === 'false') await $('.outline-toggle').click();
+    await $('[aria-label="Heading level 1: New native"]').waitForDisplayed();
+    await $('[aria-label="Heading level 1: New native"]').click();
+    await browser.keys(['Control', 's']);
+    await browser.waitUntil(() => readFileSync(state.fixture!.docPath, 'utf8') === before + '\r\n# New native', { timeout: 10_000 });
+  });
+});

@@ -1,0 +1,29 @@
+round 1 scrivo-w1-baseline: window=229 content=393 complete=393
+round 1 scrivo: window=218 content=396 complete=396
+round 2 scrivo: window=233 content=396 complete=396
+round 2 scrivo-w1-baseline: window=223 content=391 complete=391
+round 3 scrivo-w1-baseline: window=228 content=376 complete=376
+round 3 scrivo: window=232 content=397 complete=397
+round 4 scrivo: window=227 content=394 complete=394
+round 4 scrivo-w1-baseline: window=239 content=422 complete=422
+round 5 scrivo-w1-baseline: window=209 content=388 complete=388
+round 5 scrivo: window=235 content=385 complete=385
+round 6 scrivo: window=233 content=404 complete=404
+round 6 scrivo-w1-baseline: window=211 content=376 complete=376
+round 7 scrivo-w1-baseline: window=237 content=386 complete=386
+round 7 scrivo: window=249 content=396 complete=396
+round 8 scrivo: window=210 content=375 complete=375
+round 8 scrivo-w1-baseline: window=224 content=372 complete=372
+round 9 scrivo-w1-baseline: window=215 content=395 complete=395
+round 9 scrivo: window=239 content=406 complete=406
+round 10 scrivo: window=226 content=387 complete=387
+round 10 scrivo-w1-baseline: window=236 content=384 complete=384
+round 11 scrivo-w1-baseline: window=233 content=383 complete=383
+round 11 scrivo: window=246 content=411 complete=411
+round 12 scrivo: window=226 content=404 complete=404
+round 12 scrivo-w1-baseline: window=238 content=385 complete=385
+
+large.md, 12 rounds
+  scrivo-w1-baseline n=12  window med=229  content med=386  complete med=386
+  scrivo           n=12  window med=233  content med=396  complete med=396
+  scrivo vs scrivo-w1-baseline: content +8 ms (paired median), faster in 2/12 rounds

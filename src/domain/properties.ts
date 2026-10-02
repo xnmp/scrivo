@@ -1,98 +1,96 @@
-import { isMap, isScalar, parseDocument } from 'yaml';
+import { isMap, isScalar, parseDocument, type Pair } from 'yaml';
 
-export interface Property {
-  readonly key: string;
-  readonly value: string;
-}
-
+export type PropertyValue = string | number | boolean;
+export interface Property { readonly key: string; readonly value: PropertyValue }
 export type Properties =
   | { readonly kind: 'none'; readonly entries: readonly [] }
   | { readonly kind: 'invalid'; readonly entries: readonly []; readonly reason: string }
   | { readonly kind: 'ready'; readonly entries: readonly Property[]; readonly unsupported: number };
-
-export interface SourceChange {
-  readonly from: number;
-  readonly to: number;
-  readonly insert: string;
-}
+export interface SourceChange { readonly from: number; readonly to: number; readonly insert: string }
 
 const MAX_FRONT_MATTER = 256 * 1024;
 const MAX_LINES = 1000;
+const MAX_VALUE = 64 * 1024;
 const FENCE = /^(?:---|\.\.\.)[ \t]*$/;
 const KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
+interface FrontMatter { readonly from: number; readonly close: number; readonly eol: string }
 
-interface FrontMatter {
-  readonly from: number;
-  readonly to: number;
-  readonly close: number;
-  readonly eol: string;
-}
-
-function frontMatter(text: string): FrontMatter | 'unclosed' | null {
+function frontMatter(text: string): FrontMatter | string | null {
   const bom = text.charCodeAt(0) === 0xfeff ? 1 : 0;
   const firstEnd = text.indexOf('\n', bom);
-  if (firstEnd < 0 || text.slice(bom, firstEnd).replace(/\r$/, '') !== '---') return null;
+  const firstLine = text.slice(bom, firstEnd < 0 ? text.length : firstEnd).replace(/\r$/, '');
+  if (!/^---[ \t]*$/.test(firstLine)) return null;
+  if (firstEnd < 0) return 'Front matter has no closing fence.';
   let from = firstEnd + 1;
-  let line = 1;
-  while (from <= text.length && line++ < MAX_LINES && from - firstEnd <= MAX_FRONT_MATTER) {
+  for (let line = 1; line < MAX_LINES; line++) {
     const end = text.indexOf('\n', from);
     const lineEnd = end < 0 ? text.length : end;
+    if (lineEnd - firstEnd > MAX_FRONT_MATTER) return 'This front matter is too large for the properties form. Edit it in source.';
     if (FENCE.test(text.slice(from, lineEnd).replace(/\r$/, ''))) {
-      return { from: firstEnd + 1, to: from, close: from, eol: text.slice(bom, firstEnd).endsWith('\r') ? '\r\n' : '\n' };
+      return { from: firstEnd + 1, close: from, eol: text[firstEnd - 1] === '\r' ? '\r\n' : '\n' };
     }
-    if (end < 0) break;
+    if (end < 0) return 'Front matter has no closing fence.';
     from = end + 1;
   }
-  return 'unclosed';
+  return 'This front matter has too many lines for the properties form. Edit it in source.';
 }
 
 function parsed(text: string) {
   const bounds = frontMatter(text);
-  if (bounds === null || bounds === 'unclosed') return { bounds, document: null } as const;
-  const document = parseDocument(text.slice(bounds.from, bounds.to), { uniqueKeys: true });
-  return { bounds, document } as const;
+  if (!bounds || typeof bounds === 'string') return { bounds, document: null } as const;
+  return { bounds, document: parseDocument(text.slice(bounds.from, bounds.close), { uniqueKeys: true }) } as const;
+}
+
+const validValue = (value: PropertyValue): boolean => typeof value === 'string'
+  ? value.length <= MAX_VALUE : typeof value === 'boolean' || (Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value)));
+
+function editable(text: string, bounds: FrontMatter, pair: Pair): (Property & { from: number; to: number }) | null {
+  if (!isScalar(pair.key) || typeof pair.key.value !== 'string' || !isScalar(pair.value) || !pair.value.range || pair.value.tag) return null;
+  const value: unknown = pair.value.value;
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return null;
+  if (!validValue(value)) return null;
+  if (typeof value === 'string' && /[\r\n]/.test(value)) return null;
+  const [start, end] = pair.value.range;
+  const source = text.slice(bounds.from + start, bounds.from + end);
+  if (source.includes('\n') || source.includes('\r') || pair.value.type === 'BLOCK_LITERAL' || pair.value.type === 'BLOCK_FOLDED') return null;
+  return { key: pair.key.value, value, from: bounds.from + start, to: bounds.from + end };
 }
 
 export function readProperties(text: string): Properties {
   const { bounds, document } = parsed(text);
-  if (bounds === null) return { kind: 'none', entries: [] };
-  if (bounds === 'unclosed') return { kind: 'invalid', entries: [], reason: 'Front matter has no closing fence.' };
-  if (document?.errors.length) return { kind: 'invalid', entries: [], reason: 'Front matter contains invalid YAML.' };
+  if (!bounds) return { kind: 'none', entries: [] };
+  if (typeof bounds === 'string') return { kind: 'invalid', entries: [], reason: bounds };
+  if (document?.errors.length) return { kind: 'invalid', entries: [], reason: 'Front matter contains invalid YAML. Edit it in source.' };
   if (!isMap(document?.contents) && document?.contents !== null) {
-    return { kind: 'invalid', entries: [], reason: 'Front matter must be a YAML mapping.' };
+    return { kind: 'invalid', entries: [], reason: 'Front matter must be a YAML mapping. Edit it in source.' };
   }
   const entries: Property[] = [];
   let unsupported = 0;
   for (const pair of isMap(document?.contents) ? document.contents.items : []) {
-    const key = isScalar(pair.key) && typeof pair.key.value === 'string' ? pair.key.value : null;
-    const value = pair.value;
-    const range = isScalar(value) ? value.range : undefined;
-    const source = range && text.slice(bounds.from + range[0], bounds.from + range[1]);
-    if (key !== null && isScalar(value) && typeof value.value === 'string' && range
-      && source !== undefined && !source.includes('\n') && !source.includes('\r')) {
-      entries.push({ key, value: value.value });
-    } else unsupported++;
+    const property = editable(text, bounds, pair);
+    if (property) entries.push({ key: property.key, value: property.value });
+    else unsupported++;
   }
   return { kind: 'ready', entries, unsupported };
 }
 
-/** Replace one scalar token, keeping its surrounding whitespace, comments, and siblings. */
-export function changeProperty(text: string, key: string, value: string): SourceChange | null {
+/** Replace only a scalar token. An optional expected value protects a stale form draft. */
+export function changeProperty(text: string, key: string, value: PropertyValue, expected?: PropertyValue): SourceChange | null {
+  if (!validValue(value)) return null;
   const { bounds, document } = parsed(text);
-  if (!bounds || bounds === 'unclosed' || document?.errors.length || !isMap(document?.contents)) return null;
+  if (!bounds || typeof bounds === 'string' || document?.errors.length || !isMap(document?.contents)) return null;
   const pair = document.contents.items.find((item) => isScalar(item.key) && item.key.value === key);
-  if (!pair || !isScalar(pair.value) || typeof pair.value.value !== 'string' || !pair.value.range) return null;
-  const [start, end] = pair.value.range;
-  const source = text.slice(bounds.from + start, bounds.from + end);
-  if (source.includes('\n') || source.includes('\r') || pair.value.value === value) return null;
-  return { from: bounds.from + start, to: bounds.from + end, insert: JSON.stringify(value) };
+  const property = pair && editable(text, bounds, pair);
+  if (!property || (expected !== undefined && !Object.is(property.value, expected)) || Object.is(property.value, value)) return null;
+  return { from: property.from, to: property.to, insert: JSON.stringify(value) };
 }
 
-/** Add one plain-key string property without reserializing any existing YAML. */
-export function addProperty(text: string, key: string, value: string): SourceChange | null {
-  if (!KEY.test(key)) return null;
+/** Add a scalar property without serializing existing YAML. */
+export function addProperty(text: string, key: string, value: PropertyValue): SourceChange | null {
+  if (!KEY.test(key) || !validValue(value)) return null;
   const { bounds, document } = parsed(text);
-  if (bounds === 'unclosed' || document?.errors.length || (document?.contents && !isMap(document.contents))) return null;
+  if (typeof bounds === 'string' || document?.errors.length || (document?.contents && !isMap(document.contents))) return null;
+  if (isMap(document?.contents) && (document.contents.flow || document.contents.tag)) return null;
   if (isMap(document?.contents) && document.contents.items.some((item) => isScalar(item.key) && item.key.value === key)) return null;
   if (bounds === null) {
     const eol = text.includes('\r\n') ? '\r\n' : '\n';

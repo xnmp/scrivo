@@ -16,7 +16,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: 'bun run build:render && bunx vite --port 1421 --strictPort',
+    command: 'bun run build:render && bun run build:web && bunx vite preview --port 1421 --strictPort',
     url: 'http://localhost:1421',
     reuseExistingServer: false,
     timeout: 180_000,

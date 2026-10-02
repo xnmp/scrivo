@@ -147,11 +147,12 @@ test.describe('reading view', () => {
 
   test('markdown links open in the reader; web links go to the system; unsafe links do nothing', async ({ page }) => {
     await openApp(page, { text: SAMPLE, mode: 'view' });
+    const documentUrl = page.url();
     await page.evaluate(() => (window as any).__scrivo.platform.disk.put('/sample/other.md', '# Other doc\n\nhello'));
     await doc(page).getByText('web').click();
     await doc(page).getByText('bad').click();
     expect(await page.evaluate(() => (window as any).__scrivo.platform.opened)).toEqual(['url:https://example.com/']);
-    expect(page.url()).toContain('localhost');
+    expect(page.url()).toBe(documentUrl);
 
     await doc(page).getByText('other', { exact: true }).click();
     await expect(page.locator('.document-session:not([hidden]) .markdown-body h1')).toHaveText('Other doc');

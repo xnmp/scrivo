@@ -3,13 +3,20 @@
 // on the reading view's startup path.
 import './styles/editor.css';
 import { createDocumentController, type ImportOutcome } from './app/controller';
-import type { Platform, Prompter, RecoveryScope, RecoveryCopy } from './app/ports';
+import type { Platform, Prompter, RecoveryScope, RecoveryCopy, Heading } from './app/ports';
 import type { EditorHandle } from './app/workspace';
 import { createEditor, type Editor } from './editor/setup';
 import type { FileTransfer } from './editor/attachments';
 import { checkClipboardFileSize } from './domain/attachment';
 import { wordCounter, type StatusBar } from './ui/status-bar';
 import { createSaveIndicator } from './ui/save-status';
+import { createPropertiesPanel, type PropertiesPanel } from './ui/properties';
+import { isolateHistory } from '@codemirror/commands';
+import { Transaction, type ChangeDesc, type Text } from '@codemirror/state';
+import { createHeadingObserver } from './editor/heading-observer';
+import { indexHeadings } from './editor/heading-worker-client';
+import { editorPreferencesStore } from './platform/editor-preferences';
+import { createEditorSettings } from './ui/editor-settings';
 
 export interface EditorAppOptions {
   readonly platform: Platform;
@@ -21,6 +28,7 @@ export interface EditorAppOptions {
   readonly domFileDrop: boolean;
   readonly onDocumentPathChanged: (path: string | null) => void;
   readonly onStateChanged?: () => void;
+  readonly onHeadingsChanged?: (headings: readonly Heading[]) => void;
   readonly recoveryScope?: RecoveryScope | (() => RecoveryScope);
   readonly onSaveAsFinished?: (saved: boolean, currentPath: string | null, target: string | null) => void;
   readonly allowRecovery?: (copy: RecoveryCopy) => Promise<boolean>;
@@ -36,6 +44,7 @@ export interface EditorAppOptions {
 
 export interface EditorApp extends EditorHandle {
   readonly editor: Editor;
+  revealHeading(heading: Heading): void;
   /** The editor surface became visible. */
   shown(): void;
   dispose(): void;
@@ -43,6 +52,12 @@ export interface EditorApp extends EditorHandle {
 
 export function createEditorApp(options: EditorAppOptions): EditorApp {
   const { platform, prompter } = options;
+  let properties: PropertiesPanel | undefined;
+  let settings: ReturnType<typeof createEditorSettings> | undefined;
+  const preferences = editorPreferencesStore();
+  let headingObserver: ReturnType<typeof createHeadingObserver> | undefined;
+  let headingDocument: Text | undefined;
+  let headingChanges: ChangeDesc | undefined;
   const importFiles = ({ files, insertion, fallbackText, contentText }: FileTransfer) => {
     try {
       files.forEach((file) => checkClipboardFileSize(file.size));
@@ -70,6 +85,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     });
   };
   const editor = createEditor({
+    preferences: preferences.get(),
     parent: options.parent,
     fileUrl: options.fileUrl,
     commands: {
@@ -79,9 +95,19 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
       newDocument: options.commands.newDocument,
       toggleReading: options.commands.toggleReading,
     },
-    onDocChanged: () => {
+    onDocChanged: (update) => {
       controller.contentChanged();
       words.update();
+      properties?.refresh();
+      if (headingChanges) headingChanges = headingChanges.composeDesc(update.changes);
+      headingObserver?.refresh();
+    },
+    onDocumentReset: () => {
+      properties?.refresh(true);
+      headingDocument = undefined;
+      headingChanges = undefined;
+      options.onHeadingsChanged?.([]);
+      headingObserver?.refresh(0);
     },
     onTablePasteRejected: (message) => prompter.notify(message),
     onFileTransfer: importFiles,
@@ -109,6 +135,37 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     allowRecovery: options.allowRecovery,
   });
   const words = wordCounter(options.status, () => editor.view.state.doc.iter(), () => (editor.sourceMode() ? 'Source' : ''));
+  properties = createPropertiesPanel(options.parent, {
+    source: () => editor.view.state.doc.sliceString(0, Math.min(editor.view.state.doc.length, 257 * 1024)),
+    apply: (change, start = false) => editor.view.dispatch({ changes: change,
+      annotations: [...(start ? [isolateHistory.of('before')] : []), Transaction.userEvent.of('input.type.properties')] }),
+    finishEdit: () => editor.view.dispatch({ annotations: isolateHistory.of('after') }),
+    focusDocument: () => editor.view.focus(),
+    editSource: () => {
+      if (!editor.sourceMode()) editor.toggleSourceMode();
+      editor.revealLine(1);
+      editor.view.focus();
+    },
+    saveDocument: options.commands.save,
+    onOpen: () => settings?.close(),
+  });
+  settings = createEditorSettings(options.parent, {
+    get: preferences.get, set: preferences.set, onOpen: () => properties?.close(),
+  });
+  const stopPreferences = preferences.subscribe((next) => { editor.setPreferences(next); settings?.refresh(); });
+  if (options.onHeadingsChanged) {
+    headingObserver = createHeadingObserver({
+      source: () => editor.view.state.doc.toString(),
+      index: indexHeadings,
+      changed: (next) => {
+        headingDocument = editor.view.state.doc;
+        headingChanges = editor.view.state.changes([]);
+        options.onHeadingsChanged?.(next);
+      },
+      failed: (error) => prompter.notify(`Could not update Contents: ${String(error)}`),
+    });
+    headingObserver.refresh(0);
+  }
 
   return {
     editor,
@@ -116,6 +173,11 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     text: () => editor.view.state.doc.toString(),
     topLine: editor.topLine,
     revealLine: editor.revealLine,
+    revealHeading(heading) {
+      if (!headingDocument || !headingChanges) return;
+      const from = headingDocument.line(heading.line).from;
+      editor.revealLine(editor.view.state.doc.lineAt(headingChanges.mapPos(from, 1)).number);
+    },
     focus: () => editor.view.focus(),
     async importPaths(paths: readonly string[], at?: { readonly x: number; readonly y: number }): Promise<ImportOutcome> {
       const beforePath = controller.info().path;
@@ -135,6 +197,10 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     },
     dispose() {
       words.cancel();
+      properties?.dispose();
+      settings?.dispose();
+      stopPreferences();
+      headingObserver?.dispose();
       editor.view.destroy();
     },
   };

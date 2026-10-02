@@ -48,6 +48,27 @@ export function headingFixture(): Fixture {
   return { dir, docPath, launchArgs: EDIT };
 }
 
+export function propertiesFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'properties.md');
+  writeFileSync(docPath, '\ufeff---\r\n# Keep comment\r\ntitle: Old # keep\r\ndone: false\r\nunknown: !custom value\r\nnested: [one, two]\r\n---\r\n# First\r\n\r\nBody\r\n\r\n## Child\r\n\r\n```md\r\n# Code\r\n```\r\n\r\n# Last\r\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
+export function editorSettingsFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'settings.md');
+  writeFileSync(docPath, '# Settings\n\n- Parent\n  - Child\n    - Nested\n\n\tCode\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
+export function editorFindFixture(): Fixture {
+  const dir = freshDir();
+  const docPath = path.join(dir, 'find.md');
+  writeFileSync(docPath, '\ufeff# Search\r\n\r\nParent and Parent\r\n\r\nOther\r\n');
+  return { dir, docPath, launchArgs: EDIT };
+}
+
 export function saveBytesFixture(): SaveBytesFixture {
   const dir = freshDir();
   const docPath = path.join(dir, 'doc.md');
@@ -236,6 +257,9 @@ export function readingGiantCodeFixture(): Fixture {
 }
 
 export const fixtureBySpec: Record<string, () => Fixture> = {
+  'properties-outline.spec.ts': propertiesFixture,
+  'editor-settings.spec.ts': editorSettingsFixture,
+  'editor-find.spec.ts': editorFindFixture,
   'heading.spec.ts': headingFixture,
   'save-bytes.spec.ts': saveBytesFixture,
   'missing-file.spec.ts': missingFileFixture,

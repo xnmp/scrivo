@@ -52,9 +52,11 @@ codebase consistent.
   document text, what a user would see), not internal structure. Cover edge cases: empty
   input, malformed markdown, very large documents, multiple cursors.
 - `EditorState` works headlessly in Node: test commands and decoration builders there.
-- Browser E2E: Playwright (`e2e/`), against the Vite dev server with the dev platform:
+- Browser E2E: Playwright (`e2e/`), against built assets served by Vite preview with the dev platform:
   in-memory files, and the real renderer through the `scrivo-render` CLI
-  (`scripts/vite-render-plugin.ts`). `window.__scrivo` exposes `workspace`, `viewer`,
+  (`scripts/vite-render-plugin.ts`, shared by dev and preview). Built assets reduce
+  module-request fanout and verify production code splitting and workers.
+  `window.__scrivo` exposes `workspace`, `viewer`,
   `platform`, `editor`, `controller`. `openApp(page, { mode: 'view' })` starts in the
   reading view; specs default to the editor.
 - Native E2E: tauri-driver (`e2e-native/`), headless only. Run the package script;

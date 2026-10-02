@@ -46,6 +46,29 @@ let identityTail: Promise<void> = Promise.resolve();
 let releaseInitialIdentity!: () => void;
 const initialIdentityReady = new Promise<void>((resolve) => { releaseInitialIdentity = resolve; });
 const activeSession = (): Session | null => sessions.get(tabs.activeId ?? '') ?? null;
+let outlineLoading = false;
+function refreshOutline(): void {
+  const headings = activeSession()?.headings() ?? [];
+  if (outline) { outline.setHeadings(headings); return; }
+  if (!headings.length || outlineLoading) return;
+  outlineLoading = true;
+  requestIdleCallback(() => {
+    void import('./ui/outline').then(({ createOutline }) => {
+      outline = createOutline(document.body, (heading) => {
+        const session = activeSession();
+        if (session?.workspace.mode() === 'edit') {
+          session.editorApp()?.revealHeading(heading);
+          session.editorApp()?.focus();
+        } else session?.viewer.scrollToAnchor(heading.id);
+      }, () => {
+        const session = activeSession();
+        if (session?.workspace.mode() === 'edit') session.editorApp()?.focus();
+        else session?.viewer.focus();
+      });
+      outline.setHeadings(activeSession()?.headings() ?? []);
+    }).catch(() => undefined).finally(() => { outlineLoading = false; });
+  });
+}
 const tabLabels = () => tabs.tabs.map(({ id }) => {
   const session = sessions.get(id);
   const info = session?.editorApp()?.controller.info();
@@ -73,7 +96,7 @@ function activate(id: string): void {
   document.body.dataset.mode = session.workspace.mode();
   const info = session.editorApp()?.controller.info();
   platform.window.setTitle(windowTitle(session.workspace.documentPath(), info?.dirty ?? false));
-  outline?.setHeadings(session.headings());
+  refreshOutline();
   renderTabs();
   if (session.workspace.mode() === 'edit') {
     session.editorApp()?.shown();
@@ -127,7 +150,8 @@ function makeSession(id: string, path: string | null, initial = false): Session 
   let workspace!: Workspace;
   let editorApp: EditorApp | null = null;
   let findBar: FindBar | null = null;
-  let headings: readonly Heading[] = [];
+  let readingHeadings: readonly Heading[] = [];
+  let editHeadings: readonly Heading[] = [];
   let watchVersion = 0;
   let watchTail: Promise<void> = Promise.resolve();
   const reportPath = (next: string | null) => {
@@ -213,19 +237,8 @@ function makeSession(id: string, path: string | null, initial = false): Session 
   };
   viewer.onShown(highlight);
   const onDocumentShown = (doc: ViewDocument) => {
-    headings = doc.headings;
-    if (tabs.activeId !== id) return;
-    outline?.setHeadings(headings);
-    if (outline || headings.length === 0) return;
-    const version = viewer.version();
-    requestIdleCallback(() => {
-      void import('./ui/outline').then(({ createOutline }) => {
-        if (version !== viewer.version() || tabs.activeId !== id) return;
-        outline ??= createOutline(document.body, (anchor) => activeSession()?.viewer.scrollToAnchor(anchor),
-          () => activeSession()?.viewer.focus());
-        outline.setHeadings(headings);
-      }).catch(() => undefined);
-    });
+    readingHeadings = doc.headings;
+    if (tabs.activeId === id) refreshOutline();
   };
   viewer.onShown(onDocumentShown);
   if (initial && preShown) {
@@ -258,6 +271,7 @@ function makeSession(id: string, path: string | null, initial = false): Session 
         viewer.suspend();
         editorApp?.shown();
       }
+      if (tabs.activeId === id) refreshOutline();
     },
     prepareView() {
       host.dataset.preparingView = 'true';
@@ -271,6 +285,10 @@ function makeSession(id: string, path: string | null, initial = false): Session 
         domFileDrop: !tauri,
         onDocumentPathChanged: reportPath,
         onStateChanged: renderTabs,
+        onHeadingsChanged: (headings) => {
+          editHeadings = headings;
+          if (tabs.activeId === id && host.dataset.mode === 'edit') refreshOutline();
+        },
         recoveryScope,
         allowRecovery: async (copy) => {
           if (copy.path === null) return true;
@@ -299,7 +317,7 @@ function makeSession(id: string, path: string | null, initial = false): Session 
   if (initial) context.setFollowLink((href) => void workspace.followLink(href));
   const session: Session = {
     id, host, viewer, workspace, status,
-    headings: () => headings,
+    headings: () => host.dataset.mode === 'edit' ? editHeadings : readingHeadings,
     findBar: getFindBar,
     editorApp: () => editorApp,
     dispose: async () => {
@@ -312,6 +330,7 @@ function makeSession(id: string, path: string | null, initial = false): Session 
     },
   };
   sessions.set(id, session);
+  if (tabs.activeId === id) refreshOutline();
   return session;
 }
 

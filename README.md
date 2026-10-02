@@ -34,6 +34,14 @@ indentation. Brackets, quotes, and backticks pair as you type and a typed closer
 skips an automatically inserted one. Headings and nested lists have fold buttons
 in the editor gutter; `Ctrl+Alt+[` and `Ctrl+Alt+]` (or `⌘+Option` on macOS)
 fold and unfold at the caret. Folding never changes the Markdown file.
+Contents also works while editing, follows heading changes, and opens folded
+sections when navigating. Properties edits simple YAML text, numbers, and
+checkboxes directly in Markdown; comments, key order, and other values remain
+intact. Complex or malformed YAML stays available through Edit YAML in source.
+Valid property edits participate in autosave, recovery, and undo.
+Settings offers line numbers, indentation guides, spellcheck, line wrapping,
+and tab display width. These preferences apply to all tabs and persist across
+launches without changing Markdown or undo history.
 Pasting formatted text from a browser converts headings, lists, links, emphasis,
 code, and tables into Markdown. Plain-text paste keeps its original text.
 Pasting an image or file, or dropping a file onto the editor, copies it into an
@@ -118,7 +126,7 @@ Scrivo measurement, not a paired Typora comparison. Reproduce it with
 The current web build gate counts 28 KiB of linked static startup JS/CSS against a 41 KiB
 budget. Tauri's window API loads during boot; including it gives 42 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The gate also validates and reports a
-1,060 KiB math font referenced by the reading-view stylesheet and a 2,752 KiB
+1,060 KiB math font referenced by the reading-view stylesheet and a 3,079 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
 features loaded later.
 

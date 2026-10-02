@@ -1,9 +1,9 @@
 // Editor composition: builds the CodeMirror view and exposes it through EditorPort.
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap, redo, undo } from '@codemirror/commands';
-import { syntaxHighlighting } from '@codemirror/language';
-import { Compartment, EditorSelection, EditorState, Transaction, type Extension, type Text } from '@codemirror/state';
-import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view';
+import { foldedRanges, syntaxHighlighting, unfoldEffect } from '@codemirror/language';
+import { Compartment, EditorSelection, EditorState, Prec, Transaction, type Extension, type Text } from '@codemirror/state';
+import { drawSelection, dropCursor, EditorView, keymap, lineNumbers, type KeyBinding, type ViewUpdate } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
 import type { EditorPort } from '../app/ports';
 import { documentDir } from '../domain/document';
@@ -15,6 +15,9 @@ import { accessibleFoldGutter } from './folding';
 import { livePreview, previewEnv, tablePasteNotice } from './live-preview';
 import { markdownSupport } from './syntax';
 import { editorTheme } from './theme';
+import type { EditorPreferences } from '../domain/editor-preferences';
+import { defaultEditorPreferences } from '../domain/editor-preferences';
+import { indentationGuides } from './indentation-guides';
 
 export interface EditorCommands {
   save(): void;
@@ -30,12 +33,14 @@ export interface EditorOptions {
   readonly commands: EditorCommands;
   /** Turns an absolute file path into a URL the webview may load. */
   readonly fileUrl: (path: string) => string;
-  readonly onDocChanged: () => void;
+  readonly onDocChanged: (update: ViewUpdate) => void;
+  readonly onDocumentReset?: () => void;
   readonly onSelectionChanged?: () => void;
   readonly onTablePasteRejected?: (message: string) => void;
   readonly onFileTransfer?: (transfer: FileTransfer) => void;
   readonly onNativeImagePaste?: (insertion: Insertion) => void;
   readonly domFileDrop?: boolean;
+  readonly preferences?: EditorPreferences;
 }
 
 export interface Editor {
@@ -43,6 +48,7 @@ export interface Editor {
   readonly port: EditorPort<Text>;
   readonly sourceMode: () => boolean;
   toggleSourceMode(): void;
+  setPreferences(preferences: EditorPreferences): void;
   /** 1-based line at the top of the viewport. */
   topLine(): number;
   /** Scroll `line` to the top of the viewport and put the caret at its start. */
@@ -73,6 +79,15 @@ async function openSearch(view: EditorView, replace: boolean) {
 export function createEditor(options: EditorOptions): Editor {
   const mode = new Compartment();
   const env = new Compartment();
+  const preferenceCompartment = new Compartment();
+  let preferences = options.preferences ?? defaultEditorPreferences;
+  const preferenceExtensions = (): Extension => [
+    ...(preferences.lineNumbers ? [lineNumbers()] : []),
+    ...(preferences.indentationGuides ? [indentationGuides] : []),
+    ...(preferences.lineWrapping ? [EditorView.lineWrapping] : []),
+    EditorState.tabSize.of(preferences.tabSize),
+    EditorView.contentAttributes.of({ spellcheck: String(preferences.spellcheck) }),
+  ];
   let source = false;
   interface PendingInsertion { ranges: Array<{ from: number; to: number }>; valid: boolean }
   const pendingInsertions = new Set<PendingInsertion>();
@@ -109,14 +124,25 @@ export function createEditor(options: EditorOptions): Editor {
     dropCursor(),
     closeBrackets(),
     accessibleFoldGutter(),
-    EditorView.lineWrapping,
+    preferenceCompartment.of(preferenceExtensions()),
     syntaxHighlighting(classHighlighter),
+    // Some platforms send a lowercase character even with Shift held. The
+    // default character keymap tries the unshifted command first in that case.
+    // Resolve these distinct shifted document commands from modifier state.
+    Prec.highest(EditorView.domEventHandlers({ keydown(event, view) {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return false;
+      const key = event.key.toLowerCase();
+      if (key === 'z') redo(view);
+      else if (key === 's') options.commands.saveAs();
+      else return false;
+      return true;
+    } })),
     keymap.of([...appKeys, ...closeBracketsKeymap, ...formattingKeymap, ...markdownEditingKeymap, ...defaultKeymap, ...historyKeymap]),
     searchCompartment.of([]),
     mode.of(modeExtension()),
     env.of(envFor(path)),
     tablePasteNotice.of(options.onTablePasteRejected ?? (() => {})),
-    EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'off', autocapitalize: 'off', 'aria-label': 'Document' }),
+    EditorView.contentAttributes.of({ autocorrect: 'off', autocapitalize: 'off', 'aria-label': 'Document' }),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) for (const pending of pendingInsertions) {
         for (const range of pending.ranges) {
@@ -128,7 +154,7 @@ export function createEditor(options: EditorOptions): Editor {
         }
       }
       exposeFoldGutter(u.view);
-      if (u.docChanged) options.onDocChanged();
+      if (u.docChanged) options.onDocChanged(u);
       if (u.selectionSet || u.docChanged) options.onSelectionChanged?.();
     }),
   ];
@@ -174,6 +200,7 @@ export function createEditor(options: EditorOptions): Editor {
       invalidateInsertions();
       view.setState(stateFor(text, path));
       exposeFoldGutter(view);
+      options.onDocumentReset?.();
       return view.state.doc;
     },
     replace(text) {
@@ -199,9 +226,13 @@ export function createEditor(options: EditorOptions): Editor {
   const revealLine = (line: number) => {
     const { doc } = view.state;
     const target = doc.line(Math.min(Math.max(1, Math.round(line)), doc.lines));
+    const unfold: Array<ReturnType<typeof unfoldEffect.of>> = [];
+    foldedRanges(view.state).between(target.from, target.from, (from, to) => {
+      if (from < target.from && to >= target.from) unfold.push(unfoldEffect.of({ from, to }));
+    });
     view.dispatch({
       selection: EditorSelection.cursor(target.from),
-      effects: EditorView.scrollIntoView(target.from, { y: 'start' }),
+      effects: [...unfold, EditorView.scrollIntoView(target.from, { y: 'start' })],
     });
   };
 
@@ -232,5 +263,10 @@ export function createEditor(options: EditorOptions): Editor {
     };
   };
 
-  return { view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine, beginInsertion };
+  return { view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine, beginInsertion,
+    setPreferences(next) {
+      preferences = next;
+      view.dispatch({ effects: preferenceCompartment.reconfigure(preferenceExtensions()) });
+    },
+  };
 }

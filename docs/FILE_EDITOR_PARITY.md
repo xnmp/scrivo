@@ -1,6 +1,6 @@
 # Obsidian-class file editing: spec and delivery plan
 
-Status: active delivery plan, 2026-09-28. Scope is Scrivo as a desktop editor for local Markdown
+Status: implemented and verified, 2026-10-02. Scope is Scrivo as a desktop editor for local Markdown
 files. This document defines a useful parity target, not a claim that Scrivo will
 reproduce every Obsidian feature or keyboard shortcut.
 
@@ -43,7 +43,10 @@ Milestone 0's native behavior audit is in `docs/FILE_EDITOR_AUDIT.md`. Milestone
 editing interactions are implemented and verified in the current checkpoint.
 I1 rich clipboard conversion and I2 local attachments are implemented and
 verified in the latest checkpoint. W1 document tabs are implemented and verified
-in the 2026-09-28 checkpoint. D1 and editor preferences in E3 remain open.
+in the 2026-09-28 checkpoint. D1 editing outline/properties and E3 persistent
+editor preferences are implemented and verified in the 2026-10-02 checkpoint.
+All milestones in this scoped plan are delivered; verification and remaining
+platform/automation limitations are recorded in `docs/HANDOVER.md`.
 
 At the start of each later milestone, verify the precise existing behavior in
 the native app before adding code.

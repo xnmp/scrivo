@@ -74,6 +74,32 @@ the widget redraws changed cells and closes an input if another edit replaces it
 source. Row and column commands also edit Markdown directly. Table parsing and
 pipe escaping live in the pure `domain/table.ts` helpers.
 
+The editing outline indexes the complete Markdown in one shared module worker
+(`editor/headings.worker.ts`). Each editor coalesces changes for 250 ms, permits
+one request in flight, and rejects stale results. The worker imports only the
+Lezer block grammar and inert entity decoder, avoiding fenced code grammars and
+CodeMirror view code. Navigation maps indexed heading positions through the
+editor's composed change descriptions; it unfolds containing ranges and focuses
+the current source line. Closed outlines defer row creation; open outlines reuse
+existing buttons instead of rebuilding the DOM on each input.
+
+`domain/properties.ts` validates bounded leading YAML and returns scalar source
+changes. The Properties panel applies valid string, number, and boolean inputs
+as ordinary editor transactions. A field's typing groups into an undo step;
+field boundaries isolate history. Each change checks its expected scalar against
+the current document, preserving comments/order/unknown constructs. Multiline
+strings, custom tags, collections, aliases, and unsafe integers remain in source.
+Malformed or oversized YAML is never rewritten by the form.
+
+Editor preferences are immutable validated values in `domain/editor-preferences.ts`.
+The deferred platform store persists `scrivo.editor-preferences.v1` in WebView
+local storage and broadcasts changes to mounted editors and other windows.
+Storage failures retain usable session settings with visible persistence feedback.
+CodeMirror compartments reconfigure line numbers, viewport-only indentation
+guides, spellcheck, wrapping, and visual tab width without editing source/history.
+The settings and properties panels are mutually exclusive and document-local;
+preference values are shared across all documents.
+
 ## Layers
 
 ```
@@ -308,6 +334,12 @@ these numbers were an upper bound. The complete preview/tail path and its paired
 release outcomes are recorded in the handover.
 
 ## Testing
+
+Playwright serves the production web build with Vite preview. The browser
+adapter still uses in-memory files and the Rust CLI renderer bridge, which is
+registered for both dev and preview servers. This verifies emitted workers,
+code splitting, and styles while avoiding hundreds of development-module
+requests per cold navigation. `bun run dev` remains available for development.
 
 | Layer | Tool | What it asserts |
 |---|---|---|

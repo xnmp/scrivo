@@ -59,12 +59,12 @@
 .outline-panel .outline-level-5 button { padding-left: 56px; }
 .outline-panel .outline-level-6 button { padding-left: 68px; }
 
-body[data-mode='edit'] .outline-toggle,
-body[data-mode='edit'] .outline-panel { display: none; }
 body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 264px; }
+body[data-mode='edit'][data-outline='open'] .document-session:not([hidden]) .editor { margin-left: 264px; }
 
 @media (max-width: 900px) {
   body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 0; }
+  body[data-mode='edit'][data-outline='open'] .document-session:not([hidden]) .editor { margin-left: 0; }
   .outline-panel { width: min(240px, calc(100vw - 24px)); }
 }
 

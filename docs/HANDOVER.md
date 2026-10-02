@@ -1,4 +1,196 @@
-# Handover — 2026-09-28
+# Handover — 2026-10-02
+
+## 2026-10-02: D1 and E3 delivered; scoped file-editor parity complete
+
+This is the latest checkpoint. The historical sections below describe earlier
+states and must not be read as current outstanding work. The objective was
+local Markdown file editing parity defined by `docs/FILE_EDITOR_PARITY.md`, with
+extensive outcome verification. P1–P4, E1–E3, I1–I2, W1 and D1 are implemented.
+There are no remaining required coding tasks in that scoped plan. This checkpoint
+finishes the D1 groundwork from `bcc8e23` and adds persistent editor preferences.
+
+### User-visible behavior
+
+- Contents now works in editing and source modes, indexes the complete document,
+  updates after edits, and navigates to the current heading line. Navigation
+  unfolds containing sections and focuses the editor. Each tab retains its own
+  heading index; the shared outline shows only the active document.
+- Properties edits simple YAML string, finite exact number, and boolean scalars.
+  Valid input updates Markdown immediately, so autosave, recovery, dirty status,
+  and tab/window close all use the actual text. Each field's typing is undoable
+  as a group. The row Save button validates and returns focus to the editor;
+  Ctrl/⌘+S inside the panel validates pending values and saves the document.
+  Adding a property inserts a single source line; Ctrl/⌘+S also commits a valid
+  pending new property. Empty string values are allowed.
+- Properties preserves comments, key order, fences, unrelated values, and body
+  bytes. Nested values, lists, aliases, custom tags, multiline strings, nulls,
+  and integers outside JavaScript's safe range remain editable in source.
+  Invalid/oversized YAML shows an explanation and source action; the form never
+  rewrites it. Stale controls cannot overwrite a changed source scalar.
+- Settings offers line numbers, indentation guides, spellcheck, wrapping, and
+  tab display width (2/4/8 spaces). Preferences apply to every mounted editor
+  and persist across native launches. They change editor projections and never
+  Markdown bytes or undo history. Guides draw in source/code/front matter and
+  rendered nested list rows. Settings and Properties are mutually exclusive;
+  Escape returns focus to the relevant toggle.
+- Ctrl/⌘+Shift+Z now resolves redo from modifier state even when the WebView
+  reports lowercase `z`. Ctrl/⌘+Shift+S receives the same treatment for Save As.
+
+### Ownership and implementation
+
+- `src/domain/properties.ts` is the pure YAML source-span boundary. It validates
+  a leading BOM-aware LF/CRLF fenced mapping with `yaml.parseDocument`, bounded
+  to 256 KiB/1,000 lines and 64 KiB values. `readProperties`, `changeProperty`,
+  and `addProperty` never serialize the whole mapping. Changes re-read current
+  source and compare an expected scalar before replacing only its token.
+  Root flow/tagged maps reject property additions. `src/ui/properties.ts` owns
+  forms and validation; `src/editor-app.ts` dispatches normal CodeMirror changes.
+  A 257 KiB editor prefix suffices, avoiding full-document conversion for a
+  property keystroke. Field boundaries use history isolation, while typing
+  uses `input.type.properties` for ordinary grouping.
+- `src/editor/headings.ts` is a pure complete Markdown heading extractor. Its
+  worker parser imports GFM, the shared block grammar, and inert entity decoding.
+  It skips apparent headings in code, HTML, YAML, and display math, and produces
+  readable Unicode inline labels. `markdown-blocks.ts` contains the previously
+  inline math/front-matter grammar, re-exported from `syntax.ts` for existing
+  callers. The front-matter fence scan now reaches 257 KiB, including YAML
+  accepted by Properties.
+- `headings.worker.ts` + `heading-worker-client.ts` provide one lazily created
+  module worker per window, request IDs, and error/recreation handling.
+  `heading-observer.ts` owns a 250 ms debounce, one in-flight request per editor,
+  coalescing, stale rejection, and disposal. Worker results never mutate source.
+  `editor-app.ts` stores the immutable indexed document and composed change
+  descriptions; positions are remapped only when navigating, avoiding an
+  all-headings pass on each keystroke. `setup.revealLine` unfolds ranges before
+  scrolling. `tab-window.ts` keeps reading and editing heading sets per session.
+  `ui/outline.ts` defers row DOM while hidden and reuses rows while open.
+- `domain/editor-preferences.ts` validates immutable settings/defaults and
+  bounds visual indentation. `platform/editor-preferences.ts` loads deferred
+  WebView local storage under `scrivo.editor-preferences.v1`, shares subscribers
+  within the window, and receives storage events from other windows. Corrupt
+  data falls back safely; denied/quota storage leaves session settings usable
+  and shows persistence feedback. `setup.ts` reconfigures one preferences
+  compartment. `indentation-guides.ts` decorates only visible source lines,
+  reads at most 80 characters per line, and deduplicates split visible ranges.
+- Keep W1's ownership boundaries: each session retains its own Workspace,
+  controller, EditorApp, CodeMirror state, and watcher. Preference values are
+  shared, while metadata/forms/index observers belong to their editor session.
+
+### Review findings and resolved failures
+
+- Independent adversarial review found per-keystroke O(headings) remapping/DOM
+  rebuilds, ephemeral Properties drafts bypassing save/close, large YAML comment
+  leakage into Contents, unsafe-integer rounding, and guide allocation/alignment
+  issues. These were addressed with lazy navigation mapping/reused outline rows,
+  live scalar edits, aligned scan bounds, conservative scalar filtering, bounded
+  visible-line reads, and font-appropriate guide styles. Final E3 review reported
+  no further concrete persistence, tab-sharing, history, or accessibility defect.
+- An isolated undo/redo investigation reproduced CodeMirror trying Ctrl+Z before
+  Ctrl+Shift+Z for a lowercase shifted character. When an earlier undo event
+  remained, redo unexpectedly undid it. A high-priority DOM handler now resolves
+  the two distinct shifted document commands from modifier state and consumes
+  the command even when no redo exists. Browser and native undo/redo outcomes
+  verify the fix with multiple history events.
+- Native probes distinguished test interactions from product defects: Properties
+  remains open when switching reading→editing, so blindly toggling it hid the
+  target control; Contents covers the gutter on narrow windows; typing must
+  focus the editor. WebKitWebDriver also coalesces repeated identical key pairs
+  (`Added`→`Aded`, `Root`→`Rot`). Native specs use actual keyboard interaction and
+  strings without consecutive duplicate letters. No product timing workaround
+  was added.
+- Development-server browser runs intermittently failed to load modules with
+  Chromium `net::ERR_INSUFFICIENT_RESOURCES`; a trace showed failed requests for
+  `inline-ast.ts`/`widgets.ts` and a rejected editor dynamic import, leaving the
+  initial static Untitled shell. The specific host limit is unproven. Production
+  bundle verification passed the entire suite. Playwright now builds web assets
+  and serves Vite preview, with the same Rust renderer/asset middleware registered
+  for both dev and preview. This tests shipped workers/code splitting and avoids
+  hundreds of development-module requests per navigation. Development remains
+  available through `bun run dev`.
+
+### Verification and release evidence
+
+- Vitest: **444/444**, including scalar round trips, malformed/oversized YAML,
+  BOM/CRLF/comments/order, unsupported constructs, precision, stale values,
+  full heading extraction, async stale/disposal/retry, preferences validation,
+  failed persistence, and subscriber disposal.
+- Rust: **60/60**. App and native E2E TypeScript checks passed; `git diff --check`
+  passed. `build:web`, debug native build, and release `tauri build --no-bundle`
+  passed.
+- Chromium: **126/126** against production assets, 2 workers, 36.7 seconds.
+  New specs cover property save/undo/redo/reopen and unknown YAML preservation;
+  adding, invalid/stale inputs, Ctrl+S, tab isolation and 320px focus/overflow;
+  editing outline updates/navigation and the 443 KiB fixture's tail; preference
+  reload/tab sharing/source guides/undo preservation; and saved find/replace
+  outcomes. Earlier dev-module runs had resource failures described above.
+- Native WebKitGTK: the full suite passed **24/24 spec files**, then the new
+  `editor-find` spec passed independently, giving coverage for **all 25 current
+  spec files**. `properties-outline` verifies real BOM/CRLF/comment/unknown YAML
+  bytes, undo/redo/save, native worker navigation/unfolding, and edited headings.
+  `editor-settings` relaunches the app and verifies persisted preferences and
+  unchanged source/history. `editor-find` checks replace-all, undo/redo, exact
+  BOM/CRLF disk bytes, and native reopen. Existing conflict/recovery/attachment/
+  tab/table/large-reading tests remain passing.
+- Visual inspection used agent-browser on dev and built preview, with named
+  controls and no console errors; light/dark 320px and 1280px settings screens
+  were inspected. Browser responsive properties/focus assertions passed.
+- Bundle gate: **28/41 KiB** static startup; **42/56 KiB** known prepaint;
+  **3,079 KiB** declared deferred graph, including assets. The independent
+  heading worker is about **214 KiB** uncompressed. Extracting the block grammar
+  kept CodeMirror/code-language loaders out of that worker (the first prototype
+  accidentally bundled ~1.27 MiB).
+- Twelve paired release startup rounds per fixture, baseline W1 binary SHA-256
+  `d97035bccb02a37151aa2799558939020f596ae6157d29e908250c3ba7b5e882`:
+  medium baseline/candidate content medians **406/409 ms**, paired delta **−2 ms**,
+  candidate faster 7/12; large **386/396 ms**, paired delta **+8 ms**, faster 2/12.
+  All 24 paired rounds passed reviewed viewport references. These are small
+  host-dependent differences, not evidence of a meaningful startup speed change.
+  Logs: `bench/results/paired-d1-e3-{medium,large}.txt`. Old README timings belong
+  to their explicitly named builds/runs and should not be mixed with these.
+
+### Installed artifact and reproducible commands
+
+The verified release artifact is `src-tauri/target/release/scrivo`, installed to
+`/home/chong/.local/bin/scrivo`. Both should have SHA-256
+`d58d5be3fbf26809182157883f6b6193120c5b56c9cf134a8f2e0dbe7dd519ca`.
+Existing desktop windows retain their previous process; the next launch loads
+this release. Native automation and benchmarks used isolated displays.
+
+```sh
+bun run typecheck
+bunx tsc -p e2e-native/tsconfig.json --noEmit
+bun run test
+cargo test --manifest-path src-tauri/Cargo.toml
+bunx playwright test --project=chromium --workers=2
+bun run test:e2e:native
+bunx tauri build --no-bundle
+```
+
+For the exact successful browser run, a temporary Playwright config targeted
+the verified preview at `http://127.0.0.1:5174`, with Chromium and two workers.
+The checked-in Playwright config now starts an equivalent built preview on 1421.
+`/tmp/scrivo-built-browser.log`, `/tmp/scrivo-final-native.log`, and
+`/tmp/scrivo-find-native2.log` hold session-local detailed outcomes; they may be
+removed by the host and are not needed to reproduce the commands above.
+
+### Next agent / limits
+
+No open implementation item remains in `FILE_EDITOR_PARITY.md`. Begin any future
+work from the new checkpoint, not from the historical D1 WIP below. This plan
+intentionally concerns local file editing; vault search/backlinks/graph/sync,
+plugins and other Obsidian vault workflows remain outside its defined scope.
+Verification here is Linux Chromium + native WebKitGTK; macOS/Windows launches
+and a native OS drag gesture are not automated in this environment. Browser
+transfer outcomes and native attachment file/clipboard integration are covered.
+Properties is deliberately a scalar form; rename/delete/complex metadata editing
+continues through source. Tabs remain mounted, so many large open documents grow
+memory usage. Recovery is asynchronous and retains the previously documented
+very-latest-keystroke kill window. No new timing assumption weakens file safety.
+
+If a shell command fails sandbox setup with a bubblewrap `.codex` mount
+`Quota exceeded`, use an approved escalated command: filesystem capacity/inode
+checks showed ample space, and this was a sandbox setup failure. Git writes and
+installation also require escalation under this workspace's permissions.
 
 ## 2026-09-28: D1 properties WIP handoff
 
