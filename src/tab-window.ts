@@ -12,7 +12,9 @@ import { createTabBar } from './ui/tabs';
 import { createFinder } from './viewer/find';
 import { createViewer, type Viewer } from './viewer/viewer';
 import type { Outline } from './ui/outline';
-import { createAppearanceSettings } from './ui/appearance-settings';
+import { commands, bindings, eventChord, matchCommand, displayChord } from './domain/commands';
+import { commandPreferences } from './platform/command-preferences';
+import { createWindowChrome } from './ui/window-chrome';
 
 export async function startTabWindow(context: {
   readonly platform: Platform;
@@ -23,9 +25,12 @@ export async function startTabWindow(context: {
   readonly setFollowLink: (handler: (href: string) => void) => void;
 }): Promise<void> {
 const { platform, tauri, prompter, preShown } = context;
+document.body.dataset.native = String(tauri);
 const loadEditorModule = () => import('./editor-app');
 const FIND_REFRESH_MS = 250;
-const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
+const preferences = commandPreferences();
+const mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+const commandHint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / ');
 const panels = document.getElementById('tab-panels')!;
 let tabs: TabRegistry = emptyTabs();
 let outline: Outline | null = null;
@@ -47,6 +52,16 @@ let identityTail: Promise<void> = Promise.resolve();
 let releaseInitialIdentity!: () => void;
 const initialIdentityReady = new Promise<void>((resolve) => { releaseInitialIdentity = resolve; });
 const activeSession = (): Session | null => sessions.get(tabs.activeId ?? '') ?? null;
+await platform.window.onCloseRequested(async () => {
+  await initialIdentityReady;
+  for (const tab of tabs.tabs) {
+    if (!(await sessions.get(tab.id)?.workspace.requestClose())) {
+      for (const open of sessions.values()) open.workspace.resumeAfterCancelledClose();
+      return false;
+    }
+  }
+  return true;
+});
 let outlineLoading = false;
 function refreshOutline(): void {
   const headings = activeSession()?.headings() ?? [];
@@ -85,8 +100,19 @@ const tabBar = createTabBar(document.getElementById('tab-bar')!, {
   close: (id) => void close(id),
   create: () => void createUntitled(),
 });
-const renderTabs = () => tabBar.render(tabLabels(), tabs.activeId);
-createAppearanceSettings(document.getElementById('tab-bar')!);
+const renderTabs = () => { tabBar.render(tabLabels(), tabs.activeId); updateBreadcrumb(); };
+const { appearance, picker, hotkeys, updateDocument, refreshControls } = createWindowChrome(
+  document.getElementById('tab-bar')!, document.getElementById('document-toolbar')!, {
+    window: platform.window, native: tauri, mac, preferences, execute: id => void execute(id), notify: prompter.notify,
+  });
+const updateBreadcrumb = () => { const session = activeSession(); updateDocument(session?.workspace.documentPath() ?? null, session?.workspace.mode() === 'edit'); };
+const refreshHints = () => {
+  refreshControls();
+  const session = activeSession();
+  if (session?.workspace.mode() === 'view') session.status.set(`Reading · ${commandHint('reading') || 'Use menu'} to edit`);
+};
+preferences.subscribe(refreshHints);
+
 
 function activate(id: string): void {
   if (!sessions.has(id)) return;
@@ -114,6 +140,7 @@ async function reconcileIdentity(id: string, path: string | null): Promise<void>
     if (!tabs.tabs.some((tab) => tab.id === id)) return;
     if (sessions.get(id)?.workspace.documentPath() !== path) return;
     tabs = updateTabIdentity(tabs, id, identity);
+    if (path && identity && await platform.fs.stat(path)) preferences.remember(path, identity);
     if (reservedIdentities.get(id)?.identity === identity) reservedIdentities.delete(id);
     renderTabs();
   } catch (error) {
@@ -265,7 +292,7 @@ function makeSession(id: string, path: string | null, initial = false): Session 
       host.dataset.mode = mode;
       if (tabs.activeId === id) document.body.dataset.mode = mode;
       if (mode === 'view') {
-        status.set(`Reading · ${modKey}E to edit`);
+        status.set(`Reading · ${commandHint('reading') || 'Use menu'} to edit`);
         if (tabs.activeId === id) viewer.focus();
       } else {
         findBar?.close();
@@ -405,54 +432,81 @@ async function close(id: string): Promise<void> {
   else activate(tabs.activeId);
 }
 
-window.addEventListener('keydown', (event) => {
-  if (event.defaultPrevented || event.altKey) return;
-  if (document.querySelector('dialog[open]')) return;
-  const session = activeSession();
-  if (!session) return;
-  const mod = event.ctrlKey || event.metaKey;
-  const key = event.key.toLowerCase();
-  if (mod && key === 'tab') {
-    event.preventDefault();
-    const index = tabs.tabs.findIndex((tab) => tab.id === tabs.activeId);
-    const next = tabs.tabs[(index + (event.shiftKey ? -1 : 1) + tabs.tabs.length) % tabs.tabs.length];
-    if (next) activate(next.id);
+async function execute(id: string): Promise<void> {
+  try {
+    const session = activeSession();
+    if (id === 'palette') {
+      picker.open('Command palette', commands.map(command => ({ id: command.id, label: command.label, detail: command.group,
+        hint: bindings(command, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / '), run: () => void execute(command.id) })));
+    } else if (id === 'recent') {
+      picker.open('Open recent', preferences.recents().map(item => ({ id: item.identity, label: displayName(item.path), detail: item.path, run: () => void openPath(item.path) })),
+        { label: 'Clear recent files', run: () => { void execute('clearRecents').then(() => execute('recent')); } });
+    } else if (id === 'appearance') appearance.open();
+    else if (id === 'resetAppearance') appearance.reset();
+    else if (id === 'hotkeys') hotkeys.open();
+    else if (id === 'clearRecents') { if (!preferences.clearRecents()) prompter.notify('Cleared for this window. Could not save recent files.'); }
+    else if (id === 'open') await openFromDialog();
+    else if (id === 'new') await createUntitled();
+    else if (!session) return;
+    else if (id === 'save') {
+      if (session.editorApp()?.savePendingProperties() === false) return;
+      await session.workspace.save();
+    } else if (id === 'saveAs') {
+      if (session.editorApp()?.savePendingProperties() === false) return;
+      await session.workspace.saveAs();
+    } else if (id === 'close') await close(session.id);
+    else if (id === 'reading') await session.workspace.toggle();
+    else if (id === 'contents') outline?.toggle();
+    else if (id === 'nextTab' || id === 'previousTab') {
+      const index = tabs.tabs.findIndex(tab => tab.id === tabs.activeId);
+      const next = tabs.tabs[(index + (id === 'previousTab' ? -1 : 1) + tabs.tabs.length) % tabs.tabs.length];
+      if (next) activate(next.id);
+    } else if (session.workspace.mode() === 'view' && id.startsWith('find')) {
+      if (id === 'find') session.findBar().open();
+      else session.findBar().next(id === 'findPrevious' ? -1 : 1);
+    } else {
+      if (session.workspace.mode() !== 'edit') await session.workspace.toggle();
+      const app = session.editorApp();
+      if (id === 'properties') app?.openProperties();
+      else if (id === 'editorSettings') app?.openSettings();
+      else await app?.editor.runCommand(id);
+    }
+    updateBreadcrumb();
+  } catch (error) { prompter.notify(`Could not run command: ${String(error)}`); }
+}
+// A single capture dispatcher owns application shortcuts, including table widgets.
+// Form text fields retain native text-editing history.
+window.addEventListener('keydown', event => {
+  if (event.defaultPrevented || event.isComposing || document.querySelector('.modal-backdrop')) return;
+  const modal = document.querySelector('dialog[open]');
+  if (modal) {
+    const definition = matchCommand(eventChord(event, mac), preferences.hotkeys(), mac);
+    if (modal.id === 'appearance-settings' && ['appearance', 'resetAppearance'].includes(definition?.id ?? '')) {
+      event.preventDefault(); void execute(definition!.id);
+    }
     return;
   }
-  if (mod && !event.shiftKey && key === 'w') { event.preventDefault(); void close(session.id); return; }
-  if (session.workspace.mode() !== 'view') return;
-  const findStep = (key === 'g' && mod) || (event.key === 'F3' && !mod) ? (event.shiftKey ? -1 : 1) : 0;
-  if (findStep) { event.preventDefault(); session.findBar().next(findStep); return; }
-  if (event.key === 'Escape') { session.findBar().dismiss(); return; }
-  if (!mod || event.shiftKey) return;
-  const run = {
-    e: () => session.workspace.toggle(),
-    o: openFromDialog,
-    n: createUntitled,
-    s: () => session.workspace.save(),
-    f: () => session.findBar().open(),
-  }[key];
-  if (run) { event.preventDefault(); void run(); }
-});
+  if (event.key === 'Escape') { if (activeSession()?.workspace.mode() === 'view') activeSession()?.findBar().dismiss(); return; }
+  const command = matchCommand(eventChord(event, mac), preferences.hotkeys(), mac);
+  if (!command) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && target.matches('input, textarea, select') && !target.closest('.cm-lp-table')
+    && (['undo', 'redo', 'Format'].includes(command.group === 'Format' ? 'Format' : command.id)
+      || /^(Mod|Ctrl|Meta)\+(Shift\+)?Key[ZY]$/.test(eventChord(event, mac)))) return;
+  event.preventDefault(); void execute(command.id);
+}, true);
 
 const initialId = 'initial';
 tabs = addTab(tabs, initialId, null);
 const initial = makeSession(initialId, null, true);
 renderTabs();
-await initial.workspace.start();
-if (!preShown) traceMark('document shown');
-const initialPath = initial.workspace.documentPath();
-if (initialPath !== null) await queueIdentity(initialId, initialPath);
-releaseInitialIdentity();
-platform.window.onCloseRequested(async () => {
-  for (const tab of tabs.tabs) {
-    if (!(await sessions.get(tab.id)?.workspace.requestClose())) {
-      for (const open of sessions.values()) open.workspace.resumeAfterCancelledClose();
-      return false;
-    }
-  }
-  return true;
-});
+try {
+  await initial.workspace.start();
+  if (!preShown) traceMark('document shown');
+  const initialPath = initial.workspace.documentPath();
+  if (initialPath !== null) await queueIdentity(initialId, initialPath);
+} finally { releaseInitialIdentity(); }
+refreshHints();
 platform.window.onFocus(() => { const session = activeSession(); if (session) void session.workspace.checkDisk(); });
 requestIdleCallback(() => {
   void import('./app/file-drops').then(({ routeFileDrop }) =>

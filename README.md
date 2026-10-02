@@ -16,7 +16,7 @@ scrivo                  # start a new document
 In the reading view, `Ctrl+F` finds text, `Enter` and `Shift+Enter` move between
 matches, and `Esc` closes find. Documents with headings have a Contents sidebar;
 fenced code is highlighted after the document appears. `Ctrl+O` opens a file;
-`Ctrl+N` starts a new document. Each file opens in its own tab. `Ctrl+Tab` and
+`Ctrl+T` (or `Ctrl+N`) starts a new tab. `Ctrl+R` opens recent files; the picker can clear its history. Each file opens in its own tab. `Ctrl+Tab` and
 `Ctrl+Shift+Tab` switch tabs, and `Ctrl+W` closes the active tab; closing a dirty
 tab asks what to do with that document. Opening the same file through a symlink
 selects its existing tab. Changes made by another program are detected while
@@ -62,7 +62,7 @@ their copy has finished writing.
 
 ## Build and test
 
-Install [Bun](https://bun.sh/), Rust, and the [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/) for your platform. On Linux, the native test suite also needs `tauri-driver`, `WebKitWebDriver`, `xvfb-run`, `dbus-run-session`, and `openbox`.
+Install [Bun](https://bun.sh/), Rust, and the [Tauri 2 system dependencies](https://v2.tauri.app/start/prerequisites/) for your platform. On Linux, the native test suite also needs `tauri-driver`, `WebKitWebDriver`, `xvfb-run`, `dbus-run-session`, `openbox`, Python 3, and `libXtst` for physical pointer verification on the private test display.
 
 ```sh
 bun install
@@ -79,13 +79,31 @@ display. `bun run test:e2e:all` also runs Playwright WebKit when its host depend
 are installed. See [architecture](docs/ARCHITECTURE.md) and [conventions](docs/CONVENTIONS.md)
 for the code layout, safety model, and performance decisions.
 
+## Commands and hotkeys
+
+Open the command palette with **Ctrl/⌘+P**. Search command names or abbreviations,
+use arrow keys to select, and Enter to run. The main menu groups commands under
+File, Edit, Format, View and Settings. **Customize hotkeys** in Settings or the
+palette lets you remove bindings, record up to four shortcuts per command, and
+restore defaults. Conflicting bindings show the existing command; remove that
+binding before reassigning it. Preferences persist across launches.
+
+**Ctrl/⌘+T** creates a tab; **Ctrl/⌘+R** opens recents; table insertion is now
+**Ctrl/⌘+Shift+T**. Standard select/copy/cut/paste shortcuts stay available, and
+form fields retain native text undo. Menus and palette show the current bindings.
+
+Linux and Windows use an integrated tab/title row with window controls and a
+blank area for dragging; double-click the blank area to maximize or restore.
+macOS retains its native title bar.
+
 ## Appearance
 
 Open **Appearance** in the tab strip (Ctrl/⌘+,) to choose system/light/dark mode,
 an accent, text and monospace fonts, and font size. Settings apply to reading and
 editing and persist across launches. Import self-contained Obsidian `theme.css`
 files to use their compatible CSS variables, including per-level heading colors.
-You can retain and switch between imported themes. Reset with Ctrl/⌘+Shift+, if a
+Charcoal, Arctic, Ember and Paper are included, each with light and dark palettes.
+You can also retain and switch between imported themes. Reset with Ctrl/⌘+Shift+, if a
 custom theme hides the controls.
 
 Obsidian-specific layouts, plugins, theme marketplaces, and local companion assets
@@ -135,12 +153,19 @@ check. The [raw editor log](bench/results/verified-medium-edit-chunked.txt) is a
 Scrivo measurement, not a paired Typora comparison. Reproduce it with
 `node bench/bench.mjs scrivo bench/fixtures/medium.md 12 --edit`.
 
-The current web build gate counts 33 KiB of linked static startup JS/CSS against a 41 KiB
-budget. Tauri's window API loads during boot; including it gives 47 KiB of known
+The current web build gate counts 36 KiB of linked static startup JS/CSS against a 41 KiB
+budget. Tauri's window API loads during boot; including it gives 50 KiB of known
 prepaint JS/CSS against a 56 KiB budget. The tab shell remains deferred. The gate also validates and reports a
-1,060 KiB math font referenced by the reading-view stylesheet and a 3,085 KiB
+1,060 KiB math font referenced by the reading-view stylesheet and a 3,114 KiB
 declared deferred graph, which includes the window API, KaTeX CSS/fonts, and
 features loaded later.
+
+The integrated chrome release was checked on 2026-10-03 against freshly reviewed
+reader and editor screenshots. Three verified launches per reader fixture reached
+the complete visible interface at medians of 411 ms (medium) and 422 ms (large).
+These are small regression smoke samples, with isolated application data, rather
+than a new paired speed comparison. [Release logs and conditions](docs/HANDOVER.md)
+include the editing path and installed binary checksum.
 
 Large startup documents receive the first complete renderer chunk before the
 cached full document. The reading view inserts that preview for the first viewport,

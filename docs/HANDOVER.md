@@ -1,4 +1,203 @@
-# Handover — 2026-10-02
+# Handover — 2026-10-03
+
+## 2026-10-03: commands, bundled themes and comprehensive UI sweep
+
+This work follows `ce3389a`. The active requests were built-in selectable themes,
+configurable hotkeys, Ctrl+T new tab, Ctrl+R recents, a command palette, integrated
+Obsidian-style chrome, and a comprehensive aesthetic sweep. Implementation,
+review, release build, installation and verification are complete. Older sections
+below are historical; start with this section when resuming.
+
+### User-visible behavior
+
+- Ctrl/⌘+T and Ctrl/⌘+N create a tab; Ctrl/⌘+R searches recent files. Selecting an
+  existing open file activates its tab instead of duplicating it. Recent history
+  is identity-deduplicated, bounded to 50 entries, and can be cleared in the picker,
+  menu or palette. Missing files report errors; untitled paths are not recorded.
+- Ctrl/⌘+P or Ctrl/⌘+Shift+P opens a command palette. Word and abbreviation search,
+  arrow navigation, Enter, Escape, shortcut hints and document commands work in
+  both reading and editing. A picked command runs after close/focus restoration.
+- Main menu groups File, Edit, Format, View and Settings. Arrow keys navigate;
+  Right opens a group and Left returns. Current bindings appear beside commands.
+- Customize hotkeys accepts up to four chords per command, supports removal,
+  detects conflicts (including Ctrl/Meta aliases of Mod), persists across launches,
+  and can restore defaults. Standard select/copy/cut/paste chords are protected;
+  form text fields retain native undo/redo even when application bindings change.
+- Table insertion moved from Ctrl/⌘+T to Ctrl/⌘+Shift+T. Structural table/list
+  editing remains unchanged. Application shortcuts work inside rendered cells.
+- Appearance includes Charcoal, Arctic, Ember and Paper, each with light/dark
+  palettes. These are original bundled palettes using Obsidian variables, not
+  claims of exact third-party themes. Local CSS imports and prior controls remain.
+  Builtins cannot be removed. Packaged palette updates reconcile selected CSS.
+- Linux/Windows have an integrated tab/title row with outlined native controls and
+  a blank drag region. Double-click maximizes/restores. macOS keeps decorations.
+  Only tabs scroll, leaving the native controls visible at minimum width.
+- Document toolbar aligns Contents, title and reading/editing control. Editor
+  Properties/Settings use shared icons. Contents is a flush sidebar on desktop and
+  an overlay on narrow windows. Reader/editor top padding, panels, dialogs, table
+  menus and search surfaces use consistent tokens. No new motion dependency.
+- Appearance import details are collapsible, the color preview uses bundled theme
+  accent, and primary actions use the theme's text-on-accent variable.
+
+### Ownership and important seams
+
+- Pure logic: `domain/commands.ts`, `domain/hotkeys.ts`, `domain/recents.ts`,
+  `domain/search.ts`. Physical key codes preserve shifted native key behavior.
+- Infrastructure: `platform/command-preferences.ts`; keys `scrivo.hotkeys.v1` and
+  `scrivo.recents.v1`. Denied storage keeps session state and reports unsuccessful
+  writes; malformed/oversized JSON falls back safely. Storage events synchronize
+  other windows. Successful identity/stat reconciliation updates recent history.
+- `tab-window.ts` owns active-tab command execution and file ownership; existing
+  serial Workspace/controller operations remain authoritative. Chrome composition
+  is `ui/window-chrome.ts`; menus, picker and hotkey settings are separate components.
+- One capture dispatcher owns application shortcuts. `editor/setup.ts` opt-in
+  externalShortcuts removes fixed application/format/history/fold keys, search
+  bindings and conflicting CodeMirror defaults. Standalone editor tests/callers
+  retain default behavior. `formattingCommands` exposes named editor actions.
+- Properties open is idempotent while visible, preserving unfinished new-property
+  input. Saves call commit() first; invalid pending values prevent save. The actual
+  editor opts out of the legacy Properties Ctrl+S listener, so removed bindings
+  cannot still save from a form. Successful commit restores document focus so the
+  next Undo changes Markdown rather than a text field's private history.
+- WindowPort close registration returns Promise<void> and is awaited before the
+  custom controls appear. The guard awaits initialIdentityReady, then checks all
+  workspaces; readiness releases in finally. UI close calls native close(), never
+  destroy(), preserving cancellation/recovery policy. New permissions allow
+  close/minimize/toggle-maximize/start-dragging.
+- Lightweight stored-chord matching runs during boot so custom shortcuts pressed
+  before controls load can replay. Shims must remain the first static import.
+  Palette/library/chrome code remain deferred; selected CSS applies synchronously.
+- Builtin catalog is `ui/builtin-themes.ts`; registration reconciles active builtin
+  CSS and persistence without adding the catalog to the startup import graph.
+
+### Review findings and completed verification
+
+- Independent adversarial reviews found and verified fixes for CodeMirror fallback
+  collisions after unbinding, draft loss when reopening Properties, builtin CSS
+  updates, native edit shortcuts, close guard registration, and palette focus.
+- Pointer instrumentation reproduced pointer-down detail=0 versus mouse-down=1;
+  the blank drag region also needed explicit stretch under centered flex alignment.
+  Mouse-down/full-height fixes are implemented and verified with physical XTest
+  input on private Xvfb. WebDriver's DOM pointer simulation does not move the X
+  pointer used by GTK native window moves. Openbox adjusts the first drag from
+  the top edge: requested (+60,+40) yielded (+60,+29); a second drag yielded exactly
+  (+60,+40). The test asserts substantial native displacement in both requested
+  directions rather than exact frame coordinates. No product workaround was added.
+- 465 unit tests pass; app/native test TypeScript and git diff check pass.
+- Full Chromium regression: 134 passed before final polish/review follow-ups.
+  Follow-ups: 16 appearance/commands/properties, 27 command/table outcomes,
+  15 command/menu/editing-outline/search/appearance checks, 13 command/properties
+  checks after the final focus fix, and the final seven command tests passed.
+- Native commands: one comprehensive scenario passed physical dragging, maximize/
+  restore, minimize, new tab, dirty window-close cancellation, recents, palette
+  formatting with real file bytes, and hotkey/theme persistence across relaunch.
+  Native Properties/Outline: both tests passed, including BOM/CRLF/comments and
+  unknown-value preservation, Undo after save, and heading navigation/unfolding.
+  Native Appearance: imported variables and persistence passed without changing
+  the file. All use private Xvfb/DBus/Openbox; no host desktop automation was used.
+- Visual coverage and real rejected alternatives: `docs/UI_SWEEP.md`. Captures
+  inspected dark reader/editor/Appearance/palette/Contents/Properties/Settings,
+  light hotkeys/menu/recents, Appearance at 320×700 and native header.
+- Production gate currently 36/41 KiB static startup, 50/56 KiB known prepaint,
+  about 3,114 KiB deferred. No new cold-start speedup claim: earlier investigations
+  found native GTK/WebKit dominates. New shell geometry has reviewed benchmark
+  references and verified release smoke measurements below.
+
+### Release, installation and startup evidence
+
+`bunx tauri build --no-bundle` succeeded. Both the release binary at
+`src-tauri/target/release/scrivo` and the installed `/home/chong/.local/bin/scrivo`
+have SHA256:
+
+```text
+8344edf6a881b9281d0538b215f97d9dc596fcb5d2be7665714ac8ab4d365017
+```
+
+Installation used a temporary sibling and atomic rename; existing user windows
+were not closed. The next launch uses this release. The prior binary is preserved
+at `/tmp/scrivo-before-chrome-release` for this session (not a durable artifact).
+Both `text/markdown` and `text/x-markdown` defaults remain
+`dev.scrivo.editor.desktop`, whose launcher uses `/home/chong/.local/bin/scrivo %F`.
+
+Reviewed fresh native 1280×720 reader-medium, reader-large and editor-medium final
+captures before replacing their JSON and PNG references in `bench/references/`.
+Exploratory `--unverified` captures deliberately exit 1 and are not verification
+results. Then ran three verified launches per path, sequentially without builds
+or other native tests running, using `SCRIVO_TRACE` via `--trace` and isolated
+`XDG_DATA_HOME=/tmp/scrivo-chrome-bench-data`:
+
+| Path | Passed | Window median | Complete visible interface median | PSS median |
+| --- | ---: | ---: | ---: | ---: |
+| Medium reader | 3/3 | 232 ms | 411 ms | 256 MiB |
+| Large reader | 3/3 | 237 ms | 422 ms | 419 MiB |
+| Medium editor | 3/3 | 235 ms | 496 ms | 290 MiB |
+
+Content and stable-viewport metrics coincide in these runs. References include the
+settled chrome; these figures describe the complete visible interface, and not
+just the earlier prefetched document paint. Sampling intervals were 18–26 ms.
+Three launches establish a smoke check, not a paired performance comparison or
+an almost-instant startup claim. Do not compare these absolute medians against
+historical runs with different geometry, host load or binary references.
+
+Committed raw logs: `bench/results/chrome-shipping-medium.txt`,
+`chrome-shipping-large.txt`, and `chrome-shipping-medium-edit.txt` include trace
+marks. Reproduce with the release built from this checkpoint and the reviewed
+references:
+
+```sh
+XDG_DATA_HOME=/tmp/scrivo-chrome-bench-data node bench/bench.mjs scrivo bench/fixtures/medium.md 3 --trace
+XDG_DATA_HOME=/tmp/scrivo-chrome-bench-data node bench/bench.mjs scrivo bench/fixtures/large.md 3 --trace
+XDG_DATA_HOME=/tmp/scrivo-chrome-bench-data node bench/bench.mjs scrivo bench/fixtures/medium.md 3 --edit --trace
+```
+
+Session-only logs under `/tmp`: `scrivo-unit.log`, `scrivo-full-e2e.log`,
+`scrivo-final-e2e.log`, `scrivo-final-command-properties.log`,
+`scrivo-command-focus-final.log`, `scrivo-native-commands-final.log`,
+`scrivo-native-final-recheck.log` (Properties/Outline passed; earlier overstrict
+drag assertion failed), `scrivo-native-final.log` (Appearance passed; earlier
+issues subsequently fixed), and `scrivo-release-build.log`. Final inspected
+screens include `scrivo-final-{reader,menu,outline,narrow}.png`,
+`scrivo-native-chrome.png`, and `scrivo-chrome-{medium,large,medium-edit}.png`.
+Temporary logs/captures are not durable; committed references and results are.
+
+### Reproduce
+
+```sh
+bun run typecheck
+bunx tsc -p e2e-native/tsconfig.json --noEmit
+bun run test
+bunx playwright test --project=chromium --workers=1
+bun run build:native-test
+env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE GDK_BACKEND=x11 \
+  xvfb-run -a dbus-run-session -- e2e-native/with-wm.sh bunx wdio run \
+  e2e-native/wdio.conf.ts --spec e2e-native/specs/commands.spec.ts
+bunx tauri build --no-bundle
+```
+
+Native fixtures create files under ~/.scrivo-e2e-native and use private Xvfb/DBus/openbox.
+The drag helper requires Python 3/libXtst and refuses non-Xvfb displays.
+Never automate/close the user desktop. Install affects subsequent launches only.
+
+### Scope boundaries
+
+No Obsidian vault/plugin/marketplace layer, remote-theme downloading or exact
+community DOM emulation. Windows/macOS were not executed; macOS keeps native chrome.
+Imported CSS is user trusted and can override layout. Absolute recent paths are
+persisted locally and have an explicit clear action. Native drag result, installed
+checksum and updated benchmark references are recorded above.
+
+### Resume guidance
+
+No required task remains open for this checkpoint. The most useful follow-up is
+native Windows/macOS verification of chrome, keyboard layouts and modal focus.
+If startup optimization resumes, preserve this release and its references as the
+baseline, use paired runs with each binary's reviewed reference, and separate
+document paint from complete chrome readiness. Keep editor, theme catalog and
+command UI off the static startup graph; rerun the bundle gate after import changes.
+Do not automate the host desktop or discard any existing user's Markdown changes.
+
+---
+
 
 ## 2026-10-02: appearance system, gutter fix, startup follow-up
 

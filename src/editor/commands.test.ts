@@ -318,12 +318,12 @@ describe('block inserts', () => {
   });
 
   it('inserts a GFM table with the first header cell selected', () => {
-    const result = run('Mod-t', 'hello|');
+    const result = run('Mod-Shift-t', 'hello|');
     expect(result).toBe('hello\n\n| ⟦Column 1⟧ | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |');
   });
 
   it('inserts a table at document start', () => {
-    const result = run('Mod-t', '|');
+    const result = run('Mod-Shift-t', '|');
     expect(result).toBe('| ⟦Column 1⟧ | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |');
   });
 });

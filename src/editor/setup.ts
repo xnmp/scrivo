@@ -1,7 +1,7 @@
 // Editor composition: builds the CodeMirror view and exposes it through EditorPort.
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap, redo, undo } from '@codemirror/commands';
-import { foldedRanges, syntaxHighlighting, unfoldEffect } from '@codemirror/language';
+import { foldCode, unfoldCode, foldedRanges, syntaxHighlighting, unfoldEffect } from '@codemirror/language';
 import { Compartment, EditorSelection, EditorState, Prec, Transaction, type Extension, type Text } from '@codemirror/state';
 import { drawSelection, dropCursor, EditorView, keymap, lineNumbers, type KeyBinding, type ViewUpdate } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
@@ -9,7 +9,7 @@ import type { EditorPort } from '../app/ports';
 import { documentDir } from '../domain/document';
 import { attachmentEvents, type FileTransfer, type Insertion } from './attachments';
 import { richPaste } from './clipboard';
-import { formattingKeymap } from './commands';
+import { formattingCommands, formattingKeymap } from './commands';
 import { markdownEditingKeymap } from './editing';
 import { accessibleFoldGutter } from './folding';
 import { livePreview, previewEnv, tablePasteNotice } from './live-preview';
@@ -41,6 +41,7 @@ export interface EditorOptions {
   readonly onNativeImagePaste?: (insertion: Insertion) => void;
   readonly domFileDrop?: boolean;
   readonly preferences?: EditorPreferences;
+  readonly externalShortcuts?: boolean;
 }
 
 export interface Editor {
@@ -48,6 +49,7 @@ export interface Editor {
   readonly port: EditorPort<Text>;
   readonly sourceMode: () => boolean;
   toggleSourceMode(): void;
+  runCommand(id: string): Promise<void>;
   setPreferences(preferences: EditorPreferences): void;
   /** 1-based line at the top of the viewport. */
   topLine(): number;
@@ -65,10 +67,10 @@ export function initialCursor(text: string): number {
 
 // Search is loaded on first use.
 const searchCompartment = new Compartment();
-async function openSearch(view: EditorView, replace: boolean) {
+async function openSearch(view: EditorView, replace: boolean, external = false) {
   const search = await import('@codemirror/search');
   if (!search.searchPanelOpen(view.state)) {
-    view.dispatch({ effects: searchCompartment.reconfigure([search.search({ top: true }), keymap.of(search.searchKeymap)]) });
+    view.dispatch({ effects: searchCompartment.reconfigure([search.search({ top: true }), keymap.of(external ? search.searchKeymap.filter(binding => binding.key === 'Escape') : search.searchKeymap)]) });
   }
   search.openSearchPanel(view);
   if (replace) {
@@ -130,14 +132,14 @@ export function createEditor(options: EditorOptions): Editor {
     // default character keymap tries the unshifted command first in that case.
     // Resolve these distinct shifted document commands from modifier state.
     Prec.highest(EditorView.domEventHandlers({ keydown(event, view) {
-      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return false;
+      if (options.externalShortcuts || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return false;
       const key = event.key.toLowerCase();
       if (key === 'z') redo(view);
       else if (key === 's') options.commands.saveAs();
       else return false;
       return true;
     } })),
-    keymap.of([...appKeys, ...closeBracketsKeymap, ...formattingKeymap, ...markdownEditingKeymap, ...defaultKeymap, ...historyKeymap]),
+    keymap.of([...(options.externalShortcuts ? [] : appKeys), ...closeBracketsKeymap, ...(options.externalShortcuts ? [] : formattingKeymap), ...markdownEditingKeymap.filter(binding => !options.externalShortcuts || !binding.key?.startsWith('Mod-')), ...defaultKeymap.filter(binding => !options.externalShortcuts || !['Mod-i', 'Shift-Mod-k', 'Mod-/'].includes(binding.key ?? '')), ...(options.externalShortcuts ? [] : historyKeymap)]),
     searchCompartment.of([]),
     mode.of(modeExtension()),
     env.of(envFor(path)),
@@ -168,7 +170,7 @@ export function createEditor(options: EditorOptions): Editor {
   // Table cells live inside a CodeMirror widget, so its keymap does not receive
   // their events. Keep document shortcuts available while the table has focus.
   view.dom.addEventListener('keydown', (event) => {
-    if (!(event.target instanceof HTMLElement) || !event.target.closest('.cm-lp-table')) return;
+    if (options.externalShortcuts || !(event.target instanceof HTMLElement) || !event.target.closest('.cm-lp-table')) return;
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
     if (key === 's' && !event.shiftKey) options.commands.save();
@@ -263,7 +265,20 @@ export function createEditor(options: EditorOptions): Editor {
     };
   };
 
-  return { view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine, beginInsertion,
+  async function runCommand(id: string) {
+    if (id === 'source') { toggleSourceMode(); return; }
+    if (id === 'find' || id === 'replace') { await openSearch(view, id === 'replace', options.externalShortcuts); return; }
+    if (id === 'findNext' || id === 'findPrevious') {
+      const search = await import('@codemirror/search');
+      (id === 'findNext' ? search.findNext : search.findPrevious)(view); return;
+    }
+    // Commit an active table cell before document history/formatting actions.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && focused.closest('.cm-lp-table')) focused.blur();
+    const run = { ...formattingCommands, undo, redo, fold: foldCode, unfold: unfoldCode }[id as keyof typeof formattingCommands | 'undo' | 'redo' | 'fold' | 'unfold'];
+    if (run) { run(view); view.focus(); }
+  }
+  return { runCommand, view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine, beginInsertion,
     setPreferences(next) {
       preferences = next;
       view.dispatch({ effects: preferenceCompartment.reconfigure(preferenceExtensions()) });

@@ -92,9 +92,13 @@ export interface Dialogs {
 }
 
 export interface WindowPort {
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<void>;
+  startDragging(): Promise<void>;
+  close(): Promise<void>;
   setTitle(title: string): void;
   /** `handler` resolves true to let the window close. */
-  onCloseRequested(handler: () => Promise<boolean>): void;
+  onCloseRequested(handler: () => Promise<boolean>): Promise<void>;
   onFocus(handler: () => void): void;
   /** Coordinates are CSS pixels relative to the webview. */
   onFilesDropped(handler: (drop: { readonly paths: readonly string[]; readonly position: { readonly x: number; readonly y: number } }) => Promise<void>): Promise<void>;

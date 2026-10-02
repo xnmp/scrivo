@@ -47,6 +47,9 @@ export interface EditorApp extends EditorHandle {
   revealHeading(heading: Heading): void;
   /** The editor surface became visible. */
   shown(): void;
+  openProperties(): void;
+  openSettings(): void;
+  savePendingProperties(): boolean;
   dispose(): void;
 }
 
@@ -86,6 +89,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
   };
   const editor = createEditor({
     preferences: preferences.get(),
+    externalShortcuts: true,
     parent: options.parent,
     fileUrl: options.fileUrl,
     commands: {
@@ -136,6 +140,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
   });
   const words = wordCounter(options.status, () => editor.view.state.doc.iter(), () => (editor.sourceMode() ? 'Source' : ''));
   properties = createPropertiesPanel(options.parent, {
+    externalShortcuts: true,
     source: () => editor.view.state.doc.sliceString(0, Math.min(editor.view.state.doc.length, 257 * 1024)),
     apply: (change, start = false) => editor.view.dispatch({ changes: change,
       annotations: [...(start ? [isolateHistory.of('before')] : []), Transaction.userEvent.of('input.type.properties')] }),
@@ -169,6 +174,9 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
 
   return {
     editor,
+    openProperties: () => properties?.open(),
+    openSettings: () => settings?.open(),
+    savePendingProperties: () => properties?.commit() ?? true,
     controller,
     text: () => editor.view.state.doc.toString(),
     topLine: editor.topLine,

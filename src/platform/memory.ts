@@ -194,8 +194,10 @@ export function createMemoryPlatform(options: {
       },
     },
     window: {
+      async minimize() {}, async toggleMaximize() {}, async startDragging() {},
+      async close() { if (!closeHandler || await closeHandler()) destroyed = true; },
       setTitle: (title) => void titles.push(title),
-      onCloseRequested: (handler) => void (closeHandler = handler),
+      async onCloseRequested(handler) { closeHandler = handler; },
       onFocus: (handler) => void focusHandlers.push(handler),
       async onFilesDropped(handler) { dropHandler = handler; },
       async destroy() {

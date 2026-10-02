@@ -1,0 +1,127 @@
+/* Shared desktop chrome. Colors resolve through the Obsidian variable bridge. */
+button { -webkit-tap-highlight-color: transparent; }
+button, input, select { font-family: var(--font-body); }
+button:disabled { cursor: default; opacity: .5; }
+:where(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon-button, .appearance-toggle {
+  display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px;
+  padding: 10px; flex: none; border: 0; border-radius: 4px; background: transparent; color: var(--fg-muted); cursor: pointer;
+}
+.icon-button svg, .appearance-toggle svg, .tab-close svg, .tab-add svg { width: 18px; height: 18px; flex: none; }
+.icon-button:hover, .appearance-toggle:hover { color: var(--fg); background: var(--code-bg); }
+.icon-button[aria-expanded='true'] { color: var(--accent); background: var(--code-bg); }
+#tab-bar .appearance-toggle { margin-left: 0; order: 5; }
+.window-drag { align-self: stretch; flex: 1; min-width: 24px; order: 4; }
+.window-controls { display: flex; order: 6; flex: none; }
+.window-controls button { width: 44px; border-radius: 0; }
+.window-controls button:last-child:hover { background: #c42b36; color: white; }
+.mode-toggle { margin-left: auto; }
+body[data-mode='edit'] .mode-toggle { color: var(--accent); }
+.document-breadcrumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: auto; font-size: 13px; color: var(--fg-muted); padding: 0 12px; }
+#document-toolbar { padding-left: 48px; padding-right: 4px; }
+body[data-mode='edit'] #document-toolbar { padding-right: 84px; }
+body[data-mode='edit'] .mode-toggle { position: absolute; right: 4px; }
+.document-session .properties-toggle, .document-session .editor-settings-toggle, body .outline-toggle {
+  top: var(--tab-bar-height); width: 40px; height: 40px; padding: 10px; border: 0; background: transparent; border-radius: 4px;
+}
+.document-session .properties-toggle { right: 44px; }
+.document-session .editor-settings-toggle { right: 84px; }
+body .outline-toggle { left: 4px; }
+.properties-toggle svg, .editor-settings-toggle svg, .outline-toggle svg { display: block; width: 18px; height: 18px; }
+.document-session .properties-panel, .document-session .editor-settings-panel {
+  top: calc(var(--tab-bar-height) + 44px); background: var(--bg); border-radius: 8px; box-shadow: var(--shadow);
+}
+.document-session .properties-panel, .document-session .editor-settings-panel { padding: 20px; }
+.document-session .properties-panel :is(input:not([type=checkbox]), button), .document-session .editor-settings-panel select { min-height: 36px; border-radius: 6px; }
+.document-session .properties-panel h2, .document-session .editor-settings-panel h2 { font-size: 15px; margin-bottom: 12px; }
+.editor-settings-panel label { min-height: 36px; }
+.outline-panel button { min-height: 36px; }
+.appearance-dialog, .hotkeys-dialog, .command-picker {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); font: 13px/1.5 var(--font-body); max-height: calc(100dvh - 32px); max-width: calc(100vw - 24px);
+}
+.appearance-dialog, .hotkeys-dialog { padding: 24px; }
+.appearance-dialog { width: 500px; }
+.appearance-dialog h2, .hotkeys-dialog h2 { font-size: 18px; margin: 0 0 28px; line-height: 32px; }
+.appearance-dialog label { margin: 0; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.appearance-dialog :is(input:not([type=color]), select, button), .hotkeys-dialog :is(input, button) {
+  min-height: 36px; padding: 6px 10px; color: var(--fg); background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; font: inherit;
+}
+.appearance-dialog input[type=color] { height: 36px; width: 48px; }
+.appearance-dialog :is(button, select), .hotkeys-dialog button { cursor: pointer; }
+.appearance-dialog .appearance-actions { margin-top: 16px; }
+.appearance-dialog p, .hotkeys-dialog p { font-size: 12px; color: var(--fg-muted); overflow-wrap: anywhere; }
+.appearance-dialog > button:not(.appearance-close) { margin-top: 12px; }
+.appearance-close { top: 24px; right: 24px; }
+.appearance-dialog [role=status], .hotkeys-dialog [role=status] { color: var(--danger); }
+.hotkeys-dialog { width: 720px; overflow: auto; }
+.hotkeys-dialog > input { width: 100%; margin: 8px 0 12px; }
+.hotkey-list { max-height: 50vh; overflow: auto; margin-bottom: 16px; }
+.hotkey-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.hotkey-row > span { flex: 1; }
+.hotkey-bindings { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 65%; }
+.hotkey-bindings .hotkey-chip { font-size: 11px; min-height: 32px; padding: 4px 8px; }
+.command-picker { width: 600px; padding: 0; margin-top: min(16vh, 100px); }
+.command-picker h2 { font-size: 13px; font-weight: 500; color: var(--fg-muted); padding: 16px 20px 0; margin: 0; }
+.command-picker > input { width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 14px 20px; background: transparent; color: var(--fg); font: 16px var(--font-body); outline-offset: -2px; }
+#picker-list { padding: 8px; max-height: 50vh; overflow: auto; }
+.picker-option { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+.picker-option[aria-selected=true], .picker-option:hover { background: var(--code-bg); }
+.picker-option[aria-selected=true] { box-shadow: inset 2px 0 var(--accent); }
+.picker-option > div { min-width: 0; }
+.picker-option span { display: block; }
+.picker-option small { display: block; color: var(--fg-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+kbd { font: 11px var(--font-body); color: var(--fg-muted); white-space: nowrap; }
+.picker-footer { border-top: 1px solid var(--border); color: var(--fg-muted); padding: 12px 20px; font-size: 11px; }
+.picker-close { position: absolute; top: 8px; right: 12px; padding: 4px 8px; border: 0; background: transparent; color: var(--fg-muted); cursor: pointer; }
+.picker-empty { text-align: center; padding: 12px 20px; color: var(--fg-muted); }
+.picker-empty:empty { display: none; }
+dialog::backdrop { background: var(--overlay); }
+.app-menu { position: fixed; inset: 44px auto auto 8px; margin: 0; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 56px); overflow: auto;
+  padding: 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); font: 13px var(--font-body); }
+.menu-group { font-size: 11px; color: var(--fg-muted); padding: 12px 12px 6px; border-top: 1px solid var(--border); margin-top: 4px; }
+.menu-group:first-child { border: 0; margin: 0; padding-top: 4px; }
+.app-menu button { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; padding: 8px 12px;
+  border: 0; border-radius: 4px; color: var(--fg); background: transparent; cursor: pointer; font: inherit; }
+.app-menu button:hover, .app-menu button:focus-visible { background: var(--code-bg); }
+.app-menu kbd { font-size: 10px; }
+.status-bar { font-variant-numeric: tabular-nums; }
+.find-bar { max-width: calc(100vw - 24px); top: calc(var(--tab-bar-height) + 44px); }
+.find-bar input { min-width: 40px; flex: 1; }
+.find-bar button { min-width: 28px; }
+@media (max-width: 600px) {
+  .tab-select { min-width: 64px; max-width: 160px; }
+  .window-drag { min-width: 12px; }
+  #tab-bar > .icon-button:nth-child(2) { display: none; }
+  .hotkey-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .hotkey-bindings { max-width: 100%; justify-content: flex-start; }
+  .picker-option { gap: 8px; }
+  .picker-option kbd { max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
+  .appearance-dialog, .hotkeys-dialog { padding: 20px; }
+  .appearance-close { top: 20px; right: 20px; }
+}
+
+@media (max-width: 600px) {
+  body[data-native=true] .tab-select { min-width: 48px; max-width: calc(100vw - 312px); }
+  .tab-close { width: 40px; }
+}
+
+.picker-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.picker-footer button { background: transparent; border: 0; color: var(--fg-muted); font: inherit; cursor: pointer; text-decoration: underline; padding: 4px; }
+
+.appearance-dialog details { margin: 12px 0 8px; color: var(--fg-muted); font-size: 12px; }
+.appearance-dialog summary { cursor: pointer; padding: 4px 0; }
+
+.modal { background: var(--bg); border-radius: 12px; padding: 24px; }
+.modal-actions button { min-height: 40px; }
+.document-session .cm-lp-table-menu { background: var(--bg); border-radius: 8px; padding: 6px; box-shadow: var(--shadow); font-size: 13px; }
+.document-session .cm-lp-table-menu button { min-height: 36px; border-radius: 4px; }
+.document-session .cm-panel.cm-search { padding: 12px 16px; font-size: 13px; }
+.document-session .cm-panel.cm-search :is(input, button) { min-height: 32px; border-radius: 6px; padding: 4px 8px; }
+.document-session .cm-searchMatch { background: var(--find-match); }
+.document-session .cm-searchMatch-selected { background: var(--find-current); }
+.command-picker h2 { height: 48px; padding-right: 72px; }
+.command-picker .picker-close { top: 4px; min-height: 40px; }
+
+.app-menu button svg { width: 16px; height: 16px; color: var(--fg-muted); }
+.app-menu .menu-back { color: var(--fg-muted); }

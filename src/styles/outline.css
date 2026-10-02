@@ -19,15 +19,15 @@
 .outline-panel {
   position: fixed;
   z-index: 10;
-  top: calc(var(--tab-bar-height) + 48px);
-  bottom: 12px;
-  left: 12px;
-  width: 240px;
+  top: calc(var(--tab-bar-height) + 40px);
+  bottom: 0;
+  left: 0;
+  width: 248px;
   overflow-y: auto;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: var(--shadow);
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
   padding: 12px 8px;
 }
 .outline-panel h2 {
@@ -59,13 +59,14 @@
 .outline-panel .outline-level-5 button { padding-left: 56px; }
 .outline-panel .outline-level-6 button { padding-left: 68px; }
 
-body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 264px; }
-body[data-mode='edit'][data-outline='open'] .document-session:not([hidden]) .editor { margin-left: 264px; }
+body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 248px; }
+body[data-mode='edit'][data-outline='open'] .document-session:not([hidden]) .editor { margin-left: 248px; }
 
 @media (max-width: 900px) {
   body[data-mode='view'][data-outline='open'] .document-session:not([hidden]) .viewer { margin-left: 0; }
   body[data-mode='edit'][data-outline='open'] .document-session:not([hidden]) .editor { margin-left: 0; }
-  .outline-panel { width: min(240px, calc(100vw - 24px)); }
+  .outline-panel { width: min(248px, calc(100vw - 40px));
+    box-shadow: var(--shadow); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -367,3 +367,36 @@ requests per cold navigation. `bun run dev` remains available for development.
 | native app | tauri-driver + WebKitWebDriver (`e2e-native/`) | real binary opens, edits and saves real files; giant-document test checks Unicode text across the first renderer chunk boundary |
 | performance | `bench/bench.mjs`, `bench/ab.mjs` | window / content / complete / PSS; paired A/B |
 | startup bundle | Vite manifest + `scripts/check-bundle.mjs` + Vitest fixture | 41 KiB static JS/CSS budget, 56 KiB budget including known prepaint window import; shims first; manifest/CSS assets and deferred graph validated and reported |
+
+## Commands, chrome and themes (2026-10-03)
+
+`domain/commands.ts` defines stable command IDs, labels, groups and default physical
+key chords. `domain/hotkeys.ts` normalizes events and validates bounded chords;
+`domain/recents.ts` validates a bounded identity-deduplicated file history;
+`domain/search.ts` ranks word and ordered-character matches. Infrastructure
+persistence lives in `platform/command-preferences.ts`; the tab coordinator owns
+execution, active-document routing and successful-file history updates.
+
+One window capture dispatcher routes application commands. Mounted editors opt into
+external shortcuts, removing overlapping application/format/history/fold bindings
+and conflicting CodeMirror defaults; structural Enter/Tab/Backspace and ordinary
+text movement stay in CodeMirror. Standalone editor callers retain legacy defaults.
+Properties exposes a commit boundary to saves and disables its legacy save binding
+when the shared dispatcher owns commands. Native/form text fields retain text undo.
+
+`ui/window-chrome.ts` composes header, menu, dialogs, window operations and document
+label; picker commands execute after the native dialog close event restores focus.
+The WindowPort close-listener registration is awaited before exposing custom window
+controls. Its handler awaits initial session readiness and delegates dirty/recovery
+policy to every Workspace. Readiness is released in finally even on startup failure.
+Native close uses close(), preserving that guard; destroy() remains an internal port.
+
+Linux/Windows disable native decorations; macOS keeps them. Only the tab list scrolls,
+so native window controls stay visible. Dragging uses mouse-down click detail and a
+full-height blank region. Native API imports stay behind the Tauri platform adapter.
+
+Bundled original themes are registered by deferred Appearance UI. A selected theme's
+atomic CSS snapshot still applies before document layout, including on relaunch.
+Registration reconciles updated packaged CSS for an active builtin ID; builtins are
+immutable and imports retain their existing limits. No community-theme network fetch
+or Obsidian vault/plugin layer is introduced.

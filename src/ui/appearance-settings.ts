@@ -1,13 +1,16 @@
 import '../styles/appearance.css';
+import { builtinThemes } from './builtin-themes';
+import { icon } from './icons';
 import { appearanceStore } from '../platform/appearance';
 import { importedTheme, MAX_THEME_SIZE } from '../domain/appearance';
 
-export function createAppearanceSettings(host: HTMLElement) {
+export function createAppearanceSettings(host: HTMLElement, externalShortcuts = false) {
   const store = appearanceStore();
+  store.registerBuiltins(builtinThemes);
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'appearance-toggle';
-  toggle.textContent = '◐';
+  toggle.append(icon('appearance'));
   toggle.title = 'Appearance (Ctrl/⌘+,)';
   toggle.setAttribute('aria-label', 'Appearance');
   toggle.setAttribute('aria-expanded', 'false');
@@ -68,7 +71,9 @@ export function createAppearanceSettings(host: HTMLElement) {
   themeActions.append(importButton, remove, upload);
   const help = document.createElement('p');
   help.textContent = 'Imports Obsidian color and typography variables and compatible CSS. Obsidian-specific layouts and plugins are not supported. Use self-contained theme files; local companion assets are not imported.';
-  dialog.append(themeActions, help);
+  const details = document.createElement('details');
+  const summary = document.createElement('summary'); summary.textContent = 'About theme imports';
+  details.append(summary, help); dialog.append(themeActions, details);
   const accent = document.createElement('input');
   accent.type = 'color'; accent.setAttribute('aria-label', 'Accent color');
   accent.addEventListener('input', () => saved(store.set({ ...store.get(), accent: accent.value })));
@@ -103,8 +108,9 @@ export function createAppearanceSettings(host: HTMLElement) {
       const option = document.createElement('option'); option.value = theme.id; option.textContent = theme.name; return option;
     }));
     themes.value = preferences.theme;
-    remove.disabled = !preferences.theme;
-    accent.value = preferences.accent || '#0969da';
+    remove.disabled = !preferences.theme || preferences.theme.startsWith('builtin:');
+    const themeAccent = getComputedStyle(document.body).getPropertyValue('--interactive-accent').trim();
+    accent.value = preferences.accent || (/^#[0-9a-f]{6}$/i.test(themeAccent) ? themeAccent : '#0969da');
     textFont.value = preferences.textFont; monoFont.value = preferences.monoFont; size.value = String(preferences.fontSize);
   };
   const open = () => { if (!dialog.open) dialog.showModal(); refresh(); toggle.setAttribute('aria-expanded', 'true'); };
@@ -112,7 +118,7 @@ export function createAppearanceSettings(host: HTMLElement) {
   dialog.addEventListener('close', () => { toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); });
   // Always available, even if a custom theme hides the app controls.
   window.addEventListener('keydown', (event) => {
-    if (event.defaultPrevented || event.altKey) return;
+    if (externalShortcuts || event.defaultPrevented || event.altKey) return;
     if (event.key === 'Escape' && dialog.open) { event.preventDefault(); dialog.close(); return; }
     if ((event.ctrlKey || event.metaKey) && (event.key === ',' || event.code === 'Comma')) {
       event.preventDefault();
@@ -123,4 +129,5 @@ export function createAppearanceSettings(host: HTMLElement) {
   store.subscribe(refresh);
   host.append(toggle);
   document.body.append(dialog);
+  return { open, reset: () => { importGeneration++; saved(store.reset()); open(); } };
 }

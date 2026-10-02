@@ -7,6 +7,7 @@
   --text-title: #1f2328;
   --interactive-accent: #0969da;
   --text-accent: #0969da;
+  --text-on-accent: #ffffff;
   --background-modifier-border: #d8dee4;
   --background-secondary: #f6f8fa;
   --code-background: rgba(175, 184, 193, 0.2);
@@ -40,7 +41,7 @@
   --font-text-size: 16px;
   --line-height-normal: 1.65;
   --file-line-width: 860px;
-  --tab-bar-height: 35px;
+  --tab-bar-height: 40px;
 }
 
 :where(:root[data-theme='dark']) {
@@ -51,6 +52,7 @@
   --text-title: #eceef1;
   --interactive-accent: #6cb6ff;
   --text-accent: #6cb6ff;
+  --text-on-accent: #1d1f23;
   --background-modifier-border: #3a3f47;
   --background-secondary: #25282e;
   --code-background: rgba(110, 118, 129, 0.3);
@@ -86,6 +88,7 @@
     --text-title: #eceef1;
     --interactive-accent: #6cb6ff;
     --text-accent: #6cb6ff;
+  --text-on-accent: #1d1f23;
     --background-modifier-border: #3a3f47;
     --background-secondary: #25282e;
     --code-background: rgba(110, 118, 129, 0.3);
@@ -159,33 +162,30 @@ body { display: flex; flex-direction: column; }
 .document-session { height: 100%; }
 .document-session[hidden] { display: none; }
 
+/* Geometry stays identical before deferred window controls load. */
 #tab-bar {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   height: var(--tab-bar-height);
   flex: none;
-  overflow-x: auto;
+  overflow: hidden;
+  padding: 0 4px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  scrollbar-width: thin;
+  background: var(--code-bg);
 }
-.tab-list { display: flex; align-items: stretch; min-width: 0; }
-.tab-item { display: flex; align-items: stretch; border-right: 1px solid var(--border); }
-.tab-select, .tab-close, .tab-add {
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.tab-select { max-width: 220px; min-width: 80px; padding: 0 8px 0 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tab-select[aria-selected='true'] { background: var(--bg); color: var(--fg); font-weight: 600; }
+.tab-list { display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none; min-width: 64px; flex: 0 1 auto; height: 100%; }
+.tab-item { display: flex; align-items: stretch; flex: none; margin: 4px 0 0; height: 36px; border-radius: 6px 6px 0 0; }
+.tab-item:has([aria-selected=true]) { background: var(--bg); }
+.tab-select, .tab-close, .tab-add { border: 0; background: transparent; color: var(--fg-muted); font: 13px var(--font-body); cursor: pointer; }
+.tab-select { max-width: 220px; min-width: 80px; padding: 0 8px 0 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tab-select[aria-selected=true] { color: var(--fg); font-weight: 500; }
 .tab-dirty { color: var(--accent); margin-left: 6px; }
-.tab-close { width: 28px; font-size: 17px; }
-.tab-add { width: 35px; flex: none; font-size: 20px; }
+.tab-close, .tab-add { display: inline-flex; align-items: center; justify-content: center; height: 36px; }
+.tab-close { width: 32px; }
+.tab-add { width: 40px; height: 40px; flex: none; }
 .tab-select:hover, .tab-close:hover, .tab-add:hover { background: var(--code-bg); color: var(--fg); }
 .tab-select:focus-visible, .tab-close:focus-visible, .tab-add:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#document-toolbar { height: 40px; flex: none; display: flex; align-items: center; position: relative; }
 
 /* ---------- code tokens (fenced blocks; also source mode) ---------- */
 
@@ -254,9 +254,9 @@ body { display: flex; flex-direction: column; }
   background: var(--surface);
   color: var(--fg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: var(--shadow);
-  padding: 20px 22px 16px;
+  padding: 24px;
   width: min(440px, calc(100vw - 32px));
 }
 .modal h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
@@ -272,6 +272,6 @@ body { display: flex; flex-direction: column; }
   color: var(--fg);
   cursor: pointer;
 }
-.modal-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.modal-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
 .modal-actions button.danger { color: var(--danger); }
 .modal-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

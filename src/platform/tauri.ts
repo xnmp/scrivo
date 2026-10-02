@@ -131,13 +131,17 @@ export function createTauriPlatform(): Platform {
       },
     },
     window: {
+      minimize: () => currentWindow().then(w => w.minimize()),
+      toggleMaximize: () => currentWindow().then(w => w.toggleMaximize()),
+      startDragging: () => currentWindow().then(w => w.startDragging()),
+      close: () => currentWindow().then(w => w.close()),
       setTitle: (title) => void currentWindow().then((w) => w.setTitle(title)),
       onCloseRequested: (handler) =>
-        void currentWindow().then((w) =>
+        currentWindow().then((w) =>
           w.onCloseRequested(async (event) => {
             if (!(await handler())) event.preventDefault();
           }),
-        ),
+        ).then(() => undefined),
       onFocus: (handler) =>
         void currentWindow().then((w) =>
           w.onFocusChanged(({ payload: focused }) => {

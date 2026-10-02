@@ -16,7 +16,7 @@ export const editorTheme = EditorView.theme({
   '.cm-content': {
     maxWidth: 'var(--content-width)',
     margin: '0 auto',
-    padding: '48px 32px 40vh',
+    padding: '32px 32px 40vh',
     caretColor: 'var(--caret)',
   },
   '.cm-line': { padding: '0' },

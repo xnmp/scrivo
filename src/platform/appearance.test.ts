@@ -83,3 +83,14 @@ describe('appearance persistence', () => {
     expect(createAppearanceStore(disk).get().accent).toBe('#123456');
   });
 });
+
+it('bundled palettes persist without import and reconcile updated packaged CSS', () => {
+  const disk = storage(); const store = createAppearanceStore(disk);
+  const theme = { id: 'builtin:test', name: 'Test', css: '.theme-dark{color:red}' };
+  store.registerBuiltins([theme]); store.set({ ...store.get(), theme: theme.id });
+  expect(store.css()).toBe(theme.css);
+  const next = createAppearanceStore(disk); expect(next.css()).toBe(theme.css);
+  next.registerBuiltins([{ ...theme, css: '.theme-dark{color:blue}' }]);
+  expect(next.css()).toContain('blue'); next.remove(theme.id); expect(next.get().theme).toBe(theme.id);
+  expect(createAppearanceStore(disk).css()).toContain('blue');
+});

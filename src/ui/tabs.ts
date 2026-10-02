@@ -1,3 +1,4 @@
+import { icon } from './icons';
 export interface TabLabel {
   readonly id: string;
   readonly name: string;
@@ -18,7 +19,7 @@ export function createTabBar(host: HTMLElement, actions: {
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'tab-add';
-  add.textContent = '+';
+  add.append(icon('plus'));
   add.title = 'New document';
   add.setAttribute('aria-label', 'New document');
   add.addEventListener('click', actions.create);
@@ -61,13 +62,14 @@ export function createTabBar(host: HTMLElement, actions: {
       const close = document.createElement('button');
       close.type = 'button';
       close.className = 'tab-close';
-      close.textContent = '×';
+      close.append(icon('close'));
       close.title = `Close ${tab.name}`;
       close.setAttribute('aria-label', `Close ${tab.name}`);
       close.addEventListener('click', () => actions.close(tab.id));
       item.append(select, close);
       return item;
     }));
+    list.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     if (focused) list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(focused)}"]`)?.focus();
   };
 

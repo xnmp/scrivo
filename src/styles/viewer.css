@@ -28,7 +28,7 @@
   --block-gap: calc(var(--line-height) * 1em);
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: 48px 32px 40vh;
+  padding: 32px 32px 40vh;
   line-height: var(--line-height);
   overflow-wrap: break-word;
 }

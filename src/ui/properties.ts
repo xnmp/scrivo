@@ -1,14 +1,18 @@
+import { icon } from './icons';
 import '../styles/properties.css';
 import { addProperty, changeProperty, readProperties, type Property, type PropertyValue, type SourceChange } from '../domain/properties';
 
 export interface PropertiesPanel {
   refresh(reset?: boolean): void;
   close(): void;
+  open(): void;
+  commit(): boolean;
   dispose(): void;
 }
 
 export function createPropertiesPanel(host: HTMLElement, actions: {
   readonly source: () => string;
+  readonly externalShortcuts?: boolean;
   readonly apply: (change: SourceChange, start?: boolean) => void;
   readonly finishEdit: () => void;
   readonly focusDocument: () => void;
@@ -19,7 +23,9 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'properties-toggle';
-  toggle.textContent = 'Properties';
+  toggle.append(icon('properties'));
+  toggle.setAttribute('aria-label', 'Properties');
+  toggle.title = 'Properties';
   const panel = document.createElement('aside');
   panel.className = 'properties-panel';
   panel.id = `properties-${crypto.randomUUID()}`;
@@ -154,17 +160,20 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
       notice.textContent = `${properties.unsupported} complex or unsupported ${properties.unsupported === 1 ? 'property remains' : 'properties remain'} available in source.`;
     }
   }
-  toggle.addEventListener('click', () => {
-    if (!panel.hidden) { close(); return; }
-    actions.onOpen();
-    render();
-    panel.hidden = false;
-    toggle.setAttribute('aria-expanded', 'true');
-  });
+  const open = () => { if (!panel.hidden) return; actions.onOpen(); render(); panel.hidden = false; toggle.setAttribute('aria-expanded', 'true'); };
+  const commit = () => {
+    if (panel.hidden) return true;
+    if (drafts.size) {
+      if (![...drafts].every(form => validate.get(form)?.())) return false;
+      render();
+    }
+    actions.focusDocument(); return true;
+  };
+  toggle.addEventListener('click', () => panel.hidden ? open() : close());
   source.addEventListener('click', () => { close(); actions.editSource(); });
   panel.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { event.preventDefault(); close(); toggle.focus(); }
-    else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 's') {
+    else if (!actions.externalShortcuts && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 's') {
       event.preventDefault();
       if ([...drafts].every((form) => validate.get(form)?.())) {
         render();
@@ -173,7 +182,7 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
       }
     }
   });
-  return {
+  return { open, commit,
     close,
     refresh(reset = false) {
       clearTimeout(timer);

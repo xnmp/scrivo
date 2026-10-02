@@ -1,0 +1,51 @@
+run 1: window=234 content=477 complete=477 ms  pss=290 MiB  (105 frames @ 19 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE      0.3 ms  startup document read
+SCRIVO_TRACE      0.3 ms  startup view prefetched
+SCRIVO_TRACE     40.2 ms  tauri setup
+SCRIVO_TRACE     41.2 ms  egl-warm: done
+SCRIVO_TRACE     65.9 ms  image-warm: done
+SCRIVO_TRACE    137.8 ms  window built
+SCRIVO_TRACE    245.0 ms  js start
+SCRIVO_TRACE    250.5 ms  tab shell import start
+SCRIVO_TRACE    256.0 ms  tab shell import end
+SCRIVO_TRACE    258.2 ms  first frame with document
+SCRIVO_TRACE    334.6 ms  startup document delivered
+SCRIVO_TRACE    396.5 ms  document shown
+SCRIVO_TRACE    422.3 ms  tab shell ready
+run 2: window=248 content=552 complete=552 ms  pss=289 MiB  (104 frames @ 20 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE      0.3 ms  startup document read
+SCRIVO_TRACE      0.3 ms  startup view prefetched
+SCRIVO_TRACE     39.4 ms  tauri setup
+SCRIVO_TRACE     40.3 ms  egl-warm: done
+SCRIVO_TRACE     64.1 ms  image-warm: done
+SCRIVO_TRACE    157.7 ms  window built
+SCRIVO_TRACE    282.3 ms  js start
+SCRIVO_TRACE    288.9 ms  tab shell import start
+SCRIVO_TRACE    294.6 ms  tab shell import end
+SCRIVO_TRACE    295.6 ms  first frame with document
+SCRIVO_TRACE    381.5 ms  startup document delivered
+SCRIVO_TRACE    456.3 ms  document shown
+SCRIVO_TRACE    479.9 ms  tab shell ready
+run 3: window=235 content=496 complete=496 ms  pss=290 MiB  (109 frames @ 18 ms)
+SCRIVO_TRACE      0.0 ms  process start
+SCRIVO_TRACE      0.4 ms  startup document read
+SCRIVO_TRACE      0.4 ms  startup view prefetched
+SCRIVO_TRACE     34.4 ms  egl-warm: done
+SCRIVO_TRACE     36.7 ms  tauri setup
+SCRIVO_TRACE     53.3 ms  image-warm: done
+SCRIVO_TRACE    169.6 ms  window built
+SCRIVO_TRACE    267.9 ms  js start
+SCRIVO_TRACE    273.9 ms  tab shell import start
+SCRIVO_TRACE    280.0 ms  tab shell import end
+SCRIVO_TRACE    281.4 ms  first frame with document
+SCRIVO_TRACE    352.2 ms  startup document delivered
+SCRIVO_TRACE    413.0 ms  document shown
+SCRIVO_TRACE    434.6 ms  tab shell ready
+
+scrivo medium.md --edit runs=3 on cage (headless, 1280x720)
+  window   ms  : min=234 median=235 p90=248 max=248
+  content  ms  : min=477 median=496 p90=552 max=552
+  complete ms  : min=477 median=496 p90=552 max=552
+  pss      MiB : min=289 median=290 p90=290 max=290

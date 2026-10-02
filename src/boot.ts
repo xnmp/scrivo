@@ -1,5 +1,6 @@
 // Paint the prefetched reading view before loading document-tab machinery.
 import './shims/idle-callback';
+import { eventChord, storedChordMatches } from './domain/hotkeys';
 import './styles/base.css';
 import './styles/viewer.css';
 import type { Platform, ViewDocument } from './app/ports';
@@ -17,11 +18,14 @@ const pendingLinks: string[] = [];
 let followLink: (href: string) => void = (href) => { pendingLinks.push(href); };
 let installedLinkHandler: ((href: string) => void) | null = null;
 const pendingKeys: KeyboardEventInit[] = [];
+let bootHotkeys: string | null = null;
+try { bootHotkeys = localStorage.getItem('scrivo.hotkeys.v1'); } catch { /* defaults */ }
 const queueShortcut = (event: KeyboardEvent) => {
   const mod = event.ctrlKey || event.metaKey;
-  if (!(mod && ['e', 'o', 'n', 's', 'f', 'w', 'tab', 'g', ','].includes(event.key.toLowerCase()))
+  if (!(mod && ['e', 'o', 'n', 't', 'r', 'p', 's', 'f', 'w', 'tab', 'g', ','].includes(event.key.toLowerCase()))
     && !(mod && event.code === 'Comma')
-    && event.key !== 'F3' && event.key !== 'Escape') return;
+    && event.key !== 'F3' && event.key !== 'Escape'
+    && !storedChordMatches(eventChord(event, /Mac|iPhone|iPad/.test(navigator.userAgent)), bootHotkeys, /Mac|iPhone|iPad/.test(navigator.userAgent))) return;
   event.preventDefault();
   pendingKeys.push({ key: event.key, code: event.code, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
     shiftKey: event.shiftKey, altKey: event.altKey, bubbles: true, cancelable: true });

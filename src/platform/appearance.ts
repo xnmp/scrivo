@@ -21,6 +21,7 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
   let active = activeTheme();
   preferences = { ...preferences, theme: active?.id ?? '' };
   let themes: readonly Theme[] | undefined;
+  let builtins: readonly Theme[] = [];
   const subscribers = new Set<() => void>();
   const publish = () => { for (const subscriber of subscribers) subscriber(); };
   const library = () => {
@@ -30,7 +31,7 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
       // its entry so the selector always describes the CSS actually in use.
       themes = active ? [...saved.filter((theme) => theme.id !== active!.id), active] : saved;
     }
-    return themes;
+    return [...builtins, ...themes.filter(theme => !builtins.some(builtin => builtin.id === theme.id))];
   };
   const persist = (changedThemes?: readonly Theme[], changedActive?: Theme | null) => {
     try {
@@ -42,6 +43,13 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
     } catch { return false; }
   };
   return {
+    registerBuiltins(catalog: readonly Theme[]) {
+      builtins = catalog;
+      if (active?.id.startsWith('builtin:')) {
+        const packaged = catalog.find(theme => theme.id === active!.id);
+        if (packaged && packaged.css !== active.css) { active = packaged; publish(); persist(undefined, active); }
+      }
+    },
     get: () => preferences, css: () => active?.css ?? '', themes: library,
     subscribe(changed: () => void) { subscribers.add(changed); return () => { subscribers.delete(changed); }; },
     receive() {
@@ -60,7 +68,8 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
       return persist(undefined, changedTheme ? active : undefined);
     },
     import(theme: Theme) {
-      const next = [...library().filter((item) => item.id !== theme.id), theme];
+      if (theme.id.startsWith('builtin:')) throw new Error('Reserved theme ID.');
+      const next = [...library().filter((item) => item.id !== theme.id && !item.id.startsWith('builtin:')), theme];
       if (next.length > 20 || JSON.stringify(next).length > 4 * MAX_THEME_SIZE) throw new Error('Remove an imported theme before adding more.');
       themes = next;
       preferences = { ...preferences, theme: theme.id };
@@ -69,7 +78,8 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
       return persist(themes, active);
     },
     remove(id: string) {
-      themes = library().filter((theme) => theme.id !== id);
+      if (id.startsWith('builtin:')) return true;
+      themes = library().filter((theme) => theme.id !== id && !theme.id.startsWith('builtin:'));
       const changedTheme = preferences.theme === id;
       if (changedTheme) { preferences = { ...preferences, theme: '' }; active = null; }
       publish();

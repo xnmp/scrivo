@@ -1,3 +1,4 @@
+import { icon } from './icons';
 import '../styles/editor-settings.css';
 import type { EditorPreferences } from '../domain/editor-preferences';
 
@@ -9,7 +10,9 @@ export function createEditorSettings(host: HTMLElement, actions: {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'editor-settings-toggle';
-  toggle.textContent = 'Settings';
+  toggle.append(icon('settings'));
+  toggle.setAttribute('aria-label', 'Editor settings');
+  toggle.title = 'Editor settings';
   toggle.setAttribute('aria-label', 'Editor settings');
   toggle.setAttribute('aria-expanded', 'false');
   const panel = document.createElement('aside');
@@ -65,16 +68,11 @@ export function createEditorSettings(host: HTMLElement, actions: {
     }
   };
   const close = () => { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); };
-  toggle.addEventListener('click', () => {
-    if (!panel.hidden) { close(); return; }
-    actions.onOpen();
-    refresh();
-    panel.hidden = false;
-    toggle.setAttribute('aria-expanded', 'true');
-  });
+  const open = () => { actions.onOpen(); refresh(); panel.hidden = false; toggle.setAttribute('aria-expanded', 'true'); };
+  toggle.addEventListener('click', () => panel.hidden ? open() : close());
   panel.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { event.preventDefault(); close(); toggle.focus(); }
   });
   host.append(toggle, panel);
-  return { close, refresh, dispose() { toggle.remove(); panel.remove(); } };
+  return { open, close, refresh, dispose() { toggle.remove(); panel.remove(); } };
 }

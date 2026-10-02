@@ -1,9 +1,11 @@
+import { icon } from './icons';
 import '../styles/outline.css';
 import type { Heading } from '../app/ports';
 
 export interface Outline {
   setHeadings(headings: readonly Heading[]): void;
   close(): void;
+  toggle(): void;
 }
 
 /** A keyboard-accessible table of contents for the active reading or editing document. */
@@ -11,7 +13,9 @@ export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) 
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'outline-toggle';
-  toggle.textContent = 'Contents';
+  toggle.append(icon('contents'));
+  toggle.setAttribute('aria-label', 'Contents');
+  toggle.title = 'Contents';
   toggle.hidden = true;
   toggle.setAttribute('aria-controls', 'outline-panel');
   toggle.setAttribute('aria-expanded', 'false');
@@ -19,6 +23,7 @@ export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) 
   const panel = document.createElement('aside');
   panel.id = 'outline-panel';
   panel.className = 'outline-panel';
+  panel.setAttribute('aria-label', 'Contents');
   panel.hidden = true;
 
   const title = document.createElement('h2');
@@ -98,5 +103,6 @@ export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) 
       if (!panel.hidden) render();
     },
     close,
+    toggle: () => panel.hidden ? open() : close(),
   };
 }

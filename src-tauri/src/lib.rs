@@ -78,6 +78,7 @@ pub fn run() {
             trace::mark("tauri setup");
             let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title(&title)
+                .decorations(cfg!(target_os = "macos"))
                 .inner_size(1100.0, 800.0)
                 .min_inner_size(360.0, 240.0);
             if trace::enabled() {
