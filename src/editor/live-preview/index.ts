@@ -5,7 +5,7 @@ import { Facet, StateField, type ChangeSpec, type EditorState, type Extension, t
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { deleteTableColumn, emptyTableRow, insertTableColumn, moveTableColumn, pasteTableCells, replaceCell, setColumnAlignment, sortTableRows } from '../../domain/table';
 import { buildBlocks, buildInline, type BlockCallbacks } from './build';
-import { imageUrl, previewEnv, refreshPreview } from './env';
+import { imageUrl, linkClass, previewEnv, refreshPreview } from './env';
 import type { InlineNode } from './inline-ast';
 import type { TableAction } from './widgets';
 import { renderMath } from './math';
@@ -42,7 +42,7 @@ function renderInline(nodes: readonly InlineNode[], parent: HTMLElement, view: E
       }
       case 'link': {
         const el = document.createElement('a');
-        el.className = 'cm-lp-link';
+        el.className = linkClass(env, node.href);
         el.title = node.href;
         renderInline(node.children, el, view);
         parent.append(el);

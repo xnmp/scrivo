@@ -1,5 +1,5 @@
 import { Facet, StateEffect } from '@codemirror/state';
-import { resolveTarget } from '../../domain/links';
+import { linkAction, resolveTarget } from '../../domain/links';
 
 /** What rendering needs to know about the outside world. */
 export interface PreviewEnv {
@@ -21,4 +21,11 @@ export function imageUrl(env: PreviewEnv, raw: string): string | null {
   const target = resolveTarget(raw, env.docDir);
   if (!target) return null;
   return target.kind === 'url' ? target.url : env.fileUrl(target.path);
+}
+
+
+/** Preserve the internal/external distinction for themes in both editor renderers. */
+export function linkClass(env: PreviewEnv, href: string): string {
+  return linkAction(href, env.docDir).kind === 'external'
+    ? 'cm-lp-link cm-lp-link-external' : 'cm-lp-link';
 }

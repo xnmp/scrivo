@@ -12,7 +12,7 @@ import { Decoration, type DecorationSet, type EditorView } from '@codemirror/vie
 import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common';
 import { reachesPrefix, touches, type Span } from '../../domain/reveal';
 import { parseAlignments, splitRow } from '../../domain/table';
-import { imageUrl, type PreviewEnv } from './env';
+import { imageUrl, linkClass, type PreviewEnv } from './env';
 import { inlineAst, type InlineNode } from './inline-ast';
 import { BulletWidget, CheckboxWidget, ImageWidget, MathWidget, TableWidget, type TableAction, type TableModel } from './widgets';
 
@@ -182,7 +182,7 @@ export function buildInline(
             const open = marks[0];
             const close = marks[1];
             if (!open || !close || (!url && !label)) return; // `[text]` with no target is text
-            out.mark(open.to, close.from, 'cm-lp-link');
+            out.mark(open.to, close.from, url ? linkClass(env, state.sliceDoc(url.from, url.to)) : 'cm-lp-link');
             if (!touches(selection, from, to)) {
               out.hide(from, open.to);
               out.hide(close.from, to);
@@ -210,7 +210,7 @@ export function buildInline(
 
           case 'Autolink': {
             const marks = childrenNamed(ref.node, 'LinkMark');
-            out.mark(from, to, 'cm-lp-link');
+            out.mark(from, to, 'cm-lp-link cm-lp-link-external');
             if (!touches(selection, from, to)) for (const m of marks) out.hide(m.from, m.to);
             return false;
           }
@@ -218,7 +218,7 @@ export function buildInline(
           case 'URL': {
             const parent = ref.node.parent?.name;
             if (parent !== 'Link' && parent !== 'Image' && parent !== 'Autolink' && parent !== 'LinkReference') {
-              out.mark(from, to, 'cm-lp-link cm-lp-bare-url');
+              out.mark(from, to, `${linkClass(env, state.sliceDoc(from, to))} cm-lp-bare-url`);
             }
             return;
           }

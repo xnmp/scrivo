@@ -210,6 +210,7 @@ alongside the bundled palettes. In-app changes work until the next native launch
 when the desktop selection applies again. Missing or invalid catalogs leave the app's
 saved appearance intact. Web builds continue to use browser preferences.
 
-The chezmoi `scripts/set-theme.sh` command installs missing stylesheets from desktop
-palettes into the config directory's `themes/` folder and atomically publishes this
-catalog. Relaunch Scrivo after switching themes.
+The chezmoi `scripts/set-theme.sh` command refreshes stylesheets from matching Obsidian
+themes (preserving their CSS variable cascade and document colors), and creates
+missing stylesheets from desktop palettes when no equivalent exists. It writes files
+to the config directory's `themes/` folder and atomically publishes the catalog. Relaunch Scrivo after switching themes.
