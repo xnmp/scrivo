@@ -1,5 +1,62 @@
 # UI sweep — 2026-10-03
 
+## Follow-up: minimal chrome, unified Settings and Save
+
+Full review, same TypeScript/CodeMirror/Tauri stack and plain CSS tokens. This pass
+covers the requested header, menu dismissal, settings, substitutions, table hover,
+selection paint and Save As. Earlier report below describes the prior toolbar.
+
+| Category | Evidence inspected | Result |
+| --- | --- | --- |
+| Typography | Settings desktop/light/dark / 320px, save form, reader/editor reviewed 1280×720 reference captures | Consistent body/chrome fonts, hierarchy, bounded wrapping and inputs |
+| Surfaces | Single header, modal settings sidebar, rows, save modal, table strips | Theme tokens and restrained borders; narrow Settings wraps navigation and rule fields |
+| Animations | Menu/palette/settings Escape, table hover, switches | Immediate frequent feedback; no animation added, no slow-motion check needed |
+| Icons | CurrentColor menu/tab/window, settings sections, rule actions, table plus | Shared 1.5px glyphs and accessible names; switches have visible on/off state |
+| Performance | Bundle gate, native selected 1,200-item list scroll, private startup captures | Deferred settings/RE2/Save; viewport-bounded selection traversal; references refreshed |
+
+### Changes resolved
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| MEDIUM | `ui/window-chrome.ts`, `tab-window.ts`, `styles/chrome.css` | Permanent tool buttons plus second header row | One menu/tab/window row; commands via menu/palette | Reduce repeated chrome and retain document room |
+| HIGH | `ui/dialog-escape.ts`, `ui/outline.ts`, `ui/properties.ts` | Native Escape sometimes left surfaces open; disconnected toggle focus | Explicit dismissal and real document focus | Keyboard exit must work reliably |
+| MEDIUM | `ui/settings.ts`, `styles/settings.css` | Separate small settings dialogs | One searchable sidebar modal, embedded pages, themed switches and 40px navigation | Coherent control hierarchy and desktop targets |
+| MEDIUM | `editor/live-preview/widgets.ts`, `styles/editor.css` | Structure controls only in context menu | Hover/focus plus strips with directional cursor and new-cell focus | Direct discoverable extension without persistent extra chrome |
+| HIGH | `viewer/text-selection.ts`, `styles/chrome.css` | WebKit selected ancestor blocks and skipped nested parent text | Text-node highlights, prepared inline spans, native copy retained | Selection paint must match selected text |
+| MEDIUM | `ui/window-chrome.ts` | Settings forms and regex engine loaded/constructed at chrome startup | One demand-loaded Settings instance, cancellable opening, palette registry kept separate | Defer work until the user needs it |
+| MEDIUM | `ui/save-dialog.ts`, `domain/save-location.ts` | External system Save As | Themed filename/folder modal, inline validation and cancellation | Keep save interaction inside the app |
+
+### Considered but rejected
+
+| Location | Candidate | Rejected because |
+| --- | --- | --- |
+| Selection | fit-content list boxes | Native block paint remained and changed document layout |
+| Selection | Suppress selection paint globally without replacement | Text would be selected/copied with no visible feedback |
+| Ctrl+D | Lazy import each selection command | Rapid presses lost edits; command lives in deferred editor instead |
+| Header | Retain appearance/palette/mode tool buttons | User explicitly requested removing permanent tool buttons |
+| Save | Build a full filesystem browser | Current request is an app save modal; filename/folder entry completes it without new navigation infrastructure |
+
+### Verification and verdict
+
+- Full Chromium 148 passed before the final startup change; affected suites and
+  native flows passed after it. Paired startup content improved 15 ms in 8/8 medium
+  pairs. Exact evidence and focused settings/save outcome suites are recorded
+  with final counts in HANDOVER; native specs verify file bytes and process close.
+- Agent-browser inspected desktop light/dark and 320px Settings, final switches,
+  empty/error/focus/pressed states through tests, Save form, and table hover. No
+  runtime browser errors reported. Captures under `/tmp/scrivo-*` are local evidence.
+- Private native selection screenshots confirm nested text-width paint, real copy/
+  paste equality, clearing and scrolling a 1,200-item selected list.
+- Startup reference PNGs were visually reviewed before deriving JSON signatures.
+- Boundary: Linux/WebKitGTK and Chromium verified; Windows/macOS native appearance
+  and actual OS save behavior are not verified. Platform path contracts are unit-tested.
+
+Verdict: Approve for the tested Linux target. Windows/macOS native checks remain
+unverified; unsupported Custom Highlights keep native selection.
+
+---
+
+
 Full review of the desktop file editor using the supplied Scrivo and Obsidian screenshots.
 Vanilla TypeScript DOM components, CodeMirror, Tauri/WebKitGTK, and the existing CSS
 variable system. No new UI framework or motion dependency was introduced.

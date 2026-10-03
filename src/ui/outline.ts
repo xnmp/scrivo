@@ -6,10 +6,11 @@ export interface Outline {
   setHeadings(headings: readonly Heading[]): void;
   close(): void;
   toggle(): void;
+  dismiss(): boolean;
 }
 
 /** A keyboard-accessible table of contents for the active reading or editing document. */
-export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) => void, focusDocument: () => void): Outline {
+export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) => void, focusDocument: () => void, controls = true): Outline {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'outline-toggle';
@@ -80,6 +81,7 @@ export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) 
     panel.hidden = false;
     toggle.setAttribute('aria-expanded', 'true');
     document.body.dataset.outline = 'open';
+    if (!controls) rows[0]?.button.focus();
   };
 
   toggle.addEventListener('click', () => panel.hidden ? open() : close());
@@ -87,10 +89,11 @@ export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) 
     if (event.key !== 'Escape') return;
     event.preventDefault();
     close();
-    toggle.focus();
+    if (toggle.isConnected) toggle.focus(); else focusDocument();
   });
 
-  host.append(toggle, panel);
+  if (controls) host.append(toggle);
+  host.append(panel);
 
   return {
     setHeadings(next) {
@@ -103,6 +106,7 @@ export function createOutline(host: HTMLElement, onNavigate: (heading: Heading) 
       if (!panel.hidden) render();
     },
     close,
+    dismiss() { if (panel.hidden) return false; close(); focusDocument(); return true; },
     toggle: () => panel.hidden ? open() : close(),
   };
 }

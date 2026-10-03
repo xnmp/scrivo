@@ -19,7 +19,7 @@
 .outline-panel {
   position: fixed;
   z-index: 10;
-  top: calc(var(--tab-bar-height) + 40px);
+  top: var(--tab-bar-height);
   bottom: 0;
   left: 0;
   width: 248px;

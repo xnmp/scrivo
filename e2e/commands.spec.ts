@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { diskGet, diskPut, docText, openApp, pushSaveAnswer, setCaret } from './helpers';
+import { openSettings, runCommand, diskGet, diskPut, docText, openApp, pushSaveAnswer, setCaret } from './helpers';
 test('Ctrl T creates an independent tab and Ctrl R opens the chosen recent document', async ({ page }) => {
   await openApp(page, { text: '# Original\n\nBody', mode: 'view' });
   await page.keyboard.press('Control+t');
@@ -34,14 +34,14 @@ test('custom hotkeys replace defaults, reject conflicts, persist and can be rese
   await page.getByRole('button', { name: 'Remove Ctrl+T from New tab', exact: true }).click();
   await page.getByRole('button', { name: 'Remove Ctrl+N from New tab', exact: true }).click();
   await page.getByRole('button', { name: 'Add hotkey for New tab', exact: true }).click(); await page.keyboard.press('Control+s');
-  await expect(page.getByRole('dialog', { name: 'Hotkeys' })).toContainText('assigned to “Save”');
-  await page.keyboard.press('Control+Alt+j'); await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toContainText('assigned to “Save”');
+  await page.keyboard.press('Control+Alt+j'); await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   await page.keyboard.press('Control+t'); await expect(page.getByRole('tab')).toHaveCount(1);
   await page.keyboard.press('Control+Alt+j'); await expect(page.getByRole('tab')).toHaveCount(2);
   await page.reload(); await page.waitForFunction(() => Boolean((window as any).__scrivo));
   await page.keyboard.press('Control+Alt+j'); await expect(page.getByRole('tab')).toHaveCount(2);
   await page.keyboard.press('Control+p'); await page.getByRole('combobox').fill('customize hotkeys'); await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: 'Restore default hotkeys' }).click(); await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore default hotkeys' }).click(); await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   await page.keyboard.press('Control+t'); await expect(page.getByRole('tab')).toHaveCount(3);
 });
 test('bundled palettes are immediately available and restore before reading after reload', async ({ page }) => {
@@ -71,7 +71,7 @@ test('unassigning source and code-block hotkeys leaves Markdown and properties u
   await page.reload(); await page.waitForFunction(() => Boolean((window as any).__scrivo));
   await setCaret(page, text.length); await page.keyboard.press('Control+Shift+k'); await page.keyboard.press('Control+/');
   expect(await docText(page)).toBe(text);
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await page.getByLabel('New property name').fill('draft'); await page.getByLabel('New property value').fill('Pending');
   await page.keyboard.press('Control+p'); await page.getByRole('combobox').fill('document properties'); await page.keyboard.press('Enter');
   await expect(page.getByLabel('New property name')).toHaveValue('draft');
@@ -88,5 +88,5 @@ test('grouped menus support keyboard navigation and execute the selected command
   await page.getByRole('button', { name: 'Main menu', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Appearance…', exact: false }).first().click();
-  await expect(page.getByRole('dialog', { name: 'Appearance', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
 });

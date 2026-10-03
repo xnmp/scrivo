@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { docText, openApp } from './helpers';
+import { openSettings, runCommand, docText, openApp } from './helpers';
 
 test('appearance controls persist and apply to reading and editing without changing Markdown', async ({ page }) => {
   const original = '# Theme\n\nA paragraph.\n';
   await openApp(page, { text: original, mode: 'view' });
-  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await openSettings(page, 'Appearance');
   await page.getByLabel('Color scheme', { exact: true }).selectOption('dark');
   await page.getByLabel('Font size', { exact: true }).fill('20');
   await page.getByLabel('Font size', { exact: true }).press('Tab');
@@ -15,7 +15,7 @@ test('appearance controls persist and apply to reading and editing without chang
   await expect(page.locator('#document')).toHaveCSS('font-family', 'Georgia');
   await page.keyboard.press('Control+n');
   await expect(page.getByRole('tab')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   await page.keyboard.press('Control+e');
   await expect(page.locator('.cm-content')).toHaveCSS('font-size', '20px');
   await expect(page.locator('.cm-gutters')).toHaveCSS('border-right-width', '0px');
@@ -27,7 +27,7 @@ test('appearance controls persist and apply to reading and editing without chang
 
 test('imports Obsidian body variables, switches palettes, restores theme and resets it', async ({ page }) => {
   await openApp(page, { text: '# Imported\n\nBody', mode: 'view' });
-  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await openSettings(page, 'Appearance');
   await page.locator('.appearance-dialog input[type=file]').setInputFiles({
     name: 'Dusk.css', mimeType: 'text/css', buffer: Buffer.from('.theme-dark { --background-primary: #123456; --text-normal: #fedcba; --font-text-theme: Georgia; --h1-color: #aabbcc; } .theme-light { --background-primary: #abcdef; }'),
   });
@@ -48,7 +48,7 @@ test('imports Obsidian body variables, switches palettes, restores theme and res
   await page.keyboard.press('Control+Shift+Comma');
   await expect(page.getByLabel('Theme', { exact: true })).toHaveValue('');
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Appearance', exact: true })).toBeFocused();
+  await expect(page.locator('#viewer')).toBeFocused();
 });
 
 test('system mode reacts to OS changes and appearance fits a narrow window', async ({ page }) => {
@@ -58,8 +58,8 @@ test('system mode reacts to OS changes and appearance fits a narrow window', asy
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
-  const bounds = await page.getByRole('dialog', { name: 'Appearance' }).boundingBox();
+  await openSettings(page, 'Appearance');
+  const bounds = await page.getByRole('dialog', { name: 'Settings' }).boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
   expect(await page.locator('.appearance-dialog').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);

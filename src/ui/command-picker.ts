@@ -1,4 +1,5 @@
 import { searchScore } from '../domain/search';
+import { dismissDialogOnEscape } from './dialog-escape';
 export interface PickerItem { readonly id: string; readonly label: string; readonly detail?: string; readonly hint?: string; readonly run: () => void }
 /** Searchable modal shared by commands and recent files. */
 export function createCommandPicker() {
@@ -44,6 +45,7 @@ export function createCommandPicker() {
     } else if (event.key === 'Enter') { event.preventDefault(); if (shown[selected]) choose(shown[selected]!); }
   });
   dialog.addEventListener('close', () => { const item = chosen; chosen = null; if (previous?.isConnected) previous.focus(); item?.run(); });
+  dismissDialogOnEscape(dialog);
   return { open(title: string, items: readonly PickerItem[], footerAction?: { readonly label: string; readonly run: () => void }) {
     if (!dialog.open) previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     action.hidden = !footerAction; action.textContent = footerAction?.label ?? ''; action.onclick = footerAction ? footerAction.run : null;

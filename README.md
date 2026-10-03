@@ -18,7 +18,7 @@ matches, and `Esc` closes find. Documents with headings have a Contents sidebar;
 fenced code is highlighted after the document appears. `Ctrl+O` opens a file;
 `Ctrl+T` (or `Ctrl+N`) starts a new tab. `Ctrl+R` opens recent files; the picker can clear its history. Each file opens in its own tab. `Ctrl+Tab` and
 `Ctrl+Shift+Tab` switch tabs, and `Ctrl+W` closes the active tab; closing a dirty
-tab asks what to do with that document. Opening the same file through a symlink
+tab asks what to do with that document. Closing the final tab closes the app. Opening the same file through a symlink
 selects its existing tab. Changes made by another program are detected while
 the window stays open; a dirty editor asks before replacing its text.
 The editor supports fenced code, tables, task lists, math, images, and YAML front
@@ -27,6 +27,7 @@ move between cells, `Enter` moves down, and arrow keys cross cells at the text e
 Moving past the last row adds one. Pasting spreadsheet cells fills the table and
 adds rows or columns as needed. Right-click a cell (or press `Shift+F10`) to
 add, delete, or move rows and columns, sort a column, or change its alignment.
+Hover a table to reveal + strips below and to its right for new rows and columns.
 Table edits remain Markdown and can be undone. Local image paths resolve relative
 to the document.
 Enter continues a list, or ends an empty item; Tab and Shift+Tab adjust its
@@ -39,7 +40,8 @@ sections when navigating. Properties edits simple YAML text, numbers, and
 checkboxes directly in Markdown; comments, key order, and other values remain
 intact. Complex or malformed YAML stays available through Edit YAML in source.
 Valid property edits participate in autosave, recovery, and undo.
-Settings offers line numbers, indentation guides, spellcheck, line wrapping,
+Ctrl/⌘+, opens Settings with Appearance, Editor, Hotkeys and Substitutions.
+Editor settings offer line numbers, indentation guides, spellcheck, line wrapping,
 and tab display width. These preferences apply to all tabs and persist across
 launches without changing Markdown or undo history.
 Pasting formatted text from a browser converts headings, lists, links, emphasis,
@@ -52,7 +54,9 @@ the copy receives a numbered name instead. Clipboard files are limited to 64 MiB
 and native clipboard images to 10 megapixels.
 
 Named files save automatically after 2 seconds without typing; `Ctrl+S` saves
-immediately. The editor shows Edited, Saving, Saved, or Action needed. A failed
+immediately. Untitled documents and Save As use an in-app modal with filename and
+absolute folder fields; Escape cancels and invalid folders retain your input.
+Existing files save directly. The editor shows Edited, Saving, Saved, or Action needed. A failed
 save can be retried from the status bar. If another program changes the file,
 autosave pauses and the editor offers reload, Save As, or a confirmed overwrite
 when saving manually. Unsaved and untitled text receives a private recovery copy
@@ -90,7 +94,10 @@ binding before reassigning it. Preferences persist across launches.
 
 **Ctrl/⌘+T** creates a tab; **Ctrl/⌘+R** opens recents; table insertion is now
 **Ctrl/⌘+Shift+T**. Standard select/copy/cut/paste shortcuts stay available, and
-form fields retain native text undo. Menus and palette show the current bindings.
+form fields retain native text undo. **Ctrl/⌘+D** selects the current word, then
+adds its next occurrence on each press; typing edits all selections together.
+Menus and palette show the current bindings. Escape dismisses menus and panels.
+Contents, Properties and reading/editing are available through the menu or palette.
 
 Linux and Windows use an integrated tab/title row with window controls and a
 blank area for dragging; double-click the blank area to maximize or restore.
@@ -98,7 +105,7 @@ macOS retains its native title bar.
 
 ## Appearance
 
-Open **Appearance** in the tab strip (Ctrl/⌘+,) to choose system/light/dark mode,
+Open **Settings → Appearance** (Ctrl/⌘+,) to choose system/light/dark mode,
 an accent, text and monospace fonts, and font size. Settings apply to reading and
 editing and persist across launches. Import self-contained Obsidian `theme.css`
 files to use their compatible CSS variables, including per-level heading colors.
@@ -109,7 +116,26 @@ custom theme hides the controls.
 Obsidian-specific layouts, plugins, theme marketplaces, and local companion assets
 are not included. Imports are limited to 1 MiB per CSS file.
 
+## Substitutions
+
+Settings → Substitutions replaces matching suffixes as you type. Enable or disable
+rules, search, add, remove, swap source and replacement, or restore defaults.
+Immediate Backspace restores a replacement. Existing text and pasted text remain
+unchanged. Common arrow, inequality and fraction substitutions are included.
+
+Regex rules use `/pattern$/` with optional `i` or `s`; replacements support `$1`,
+`$2`, `$&`, and `\n`, `\t`, `\b`, `\\` escapes. Matching uses RE2 syntax,
+without lookaround or backreferences. Multiline/control-character replacements
+apply in the editor; rendered single-line table cells keep those triggers literal.
+
 ## Startup performance
+
+Settings forms and substitution regex code load when first needed. An alternating
+comparison of the current release against the same app before this change found
+15 ms lower paired-median content time in all eight medium-document rounds on
+this Linux machine. See [raw results](bench/results/paired-lazy-settings-medium.txt)
+and [handover](docs/HANDOVER.md) for the measurement boundary and build hashes.
+
 
 The comparison uses the same 1280×720 private headless compositor for both apps.
 `bench/ab.mjs` rotates which app launches first on each paired round. “Content” is

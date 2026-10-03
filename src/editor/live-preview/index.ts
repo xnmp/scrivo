@@ -74,7 +74,7 @@ function onTableCellInput(view: EditorView, tableFrom: number, row: number, col:
   if (lineNo > doc.lines) return;
   const line = doc.line(lineNo);
   const next = replaceCell(line.text, col, value);
-  if (next !== line.text) view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, userEvent: 'input.table' });
+  if (next !== line.text) view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, userEvent: 'input.type.table' });
 }
 
 function onTablePaste(view: EditorView, tableFrom: number, row: number, col: number, rows: number, text: string): { row: number; col: number } | null {

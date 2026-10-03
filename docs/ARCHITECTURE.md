@@ -400,3 +400,71 @@ atomic CSS snapshot still applies before document layout, including on relaunch.
 Registration reconciles updated packaged CSS for an active builtin ID; builtins are
 immutable and imports retain their existing limits. No community-theme network fetch
 or Obsidian vault/plugin layer is introduced.
+
+## Unified settings, substitutions and selection paint
+
+`ui/settings.ts` owns one modal with Appearance, Editor, Hotkeys and Substitutions
+sections. Ctrl/⌘+, opens it; commands route directly to a section. Embedded forms
+share this lifecycle and return focus on close. Escape cancels shortcut recording
+first, then closes the dialog. Explicit Escape handling is necessary for native
+WebKitGTK search controls. The global command dispatcher defers to the recorder.
+The header exposes the main menu, tabs and native controls; document panels and
+reading/editing are reached through commands instead of permanent toolbar buttons.
+Final-tab close delegates to the native window close guard, including dirty checks.
+
+Substitution contracts live in `domain/substitutions.ts`; storage is separate in
+`platform/substitutions.ts` (`scrivo.substitutions.v1`). Rules are ordered, bounded
+and immutable. Literal suffixes or anchored RE2 expressions match up to 2,048
+characters before each cursor. The RE2JS dependency prevents regex backtracking;
+lookaround and backreferences are unsupported. The serialized envelope is bounded
+at 2 MiB, with at most 100 rules, 128 source characters and 2,048 replacement
+characters. Invalid JSON/rules fail safely; denied persistence retains session state.
+
+`editor/substitutions.ts` intercepts only direct single-character typing, preserves
+the default input transaction and all selections, and isolates replacement undo.
+Immediate Backspace restoration is available when every cursor was substituted;
+mixed cursors retain ordinary Backspace. Paste, IME composition and existing
+Markdown do not trigger replacements. Rendered table inputs share the matcher but
+reject control-character outputs because their input is single-line. Their caret
+and selection must still match for immediate restoration. Table typing groups in
+history; structural row/column commands remain separate undo events. Hover/focus
+extension strips call existing table commands and focus the new cell synchronously
+when mounted, using a frame only when the widget has not yet been rendered.
+
+Ctrl/⌘+D delegates synchronously to CodeMirror's `selectNextOccurrence`. Loading the
+selection command asynchronously lost rapid consecutive shortcuts; the dependency
+is therefore in the already deferred editor module, not the reading startup path.
+
+Native WebKit paints some selected list ancestors across block backgrounds.
+`viewer/text-selection.ts` keeps the browser's Selection unchanged and paints
+clipped text-node ranges with CSS Custom Highlights. Native selection paint is
+suppressed only while custom ranges exist. Visible renderer blocks are located by
+binary search, bounding scroll work; unsupported engines keep normal selection.
+
+
+## In-app Save As
+
+`ui/save-dialog.ts` is a deferred native dialog with filename/folder inputs, native
+focus trapping, Enter submission, Escape cancellation and prior-focus restoration.
+It returns a path only; controller conditional writes and conflict prompts remain
+authoritative. `domain/save-location.ts` validates platform-specific absolute paths,
+rejects path-like/control filenames and preserves literal names/extensions. Drive
+roots keep their separator. Native homeDir supplies both the initial folder and
+platform path style. Tauri validates identity/regular-file stat before closing the
+modal; failure stays inline with fields retained. Actual writes may still fail or
+race after this read, so the existing write guards/error status remain required.
+Memory platform accepts an optional picker dependency; browser dev uses the same UI,
+while queued test answers and pure-controller unit tests retain their old contract.
+The system Open dialog is unchanged. No filesystem browsing or folder creation is
+included in this filename/folder modal.
+
+
+Settings initialization is demand-driven through the chrome facade: one module/
+instance promise, retry on import failure, awaited commands and synchronous
+recording inspection. Pending open intents use AbortController so Escape or a
+newer command cannot leave a late dialog. The tiny bundled palette registry is
+separate from forms and reconciles selected packaged CSS during chrome startup.
+Reading startup therefore avoids constructing settings controls or loading regex
+matching and the imported-theme library. Saved active CSS still applies in boot.
+Selection paint suppression targets article descendants, not all HTML descendants;
+WebKit can blank content when a body-boundary Range meets global transparency.

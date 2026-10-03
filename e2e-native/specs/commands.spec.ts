@@ -1,3 +1,4 @@
+import { openSettings, runCommand } from '../commands';
 import { execFileSync } from 'node:child_process';
 import { $, browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
@@ -32,8 +33,6 @@ describe('native commands and integrated chrome', () => {
     expect(await browser.execute(() => document.querySelectorAll('.tab-select').length)).toBe(2);
     await browser.keys(['Control', 'w']); await $('button[data-choice="discard"]').waitForDisplayed(); await $('button[data-choice="discard"]').click();
     await browser.waitUntil(() => browser.execute(() => document.querySelectorAll('.tab-select').length === 1));
-    await browser.keys(['Control', 'w']);
-    await $('.document-session:not([hidden]) .cm-content').waitForDisplayed();
     await browser.keys(['Control', 'r']); await $('[aria-label="Search recent files"]').waitForDisplayed();
     await $('[aria-label="Search recent files"]').setValue('doc.md'); await browser.keys('Enter');
     await $('.document-session:not([hidden]) .markdown-body h1').waitForDisplayed();
@@ -48,7 +47,7 @@ describe('native commands and integrated chrome', () => {
     await $('[aria-label="Search hotkeys"]').setValue('New tab');
     await $('[aria-label="Remove Ctrl+T from New tab"]').click(); await $('[aria-label="Remove Ctrl+N from New tab"]').click();
     await $('[aria-label="Add hotkey for New tab"]').click(); await browser.keys(['Control', 'Alt', 'j']);
-    await $('//dialog[@aria-label="Hotkeys"]//button[normalize-space(.)="Close"]').click();
+    await $('[aria-label="Close settings"]').click();
     await $('[aria-label="Minimize window"]').click();
     await browser.waitUntil(() => browser.execute(async () => (window as any).__TAURI_INTERNALS__.invoke('plugin:window|is_minimized', { label: 'main' })));
     await browser.reloadSession(); await $('#document h2').waitForDisplayed({ timeout: 15_000 });

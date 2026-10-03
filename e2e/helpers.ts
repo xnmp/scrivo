@@ -11,6 +11,16 @@ export interface OpenOptions {
   readonly mode?: 'edit' | 'view';
 }
 
+export async function runCommand(page: Page, label: string): Promise<void> {
+  await page.keyboard.press('Control+p');
+  await page.getByRole('combobox', { name: 'Search commands' }).fill(label);
+  await page.keyboard.press('Enter');
+}
+export async function openSettings(page: Page, section: 'Appearance' | 'Editor' | 'Hotkeys' | 'Substitutions' = 'Appearance'): Promise<void> {
+  await page.keyboard.press('Control+,');
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: section, exact: true }).click();
+}
+
 /** Navigate to the dev server and wait for the editor + `window.__scrivo` to be ready. */
 export async function openApp(page: Page, opts: OpenOptions = {}): Promise<void> {
   const params = new URLSearchParams();

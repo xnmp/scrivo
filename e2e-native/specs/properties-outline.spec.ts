@@ -1,3 +1,4 @@
+import { openSettings, runCommand } from '../commands';
 import { $, browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { state } from '../state';
@@ -7,7 +8,7 @@ describe('native properties and editing outline', () => {
     const fixture = state.fixture!;
     const original = readFileSync(fixture.docPath, 'utf8');
     await $('.cm-content').waitForDisplayed();
-    await $('.properties-toggle').click();
+    await runCommand('Document properties');
     const title = $('[aria-label="Property title"]');
     await title.click();
     await browser.keys(['Control', 'a']);
@@ -29,7 +30,7 @@ describe('native properties and editing outline', () => {
     await $('.viewer').waitForDisplayed();
     await browser.keys(['Control', 'e']);
     await $('.cm-content').waitForDisplayed();
-    if (await $('.properties-toggle').getAttribute('aria-expanded') === 'false') await $('.properties-toggle').click();
+    await runCommand('Document properties');
     expect(await $('[aria-label="Property title"]').getValue()).toBe('New title');
     expect(await $('[aria-label="Property done"]').isSelected()).toBe(true);
     expect(readFileSync(fixture.docPath, 'utf8')).toBe(final);
@@ -40,22 +41,21 @@ describe('native properties and editing outline', () => {
   it('indexes current editing headings in the native worker and unfolds a navigation target', async () => {
     const before = readFileSync(state.fixture!.docPath, 'utf8');
     await $('.cm-fold-toggle[aria-label="Fold heading First (line 8)"]').click();
-    await $('.outline-toggle').waitForDisplayed();
-    await $('.outline-toggle').click();
+        await runCommand('Toggle contents');
     expect(await $$('.outline-panel button').length).toBe(3);
     await $('[aria-label="Heading level 2: Child"]').click();
     await browser.waitUntil(() => $('.cm-content').getText().then((text) => text.includes('Child')), { timeout: 5_000 });
     expect(await browser.execute(() => document.activeElement?.classList.contains('cm-content'))).toBe(true);
     await browser.keys(['Control', '/']);
     await $('.cm-source-mode').waitForDisplayed();
-    await $('.outline-toggle').click();
+    await runCommand('Toggle contents');
     await $('[aria-label="Heading level 1: Last"]').click();
     await $('.cm-content').click();
     await browser.keys(['Control', 'End']);
     await browser.keys('Enter');
     await browser.keys('# New native');
     await browser.waitUntil(() => $('.cm-content').getText().then((text) => text.includes('New native')));
-    if (await $('.outline-toggle').getAttribute('aria-expanded') === 'false') await $('.outline-toggle').click();
+    if (await browser.execute(() => (document.querySelector('#outline-panel') as HTMLElement).hidden)) await runCommand('Toggle contents');
     await $('[aria-label="Heading level 1: New native"]').waitForDisplayed();
     await $('[aria-label="Heading level 1: New native"]').click();
     await browser.keys(['Control', 's']);

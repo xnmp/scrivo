@@ -16,7 +16,7 @@ import { Transaction, type ChangeDesc, type Text } from '@codemirror/state';
 import { createHeadingObserver } from './editor/heading-observer';
 import { indexHeadings } from './editor/heading-worker-client';
 import { editorPreferencesStore } from './platform/editor-preferences';
-import { createEditorSettings } from './ui/editor-settings';
+import { substitutionsStore } from './platform/substitutions';
 
 export interface EditorAppOptions {
   readonly platform: Platform;
@@ -48,7 +48,7 @@ export interface EditorApp extends EditorHandle {
   /** The editor surface became visible. */
   shown(): void;
   openProperties(): void;
-  openSettings(): void;
+  dismissPanels(): boolean;
   savePendingProperties(): boolean;
   dispose(): void;
 }
@@ -56,8 +56,8 @@ export interface EditorApp extends EditorHandle {
 export function createEditorApp(options: EditorAppOptions): EditorApp {
   const { platform, prompter } = options;
   let properties: PropertiesPanel | undefined;
-  let settings: ReturnType<typeof createEditorSettings> | undefined;
   const preferences = editorPreferencesStore();
+  const substitutions = substitutionsStore();
   let headingObserver: ReturnType<typeof createHeadingObserver> | undefined;
   let headingDocument: Text | undefined;
   let headingChanges: ChangeDesc | undefined;
@@ -89,6 +89,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
   };
   const editor = createEditor({
     preferences: preferences.get(),
+    substitutions: substitutions.get(),
     externalShortcuts: true,
     parent: options.parent,
     fileUrl: options.fileUrl,
@@ -141,6 +142,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
   const words = wordCounter(options.status, () => editor.view.state.doc.iter(), () => (editor.sourceMode() ? 'Source' : ''));
   properties = createPropertiesPanel(options.parent, {
     externalShortcuts: true,
+    controls: false,
     source: () => editor.view.state.doc.sliceString(0, Math.min(editor.view.state.doc.length, 257 * 1024)),
     apply: (change, start = false) => editor.view.dispatch({ changes: change,
       annotations: [...(start ? [isolateHistory.of('before')] : []), Transaction.userEvent.of('input.type.properties')] }),
@@ -152,12 +154,10 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
       editor.view.focus();
     },
     saveDocument: options.commands.save,
-    onOpen: () => settings?.close(),
+    onOpen: () => {},
   });
-  settings = createEditorSettings(options.parent, {
-    get: preferences.get, set: preferences.set, onOpen: () => properties?.close(),
-  });
-  const stopPreferences = preferences.subscribe((next) => { editor.setPreferences(next); settings?.refresh(); });
+  const stopPreferences = preferences.subscribe(editor.setPreferences);
+  const stopSubstitutions = substitutions.subscribe(editor.setSubstitutions);
   if (options.onHeadingsChanged) {
     headingObserver = createHeadingObserver({
       source: () => editor.view.state.doc.toString(),
@@ -175,7 +175,7 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
   return {
     editor,
     openProperties: () => properties?.open(),
-    openSettings: () => settings?.open(),
+    dismissPanels: () => properties?.dismiss() ?? false,
     savePendingProperties: () => properties?.commit() ?? true,
     controller,
     text: () => editor.view.state.doc.toString(),
@@ -206,8 +206,8 @@ export function createEditorApp(options: EditorAppOptions): EditorApp {
     dispose() {
       words.cancel();
       properties?.dispose();
-      settings?.dispose();
       stopPreferences();
+      stopSubstitutions();
       headingObserver?.dispose();
       editor.view.destroy();
     },

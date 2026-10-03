@@ -126,8 +126,13 @@ export function createTauriPlatform(): Platform {
         return typeof picked === 'string' ? picked : null;
       },
       async pickSave(suggestedPath) {
-        const { save } = await import('@tauri-apps/plugin-dialog');
-        return (await save({ defaultPath: suggestedPath, filters: MARKDOWN_FILTER })) ?? null;
+        const [{ homeDir }, { pickSaveLocation }] = await Promise.all([
+          import('@tauri-apps/api/path'), import('../ui/save-dialog'),
+        ]);
+        return pickSaveLocation(suggestedPath, await homeDir(), async path => {
+          await call<string>('document_identity', path, { path });
+          await call<FileStamp | null>('stat_document', path, { path });
+        });
       },
     },
     window: {

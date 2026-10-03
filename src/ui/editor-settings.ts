@@ -1,26 +1,12 @@
-import { icon } from './icons';
 import '../styles/editor-settings.css';
 import type { EditorPreferences } from '../domain/editor-preferences';
 
 export function createEditorSettings(host: HTMLElement, actions: {
   readonly get: () => EditorPreferences;
   readonly set: (preferences: EditorPreferences) => boolean;
-  readonly onOpen: () => void;
 }) {
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'editor-settings-toggle';
-  toggle.append(icon('settings'));
-  toggle.setAttribute('aria-label', 'Editor settings');
-  toggle.title = 'Editor settings';
-  toggle.setAttribute('aria-label', 'Editor settings');
-  toggle.setAttribute('aria-expanded', 'false');
-  const panel = document.createElement('aside');
-  panel.className = 'editor-settings-panel';
-  panel.id = `editor-settings-${crypto.randomUUID()}`;
-  panel.hidden = true;
-  panel.setAttribute('aria-label', 'Editor settings');
-  toggle.setAttribute('aria-controls', panel.id);
+  const panel = document.createElement('section');
+  panel.className = 'editor-settings-page settings-page';
   const heading = document.createElement('h2');
   heading.textContent = 'Editor settings';
   const help = document.createElement('p');
@@ -67,12 +53,6 @@ export function createEditorSettings(host: HTMLElement, actions: {
       else input.value = String(preferences[key]);
     }
   };
-  const close = () => { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); };
-  const open = () => { actions.onOpen(); refresh(); panel.hidden = false; toggle.setAttribute('aria-expanded', 'true'); };
-  toggle.addEventListener('click', () => panel.hidden ? open() : close());
-  panel.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); toggle.focus(); }
-  });
-  host.append(toggle, panel);
-  return { open, close, refresh, dispose() { toggle.remove(); panel.remove(); } };
+  host.append(panel);
+  return { panel, refresh };
 }

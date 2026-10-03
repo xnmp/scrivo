@@ -144,7 +144,7 @@ export const config: WebdriverIO.Config = {
       {
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
-        env: { ...process.env, XDG_DATA_HOME: path.join(fixture.dir, 'data') },
+        env: { ...process.env, XDG_DATA_HOME: path.join(fixture.dir, 'data'), XDG_CONFIG_HOME: path.join(fixture.dir, 'config') },
       },
     );
     state.driverPid = driverProcess.pid;

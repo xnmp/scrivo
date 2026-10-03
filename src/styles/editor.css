@@ -167,6 +167,13 @@
 
 .cm-lp-table-src { font-family: var(--font-mono); font-size: 0.9em; }
 .cm-lp-table-wrap { overflow-x: auto; padding: 0.4em 0; }
+.cm-lp-table-frame { display: inline-grid; grid-template-columns: auto 32px; grid-template-rows: auto 32px; }
+.cm-lp-table-extend { visibility: hidden; border: 1px dashed var(--border); border-radius: 4px; background: transparent; color: var(--fg-muted); padding: 0; display: flex; align-items: center; justify-content: center; }
+.cm-lp-table-extend svg { width: 16px; height: 16px; }
+.cm-lp-table-wrap:hover .cm-lp-table-extend, .cm-lp-table-wrap:focus-within .cm-lp-table-extend { visibility: visible; }
+.cm-lp-table-extend:hover, .cm-lp-table-extend:focus-visible { color: var(--accent); border-color: var(--accent); background: var(--code-bg); }
+.cm-lp-table-extend-row { grid-column: 1; cursor: s-resize; }
+.cm-lp-table-extend-column { grid-column: 2; grid-row: 1; cursor: e-resize; }
 .cm-lp-table { border-collapse: collapse; line-height: 1.5; }
 .cm-lp-table th,
 .cm-lp-table td {

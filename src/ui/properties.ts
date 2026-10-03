@@ -5,6 +5,7 @@ import { addProperty, changeProperty, readProperties, type Property, type Proper
 export interface PropertiesPanel {
   refresh(reset?: boolean): void;
   close(): void;
+  dismiss(): boolean;
   open(): void;
   commit(): boolean;
   dispose(): void;
@@ -13,6 +14,7 @@ export interface PropertiesPanel {
 export function createPropertiesPanel(host: HTMLElement, actions: {
   readonly source: () => string;
   readonly externalShortcuts?: boolean;
+  readonly controls?: boolean;
   readonly apply: (change: SourceChange, start?: boolean) => void;
   readonly finishEdit: () => void;
   readonly focusDocument: () => void;
@@ -43,7 +45,8 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
   notice.className = 'properties-notice';
   notice.setAttribute('role', 'status');
   panel.append(heading, source, content, notice);
-  host.append(toggle, panel);
+  if (actions.controls !== false) host.append(toggle);
+  host.append(panel);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const drafts = new Set<HTMLFormElement>();
   const validate = new Map<HTMLFormElement, () => boolean>();
@@ -160,7 +163,11 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
       notice.textContent = `${properties.unsupported} complex or unsupported ${properties.unsupported === 1 ? 'property remains' : 'properties remain'} available in source.`;
     }
   }
-  const open = () => { if (!panel.hidden) return; actions.onOpen(); render(); panel.hidden = false; toggle.setAttribute('aria-expanded', 'true'); };
+  const open = () => {
+    if (!panel.hidden) return;
+    actions.onOpen(); render(); panel.hidden = false; toggle.setAttribute('aria-expanded', 'true');
+    if (actions.controls === false) panel.querySelector<HTMLElement>('input, button')?.focus();
+  };
   const commit = () => {
     if (panel.hidden) return true;
     if (drafts.size) {
@@ -172,7 +179,7 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
   toggle.addEventListener('click', () => panel.hidden ? open() : close());
   source.addEventListener('click', () => { close(); actions.editSource(); });
   panel.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); toggle.focus(); }
+    if (event.key === 'Escape') { event.preventDefault(); close(); if (toggle.isConnected) toggle.focus(); else actions.focusDocument(); }
     else if (!actions.externalShortcuts && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 's') {
       event.preventDefault();
       if ([...drafts].every((form) => validate.get(form)?.())) {
@@ -184,6 +191,7 @@ export function createPropertiesPanel(host: HTMLElement, actions: {
   });
   return { open, commit,
     close,
+    dismiss() { if (panel.hidden) return false; close(); actions.focusDocument(); return true; },
     refresh(reset = false) {
       clearTimeout(timer);
       if (reset) {

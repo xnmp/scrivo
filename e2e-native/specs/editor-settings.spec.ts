@@ -1,3 +1,4 @@
+import { openSettings, runCommand } from '../commands';
 import { $, browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { state } from '../state';
@@ -6,9 +7,9 @@ describe('native editor settings', () => {
   it('persists editor projections across app relaunch without changing file bytes or undo history', async () => {
     const original = readFileSync(state.fixture!.docPath);
     await $('.cm-content').waitForDisplayed();
-    await $('.editor-settings-toggle').click();
+    await openSettings('Editor');
     for (const name of ['Line numbers', 'Indentation guides', 'Spellcheck', 'Wrap long lines']) {
-      await $(`//aside[@class="editor-settings-panel"]//label[contains(., "${name}")]/input`).click();
+      await $(`//section[contains(@class,"editor-settings-page")]//label[contains(., "${name}")]/input`).click();
     }
     await $('[aria-label="Tab display width"]').selectByAttribute('value', '8');
     await browser.keys('Escape');
@@ -25,8 +26,8 @@ describe('native editor settings', () => {
     await $('.cm-lineNumbers').waitForDisplayed();
     await $('.cm-indent-guides').waitForDisplayed();
     expect(await $('.cm-content').getAttribute('spellcheck')).toBe('false');
-    await $('.editor-settings-toggle').click();
-    expect(await $('//aside[@class="editor-settings-panel"]//label[contains(., "Indentation guides")]/input').isSelected()).toBe(true);
+    await openSettings('Editor');
+    expect(await $('//section[contains(@class,"editor-settings-page")]//label[contains(., "Indentation guides")]/input').isSelected()).toBe(true);
     expect(await $('[aria-label="Tab display width"]').getValue()).toBe('8');
     expect(readFileSync(state.fixture!.docPath).equals(original)).toBe(true);
   });

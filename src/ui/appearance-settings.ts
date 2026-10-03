@@ -1,31 +1,15 @@
 import '../styles/appearance.css';
 import { builtinThemes } from './builtin-themes';
-import { icon } from './icons';
 import { appearanceStore } from '../platform/appearance';
 import { importedTheme, MAX_THEME_SIZE } from '../domain/appearance';
 
-export function createAppearanceSettings(host: HTMLElement, externalShortcuts = false) {
+export function createAppearanceSettings(host: HTMLElement, visible: () => boolean) {
   const store = appearanceStore();
   store.registerBuiltins(builtinThemes);
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'appearance-toggle';
-  toggle.append(icon('appearance'));
-  toggle.title = 'Appearance (Ctrl/⌘+,)';
-  toggle.setAttribute('aria-label', 'Appearance');
-  toggle.setAttribute('aria-expanded', 'false');
-  const dialog = document.createElement('dialog');
-  dialog.className = 'appearance-dialog';
-  dialog.setAttribute('aria-label', 'Appearance');
-  dialog.id = 'appearance-settings';
-  toggle.setAttribute('aria-controls', dialog.id);
+  const dialog = document.createElement('section');
+  dialog.className = 'appearance-dialog settings-page';
   const heading = document.createElement('h2');
   heading.textContent = 'Appearance';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.textContent = 'Close';
-  close.className = 'appearance-close';
-  close.addEventListener('click', () => dialog.close());
   const notice = document.createElement('p');
   let importGeneration = 0;
   notice.setAttribute('role', 'status');
@@ -42,7 +26,7 @@ export function createAppearanceSettings(host: HTMLElement, externalShortcuts = 
     label(name, input);
     return input;
   };
-  dialog.append(heading, close);
+  dialog.append(heading);
   const mode = select('Color scheme', [['system', 'Adapt to system'], ['light', 'Light'], ['dark', 'Dark']]);
   mode.addEventListener('change', () => saved(store.set({ ...store.get(), mode: mode.value as 'system' | 'light' | 'dark' })));
   const themes = select('Theme', [['', 'Default']]);
@@ -101,7 +85,7 @@ export function createAppearanceSettings(host: HTMLElement, externalShortcuts = 
   reset.addEventListener('click', () => { importGeneration++; saved(store.reset()); });
   dialog.append(reset, notice);
   const refresh = () => {
-    if (!dialog.open) return;
+    if (!visible()) return;
     const preferences = store.get();
     mode.value = preferences.mode;
     themes.replaceChildren(...[{ id: '', name: 'Default' }, ...store.themes()].map((theme) => {
@@ -113,21 +97,7 @@ export function createAppearanceSettings(host: HTMLElement, externalShortcuts = 
     accent.value = preferences.accent || (/^#[0-9a-f]{6}$/i.test(themeAccent) ? themeAccent : '#0969da');
     textFont.value = preferences.textFont; monoFont.value = preferences.monoFont; size.value = String(preferences.fontSize);
   };
-  const open = () => { if (!dialog.open) dialog.showModal(); refresh(); toggle.setAttribute('aria-expanded', 'true'); };
-  toggle.addEventListener('click', open);
-  dialog.addEventListener('close', () => { toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); });
-  // Always available, even if a custom theme hides the app controls.
-  window.addEventListener('keydown', (event) => {
-    if (externalShortcuts || event.defaultPrevented || event.altKey) return;
-    if (event.key === 'Escape' && dialog.open) { event.preventDefault(); dialog.close(); return; }
-    if ((event.ctrlKey || event.metaKey) && (event.key === ',' || event.code === 'Comma')) {
-      event.preventDefault();
-      if (event.shiftKey) { importGeneration++; saved(store.reset()); }
-      open();
-    }
-  });
   store.subscribe(refresh);
-  host.append(toggle);
-  document.body.append(dialog);
-  return { open, reset: () => { importGeneration++; saved(store.reset()); open(); } };
+  host.append(dialog);
+  return { panel: dialog, refresh, reset: () => { importGeneration++; saved(store.reset()); refresh(); } };
 }

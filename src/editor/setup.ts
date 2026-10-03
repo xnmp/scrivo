@@ -5,6 +5,7 @@ import { foldCode, unfoldCode, foldedRanges, syntaxHighlighting, unfoldEffect } 
 import { Compartment, EditorSelection, EditorState, Prec, Transaction, type Extension, type Text } from '@codemirror/state';
 import { drawSelection, dropCursor, EditorView, keymap, lineNumbers, type KeyBinding, type ViewUpdate } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
+import { selectNextOccurrence } from '@codemirror/search';
 import type { EditorPort } from '../app/ports';
 import { documentDir } from '../domain/document';
 import { attachmentEvents, type FileTransfer, type Insertion } from './attachments';
@@ -18,6 +19,8 @@ import { editorTheme } from './theme';
 import type { EditorPreferences } from '../domain/editor-preferences';
 import { defaultEditorPreferences } from '../domain/editor-preferences';
 import { indentationGuides } from './indentation-guides';
+import { typingSubstitutions } from './substitutions';
+import type { Substitutions } from '../domain/substitutions';
 
 export interface EditorCommands {
   save(): void;
@@ -42,6 +45,7 @@ export interface EditorOptions {
   readonly domFileDrop?: boolean;
   readonly preferences?: EditorPreferences;
   readonly externalShortcuts?: boolean;
+  readonly substitutions?: Substitutions;
 }
 
 export interface Editor {
@@ -51,6 +55,7 @@ export interface Editor {
   toggleSourceMode(): void;
   runCommand(id: string): Promise<void>;
   setPreferences(preferences: EditorPreferences): void;
+  setSubstitutions(settings: Substitutions): void;
   /** 1-based line at the top of the viewport. */
   topLine(): number;
   /** Scroll `line` to the top of the viewport and put the caret at its start. */
@@ -82,6 +87,8 @@ export function createEditor(options: EditorOptions): Editor {
   const mode = new Compartment();
   const env = new Compartment();
   const preferenceCompartment = new Compartment();
+  const substitutionCompartment = new Compartment();
+  let substitutions = options.substitutions;
   let preferences = options.preferences ?? defaultEditorPreferences;
   const preferenceExtensions = (): Extension => [
     ...(preferences.lineNumbers ? [lineNumbers()] : []),
@@ -113,6 +120,7 @@ export function createEditor(options: EditorOptions): Editor {
     { key: 'Mod-/', run: () => (toggleSourceMode(), true), preventDefault: true },
     { key: 'Mod-f', run: (v) => (void openSearch(v, false), true), preventDefault: true },
     { key: 'Mod-h', run: (v) => (void openSearch(v, true), true), preventDefault: true },
+    { key: 'Mod-d', run: () => (void runCommand('selectNext'), true), preventDefault: true },
   ];
 
   const extensions = (path: string | null): Extension => [
@@ -127,6 +135,7 @@ export function createEditor(options: EditorOptions): Editor {
     closeBrackets(),
     accessibleFoldGutter(),
     preferenceCompartment.of(preferenceExtensions()),
+    substitutionCompartment.of(substitutions ? typingSubstitutions(substitutions) : []),
     syntaxHighlighting(classHighlighter),
     // Some platforms send a lowercase character even with Shift held. The
     // default character keymap tries the unshifted command first in that case.
@@ -266,6 +275,9 @@ export function createEditor(options: EditorOptions): Editor {
   };
 
   async function runCommand(id: string) {
+    if (id === 'selectNext') {
+      selectNextOccurrence(view); view.focus(); return;
+    }
     if (id === 'source') { toggleSourceMode(); return; }
     if (id === 'find' || id === 'replace') { await openSearch(view, id === 'replace', options.externalShortcuts); return; }
     if (id === 'findNext' || id === 'findPrevious') {
@@ -279,6 +291,7 @@ export function createEditor(options: EditorOptions): Editor {
     if (run) { run(view); view.focus(); }
   }
   return { runCommand, view, port, sourceMode: () => source, toggleSourceMode, topLine, revealLine, beginInsertion,
+    setSubstitutions(next) { substitutions = next; view.dispatch({ effects: substitutionCompartment.reconfigure(typingSubstitutions(next)) }); },
     setPreferences(next) {
       preferences = next;
       view.dispatch({ effects: preferenceCompartment.reconfigure(preferenceExtensions()) });

@@ -1,0 +1,21 @@
+round 1 scrivo-before-lazy-settings: window=196 content=362 complete=362
+round 1 scrivo-after-lazy-settings: window=181 content=359 complete=359
+round 2 scrivo-after-lazy-settings: window=181 content=343 complete=343
+round 2 scrivo-before-lazy-settings: window=178 content=355 complete=355
+round 3 scrivo-before-lazy-settings: window=173 content=351 complete=351
+round 3 scrivo-after-lazy-settings: window=194 content=342 complete=342
+round 4 scrivo-after-lazy-settings: window=180 content=340 complete=340
+round 4 scrivo-before-lazy-settings: window=195 content=375 complete=375
+round 5 scrivo-before-lazy-settings: window=177 content=355 complete=355
+round 5 scrivo-after-lazy-settings: window=175 content=337 complete=337
+round 6 scrivo-after-lazy-settings: window=184 content=378 complete=378
+round 6 scrivo-before-lazy-settings: window=202 content=381 complete=381
+round 7 scrivo-before-lazy-settings: window=199 content=393 complete=393
+round 7 scrivo-after-lazy-settings: window=174 content=351 complete=351
+round 8 scrivo-after-lazy-settings: window=194 content=343 complete=343
+round 8 scrivo-before-lazy-settings: window=189 content=384 complete=384
+
+medium.md, 8 rounds
+  scrivo-before-lazy-settings n=8  window med=192  content med=369  complete med=369
+  scrivo-after-lazy-settings n=8  window med=181  content med=343  complete med=343
+  scrivo-after-lazy-settings vs scrivo-before-lazy-settings: content -15 ms (paired median), faster in 8/8 rounds

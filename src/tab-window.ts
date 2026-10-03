@@ -25,6 +25,7 @@ export async function startTabWindow(context: {
   readonly setFollowLink: (handler: (href: string) => void) => void;
 }): Promise<void> {
 const { platform, tauri, prompter, preShown } = context;
+if (tauri) void import('./viewer/text-selection').then(module => module.installTextSelection()).catch(() => undefined);
 document.body.dataset.native = String(tauri);
 const loadEditorModule = () => import('./editor-app');
 const FIND_REFRESH_MS = 250;
@@ -80,7 +81,7 @@ function refreshOutline(): void {
         const session = activeSession();
         if (session?.workspace.mode() === 'edit') session.editorApp()?.focus();
         else session?.viewer.focus();
-      });
+      }, false);
       outline.setHeadings(activeSession()?.headings() ?? []);
     }).catch(() => undefined).finally(() => { outlineLoading = false; });
   });
@@ -100,12 +101,11 @@ const tabBar = createTabBar(document.getElementById('tab-bar')!, {
   close: (id) => void close(id),
   create: () => void createUntitled(),
 });
-const renderTabs = () => { tabBar.render(tabLabels(), tabs.activeId); updateBreadcrumb(); };
-const { appearance, picker, hotkeys, updateDocument, refreshControls } = createWindowChrome(
+const renderTabs = () => { tabBar.render(tabLabels(), tabs.activeId); };
+const { settings, picker, refreshControls } = createWindowChrome(
   document.getElementById('tab-bar')!, document.getElementById('document-toolbar')!, {
     window: platform.window, native: tauri, mac, preferences, execute: id => void execute(id), notify: prompter.notify,
   });
-const updateBreadcrumb = () => { const session = activeSession(); updateDocument(session?.workspace.documentPath() ?? null, session?.workspace.mode() === 'edit'); };
 const refreshHints = () => {
   refreshControls();
   const session = activeSession();
@@ -434,6 +434,7 @@ async function close(id: string): Promise<void> {
 
 async function execute(id: string): Promise<void> {
   try {
+    if (!['settings', 'appearance', 'resetAppearance', 'hotkeys', 'editorSettings', 'substitutions'].includes(id)) settings.cancelPending();
     const session = activeSession();
     if (id === 'palette') {
       picker.open('Command palette', commands.map(command => ({ id: command.id, label: command.label, detail: command.group,
@@ -441,9 +442,12 @@ async function execute(id: string): Promise<void> {
     } else if (id === 'recent') {
       picker.open('Open recent', preferences.recents().map(item => ({ id: item.identity, label: displayName(item.path), detail: item.path, run: () => void openPath(item.path) })),
         { label: 'Clear recent files', run: () => { void execute('clearRecents').then(() => execute('recent')); } });
-    } else if (id === 'appearance') appearance.open();
-    else if (id === 'resetAppearance') appearance.reset();
-    else if (id === 'hotkeys') hotkeys.open();
+    } else if (id === 'settings') await settings.open();
+    else if (id === 'appearance') await settings.open('appearance');
+    else if (id === 'resetAppearance') await settings.resetAppearance();
+    else if (id === 'hotkeys') await settings.open('hotkeys');
+    else if (id === 'editorSettings') await settings.open('editor');
+    else if (id === 'substitutions') await settings.open('substitutions');
     else if (id === 'clearRecents') { if (!preferences.clearRecents()) prompter.notify('Cleared for this window. Could not save recent files.'); }
     else if (id === 'open') await openFromDialog();
     else if (id === 'new') await createUntitled();
@@ -454,7 +458,10 @@ async function execute(id: string): Promise<void> {
     } else if (id === 'saveAs') {
       if (session.editorApp()?.savePendingProperties() === false) return;
       await session.workspace.saveAs();
-    } else if (id === 'close') await close(session.id);
+    } else if (id === 'close') {
+      if (tauri && tabs.tabs.length === 1) await platform.window.close();
+      else await close(session.id);
+    }
     else if (id === 'reading') await session.workspace.toggle();
     else if (id === 'contents') outline?.toggle();
     else if (id === 'nextTab' || id === 'previousTab') {
@@ -468,10 +475,8 @@ async function execute(id: string): Promise<void> {
       if (session.workspace.mode() !== 'edit') await session.workspace.toggle();
       const app = session.editorApp();
       if (id === 'properties') app?.openProperties();
-      else if (id === 'editorSettings') app?.openSettings();
       else await app?.editor.runCommand(id);
     }
-    updateBreadcrumb();
   } catch (error) { prompter.notify(`Could not run command: ${String(error)}`); }
 }
 // A single capture dispatcher owns application shortcuts, including table widgets.
@@ -481,17 +486,24 @@ window.addEventListener('keydown', event => {
   const modal = document.querySelector('dialog[open]');
   if (modal) {
     const definition = matchCommand(eventChord(event, mac), preferences.hotkeys(), mac);
-    if (modal.id === 'appearance-settings' && ['appearance', 'resetAppearance'].includes(definition?.id ?? '')) {
+    if (modal.id === 'scrivo-settings' && !settings.recording() && ['settings', 'resetAppearance'].includes(definition?.id ?? '')) {
       event.preventDefault(); void execute(definition!.id);
     }
     return;
   }
-  if (event.key === 'Escape') { if (activeSession()?.workspace.mode() === 'view') activeSession()?.findBar().dismiss(); return; }
+  if (event.key === 'Escape') {
+    if (settings.cancelPending()) { event.preventDefault(); return; }
+    if (document.querySelector('.app-menu:popover-open, .cm-lp-table-menu')) return;
+    const session = activeSession();
+    if (session?.editorApp()?.dismissPanels() || outline?.dismiss()) event.preventDefault();
+    else if (session?.workspace.mode() === 'view') session.findBar().dismiss();
+    return;
+  }
   const command = matchCommand(eventChord(event, mac), preferences.hotkeys(), mac);
   if (!command) return;
   const target = event.target;
   if (target instanceof HTMLElement && target.matches('input, textarea, select') && !target.closest('.cm-lp-table')
-    && (['undo', 'redo', 'Format'].includes(command.group === 'Format' ? 'Format' : command.id)
+    && (['undo', 'redo', 'selectNext', 'Format'].includes(command.group === 'Format' ? 'Format' : command.id)
       || /^(Mod|Ctrl|Meta)\+(Shift\+)?Key[ZY]$/.test(eventChord(event, mac)))) return;
   event.preventDefault(); void execute(command.id);
 }, true);

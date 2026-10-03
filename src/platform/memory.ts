@@ -77,6 +77,7 @@ export function createMemoryPlatform(options: {
   /** Start in the editor even for an existing file (the `--edit` flag). */
   startInEditor?: boolean;
   render?: RenderFn;
+  pickSave?: (suggestedPath: string) => Promise<string | null>;
 } = {}): MemoryPlatform {
   const renderFn = options.render ?? fakeRender;
   let clock = 1_000;
@@ -189,8 +190,9 @@ export function createMemoryPlatform(options: {
       async pickOpen() {
         return dialogAnswers.open.shift() ?? null;
       },
-      async pickSave() {
-        return dialogAnswers.save.shift() ?? null;
+      async pickSave(suggestedPath) {
+        if (dialogAnswers.save.length) return dialogAnswers.save.shift()!;
+        return options.pickSave?.(suggestedPath) ?? null;
       },
     },
     window: {

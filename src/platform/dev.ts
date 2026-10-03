@@ -57,6 +57,7 @@ export function createDevPlatform(): MemoryPlatform {
     ...(startupPath ? { startupPath } : {}),
     startInEditor: params.get('mode') === 'edit',
     render: devRender,
+    pickSave: async path => (await import('../ui/save-dialog')).pickSaveLocation(path, '/sample'),
   });
   // Mirror titles into the tab so they are visible during development.
   const setTitle = platform.window.setTitle;

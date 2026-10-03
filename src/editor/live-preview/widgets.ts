@@ -1,7 +1,10 @@
 import { WidgetType, type EditorView } from '@codemirror/view';
+import { isolateHistory } from '@codemirror/commands';
 import { escapeCellPipes, type Align } from '../../domain/table';
 import type { InlineNode } from './inline-ast';
 import { renderMath } from './math';
+import { icon } from '../../ui/icons';
+import { substitutionMatcher } from '../substitutions';
 
 const BULLETS = ['•', '◦', '▪'];
 
@@ -195,11 +198,13 @@ export class TableWidget extends WidgetType {
   }
 
   private focusCell(view: EditorView, tableFrom: number, row: number, col: number, activation: 'select' | 'end' = 'select') {
-    requestAnimationFrame(() => {
+    const focus = () => {
       const wrap = tableAt(view, tableFrom);
       const cell = wrap?.querySelector<HTMLElement>(`[data-row="${row}"][data-col="${col}"]`);
-      if (wrap && cell) (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, activation);
-    });
+      if (!wrap || !cell) return false;
+      (renderedTables.get(wrap) ?? this).activateCell(wrap, cell, view, activation); return true;
+    };
+    if (!focus()) requestAnimationFrame(focus);
   }
 
   private pasteIntoCell(wrap: HTMLElement, cell: HTMLElement, view: EditorView, event: ClipboardEvent): boolean {
@@ -217,6 +222,7 @@ export class TableWidget extends WidgetType {
 
   private activateCell(wrap: HTMLElement, cell: HTMLElement, view: EditorView, activation: 'select' | 'end' | number = 'select') {
     if (cell.querySelector('input')) return;
+    view.dispatch({ annotations: isolateHistory.of('before') });
     const current = renderedTables.get(wrap) ?? this;
     const row = Number(cell.dataset.row);
     const col = Number(cell.dataset.col);
@@ -234,10 +240,32 @@ export class TableWidget extends WidgetType {
       (renderedTables.get(wrap) ?? this).onCellInput(view, view.posAtDOM(wrap), row, col, input.value);
     };
     input.addEventListener('input', (event) => { if (!(event as InputEvent).isComposing) write(); });
+    let restoration: { value: string; position: number; caret: number; substituted: string } | null = null;
+    input.addEventListener('mousedown', () => { restoration = null; });
+    input.addEventListener('beforeinput', event => {
+      if (event.isComposing || event.inputType !== 'insertText' || !event.data || [...event.data].length !== 1) return;
+      const start = input.selectionStart ?? 0, end = input.selectionEnd ?? start;
+      const prefix = input.value.slice(0, start) + event.data;
+      const match = view.state.facet(substitutionMatcher)(prefix);
+      restoration = null;
+      if (!match || /[\r\n\t\b]/.test(match.insert)) return;
+      event.preventDefault();
+      const typed = prefix + input.value.slice(end), position = match.from + match.insert.length;
+      input.value = prefix.slice(0, match.from) + match.insert + input.value.slice(end);
+      restoration = { value: typed, position: prefix.length, caret: position, substituted: input.value };
+      input.setSelectionRange(position, position); write();
+    });
     input.addEventListener('compositionend', write);
     input.addEventListener('blur', () => (renderedTables.get(wrap) ?? this).renderCell(cell, row, col, view));
     input.addEventListener('paste', (event) => { this.pasteIntoCell(wrap, cell, view, event); });
     input.addEventListener('keydown', (event) => {
+      if (event.key === 'Backspace' && restoration && input.value === restoration.substituted
+        && input.selectionStart === restoration.caret && input.selectionEnd === restoration.caret
+        && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault(); const previous = restoration; restoration = null;
+        input.value = previous.value; input.setSelectionRange(previous.position, previous.position); write(); return;
+      }
+      restoration = null;
       if (event.key === 'Escape') {
         event.preventDefault();
         cell.focus();
@@ -484,7 +512,23 @@ export class TableWidget extends WidgetType {
       e.preventDefault();
       (renderedTables.get(wrap) ?? this).openMenu(wrap, cell, view, e.clientX, e.clientY);
     });
-    wrap.appendChild(table);
+    const frame = document.createElement('div'); frame.className = 'cm-lp-table-frame';
+    const append = (kind: 'row' | 'column') => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = `cm-lp-table-extend cm-lp-table-extend-${kind}`;
+      button.setAttribute('aria-label', kind === 'row' ? 'Add table row' : 'Add table column'); button.title = kind === 'row' ? 'Add row' : 'Add column'; button.append(icon('plus'));
+      button.addEventListener('click', () => {
+        const current = renderedTables.get(wrap) ?? this;
+        const { sourceCells, align } = current.currentModel(), tableFrom = view.posAtDOM(wrap);
+        if (kind === 'row') {
+          current.onAppendRow(view, tableFrom, sourceCells.length, align.length);
+          current.focusCell(view, tableFrom, sourceCells.length, 0);
+        } else {
+          current.onAction(view, tableFrom, 0, align.length - 1, sourceCells.length, align.length, 'insert-column-right');
+          current.focusCell(view, tableFrom, 0, align.length);
+        }
+      }); return button;
+    };
+    frame.append(table, append('column'), append('row')); wrap.append(frame);
     renderedTables.set(wrap, this);
     return wrap;
   }

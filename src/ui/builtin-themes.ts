@@ -1,5 +1,5 @@
 import type { Theme } from '../domain/appearance';
-/** Original palettes using Obsidian's public variables. Loaded with settings only. */
+/** Original palettes using Obsidian's public variables; independent of settings forms. */
 const palette = (mode: string, bg: string, surface: string, fg: string, muted: string, border: string, accent: string) =>
   `.theme-${mode} { --background-primary:${bg}; --background-secondary:${surface}; --background-secondary-alt:${surface}; --text-normal:${fg}; --text-title:${fg}; --text-muted:${muted}; --text-faint:${muted}; --background-modifier-border:${border}; --interactive-accent:${accent}; --text-on-accent:${mode === 'dark' ? '#181818' : '#ffffff'}; --text-accent:${accent}; --code-background:${surface}; --table-row-alt-background:${surface}; --caret-color:${fg}; --blockquote-border-color:${border}; }`;
 export const builtinThemes: readonly Theme[] = [

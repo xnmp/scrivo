@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openApp } from './helpers';
+import { openSettings, runCommand, openApp } from './helpers';
 
 const doc = (page: Page) => page.locator('#document');
 
@@ -57,22 +57,20 @@ test.describe('reading view', () => {
 
   test('contents sidebar jumps to a heading and closes with Escape', async ({ page }) => {
     await openApp(page, { text: SAMPLE, mode: 'view' });
-    const toggle = page.getByRole('button', { name: 'Contents', exact: true });
-    await expect(toggle).toBeVisible();
-    await toggle.click();
+    await runCommand(page, 'Toggle contents');
     const panel = page.locator('#outline-panel');
     await expect(panel).toBeVisible();
     await panel.getByRole('button', { name: 'Heading level 2: Part two' }).click();
     await expect.poll(() => page.evaluate(() => (window as any).__scrivo.viewer.topLine())).toBeGreaterThan(60);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
-    await expect(toggle).toBeFocused();
+    await expect(page.locator('#viewer')).toBeFocused();
   });
 
   test('contents sidebar works on a narrow window', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     await openApp(page, { text: SAMPLE, mode: 'view' });
-    await page.getByRole('button', { name: 'Contents', exact: true }).click();
+    await runCommand(page, 'Toggle contents');
     const panel = page.locator('#outline-panel');
     await expect(panel).toBeVisible();
     await panel.getByRole('button', { name: 'Heading level 2: Part two' }).click();

@@ -1,4 +1,6 @@
 const paths = {
+  swap: 'M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4',
+  keys: 'M3 6h18v12H3zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10',
   chevron: 'm9 6 6 6-6 6',
   menu: 'M4 6h16M4 12h16M4 18h16', close: 'm6 6 12 12M6 18 18 6', plus: 'M12 5v14M5 12h14',
   minus: 'M5 12h14', maximize: 'M5 5h14v14H5z', palette: 'm4 7 5 5-5 5M12 17h7',

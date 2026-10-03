@@ -1,5 +1,240 @@
 # Handover — 2026-10-03
 
+## 2026-10-03: unified settings, substitutions, minimal chrome and text selection
+
+This pass follows `d5e24cf` (desktop appearance catalog) and preserves that work
+and the concurrent `923827d` external-link theme fix.
+The user's active requests are Escape dismissal, minimal header, table hover +
+strips, Ctrl+D multiple selections, customizable bindings, full Ctrl+, Settings,
+Substitutions, text-only selection paint, and Ctrl+W closing the final native tab.
+This section supersedes the older toolbar/dialog instructions below.
+
+### User-visible behavior
+
+- Header: menu, tabs, new-tab and native window controls. Removed permanent palette,
+  appearance, settings, Contents, Properties and mode buttons plus the second row.
+  Commands remain discoverable in the menu and Ctrl/⌘+P palette; Ctrl/⌘+E toggles
+  reading/editing. Reader status still hints how to edit.
+- Ctrl/⌘+, opens one Settings modal with Appearance, Editor, Hotkeys and
+  Substitutions. Sidebar search filters sections; each section retains its own
+  controls/search. Hotkeys accepts up to four chords, removal/conflict detection,
+  reset and persistence. Escape cancels active shortcut recording first, then
+  dismisses Settings; menu, palette, Properties and Contents also dismiss.
+- Ctrl/⌘+D selects a word, then adds its next occurrence. Typing replaces every
+  selection and Undo restores them together. Binding is customizable.
+- Table hover or keyboard focus reveals narrow + strips below/right with vertical
+  and horizontal resize cursors. Clicking extends rows/columns and focuses the new
+  editable cell. Cell typing is grouped in Undo; structure is a separate event.
+- Substitutions: global enable, ordered literal/regex rules, per-rule switches,
+  source/replacement search, add/remove/swap/restore, validation and persistence.
+  Defaults include arrows, inequalities, ± and ½. Typing triggers rules; paste,
+  existing documents and IME composition do not. Immediate Backspace restores the
+  source when all cursors participated; mixed cursors use ordinary Backspace.
+  Table inputs share rules but keep control-character outputs literal.
+- Native reader selection paint covers text runs, not full block rectangles.
+  Original browser Selection and clipboard semantics remain authoritative. Native
+  nested-list text needs inline spans to work around another WebKit paint bug.
+- Final-tab Ctrl/⌘+W requests native window close, including dirty/recovery guards;
+  Cancel leaves the app/tab open. Browser memory mode keeps a replacement tab.
+
+### Architecture / contracts
+
+- `ui/settings.ts` owns the dialog and embedded Appearance/Editor/Hotkeys/
+  Substitutions forms. Avoid reintroducing multiple modals or per-editor settings.
+  Close restores connected prior focus; command-opened panels focus real content.
+  `ui/dialog-escape.ts` handles native search-field Escape explicitly. Do not use
+  stopPropagation to cover duplicate dispatch.
+- `tab-window.ts` remains owner of commands, active documents and guarded native
+  close. The global key dispatcher yields to hotkey recording; form fields keep
+  native text editing. Record Ctrl+Shift+, as a conflict rather than resetting the
+  user's appearance while recording.
+- `domain/substitutions.ts` is pure matching/validation. RE2JS uses linear-time
+  matching; `/pattern$/` accepts `i` and `s`, supports captures in replacement and
+  rejects empty-match patterns. Context is bounded to 2,048 characters across
+  lines; at most 100 rules, source 128 / replacement 2,048, expanded output 8,192.
+  Replacement escapes are \n, \t, \b and \\; RE2 excludes lookaround/backrefs.
+- `platform/substitutions.ts` owns `scrivo.substitutions.v1`, a 2MiB JSON envelope,
+  defensive reads, subscriptions/storage synchronization and session-only failure
+  reporting. Keep the envelope large enough for escaped 100-rule valid configs.
+- `editor/substitutions.ts` uses CodeMirror's default input transaction to preserve
+  multiple selections. It dispatches typing then replacement with isolated undo.
+  Restoration state clears on document/selection changes. Table inputs use the
+  matcher facet, exact caret/value guards, and avoid multiline/control output.
+- `editor/setup.ts` loads selectNextOccurrence synchronously inside the deferred
+  editor. A lazy selection import lost rapid consecutive Ctrl+D presses; don't
+  restore that race. Search panel UI itself is still deferred.
+- `viewer/text-selection.ts` installs only natively after boot. CSS Custom Highlights
+  use clipped per-text-node ranges; native block paint is transparent only while
+  custom ranges exist. Every large flow container seeks visible children by binary
+  search (including nested lists/tables), rather than scanning a huge selected
+  document on every scroll. Offscreen selection/copy remains unchanged. New reader
+  DOM prepares bare text in parent list items before selection. Engines without
+  Custom Highlight support retain native selection. Dynamic load failure falls
+  back to native selection.
+- Tables reuse existing commands/Markdown serialization. `focusCell` focuses
+  synchronously if mounted; schedule one frame only when the target is absent.
+  Unconditional delayed select erased the beginning of rapid typed cell text.
+
+### In-app Save As (latest user steering)
+
+Ctrl/⌘+S on untitled documents and Save As now open `ui/save-dialog.ts`, an app
+modal with File name and absolute Folder fields. No system Save dialog launches.
+Existing named files save directly. Escape/Cancel writes nothing; Enter submits.
+Native path validation checks document identity and regular-file stat before
+closing, preserving fields and showing an inline error for missing folders.
+Controller conflict/write guards still own actual saves and overwrite confirmation.
+`domain/save-location.ts` validates POSIX vs Windows absolute paths, preserves
+Windows drive roots, rejects incomplete UNC/relative paths and invalid filenames,
+and never expands shell expressions or silently changes extensions. Initial folder
+comes from existing path or native homeDir. There is no folder browser or folder
+creation in this modal. `platform/dev.ts` uses the same UI; memory unit tests and
+queued picker answers retain deterministic behavior. Open file remains a system
+picker, as the request concerned saving.
+
+### Startup follow-up (latest user request)
+
+The final pass separates Settings forms from tab chrome. `ui/window-chrome.ts`
+imports/constructs them on first Settings/Appearance/Hotkeys/Substitutions/reset
+command through one cached promise. All callers await the command; failed imports
+report through the existing command error path and can retry. An AbortController
+tracks each pending open intent: Escape or a newer command prevents a late modal,
+while the module/instance cache remains reusable. The synchronous recording facade
+still protects hotkey recording. Packaged palette registration stays independent
+and reconciles active built-in CSS during chrome initialization, even if Settings
+never opens; the saved theme snapshot still applies in boot before document layout.
+The settings forms, full import library and roughly 150 KiB regex module no longer
+load for an ordinary reading startup. Editor typing still loads its matching rules.
+
+Behavior gates: 25 affected browser tests passed, then 22 tests after cancellation
+and reconciliation fixes; final 12 settings contracts passed. Native four affected
+specs passed after the lazy change (settings/substitutions/final close, Commands,
+Appearance, Save modal). Final timing comparison below records actual results;
+do not infer an almost-instant native launch from reduced frontend work alone.
+Baseline `/tmp/scrivo-before-lazy-settings`, SHA-256
+`68dd9172c776732b4841a21a3290e5830b538ffa02c7ef184da72a9630976d0e`.
+Three baseline medium traces: content median 439 ms, JS-to-shell-ready work visible
+in `/tmp/scrivo-startup-before-lazy-settings.log`. Final candidate comparisons use
+private headless cage, identical fixtures/references and isolated XDG configuration.
+
+A final native selector investigation narrowed transparent native selection to
+`.markdown-body *::selection`. Suppressing all HTML descendants could blank the
+reader for a programmatic Range spanning body boundaries. Reader-only suppression
+preserves narrow list/real Ctrl+A paint and avoids that engine bug. Native chrome
+text selection remains native. Real Ctrl+A/body-range evidence:
+`/tmp/scrivo-selector-article-descendants-{list,ctrl-a,body}.png` and
+`/tmp/scrivo-selection-selector-compare-valid.log`.
+
+### Verification and reproducible commands
+
+- Unit suite: 474 passed (34 files). A concurrent earlier run of the existing
+  incomplete-parse fold timing test failed once; unchanged retry and later complete
+  runs passed. Source/path/domain contracts have dedicated behavior tests.
+- Final full Chromium regression:148 passed (including 11 settings/save contracts).
+  Focused 11 passed also covers
+  settings, substitutions, table extension, mixed Backspace, literal paste, long
+  Swap, recorder/reset conflict, dotall across lines, custom Save and overwrite
+  cancellation. Log: `/tmp/scrivo-settings-all-final.log`.
+- Native: Editor Settings1, Properties/Outline2, Table2, Commands1, Appearance1,
+  Settings/Substitutions/final-close1, Save modal1 passed in isolated displays.
+  Save modal additionally verifies missing-folder error retains fields and actual
+  writes succeed after correction. Logs `/tmp/scrivo-save-validation-native.log`,
+  `/tmp/scrivo-settings-native-final.log`, earlier settings-native/retry logs.
+- `browser.keys(['Control','Left'])` emits letters L,E,F,T, including Ctrl+T;
+  corrected native spec uses ArrowLeft. Never reuse Left for arrow navigation.
+  After WebKit reload, X11 active-window metadata can be absent; the close test
+  locates Scrivo in its own tauri-driver process group and sends signal0 only to
+  confirm clean Ctrl+W exit. No user process is killed or automated.
+- Independent native visual check passes: nested-list text-width highlight, actual
+  copy/paste equality, clear, scroll. A 1,200-item selected list highlights visible
+  591–608 and 1091–1108 after scrolling while full selection remains 330,214 characters.
+  Evidence `/tmp/scrivo-selection-final-native.log`, final-list.png,
+  final-single-list-late.png. All native actions are private xvfb/dbus/openbox.
+- App and native-spec TypeScript pass. Bundle gate final37/41KiB startup,
+  51/56KiB known prepaint; settings, RE2 and Save remain deferred. Native release
+  compile/install details are recorded below when complete.
+- Reader medium/large and medium editor 1280×720 references were captured on private
+  cage, converted with ffmpeg, visually reviewed then regenerated with
+  `bench/make-reference.mjs`. Verified one-run smoke checks use those references;
+  these are correctness checks and do not establish new speed comparisons.
+- Visual agent-browser evidence includes light/dark desktop, 320px Settings,
+  switch/error/focus states, Save modal and table hover under `/tmp/scrivo-*`.
+  No browser runtime errors. `docs/UI_SWEEP.md` records scope and untested OS limits.
+
+Commands:
+
+```sh
+bun run typecheck
+bunx tsc -p e2e-native/tsconfig.json --noEmit
+bun run test
+bunx playwright test --project=chromium --workers=2
+bun run build:native-test
+# Use private xvfb/dbus/with-wm.sh; see package script and native config.
+bunx tauri build --no-bundle
+XDG_CONFIG_HOME=/tmp/scrivo-settings-bench-config \
+XDG_DATA_HOME=/tmp/scrivo-settings-bench-data \
+node bench/bench.mjs scrivo bench/fixtures/medium.md 1
+```
+
+### Release, installation and measured startup result
+
+Release build succeeded with startup 37/41 KiB, known prepaint 51/56 KiB and 3,281 KiB
+in the declared deferred graph. Installed atomically at `/home/chong/.local/bin/scrivo`
+for the next launch. Current user windows were not automated, closed or restarted.
+Release and installed SHA-256:
+`70dffd99b6ac906435dde08d9624dd6803e48cb4ef4f3ca54177146dcf62a8f1`.
+Both `text/markdown` and `text/x-markdown` remain `dev.scrivo.editor.desktop`.
+
+Eight verified, alternating paired medium launches compare the preserved baseline
+and final release. All 8 pairs valid and candidate faster in 8/8; **paired median
+content improvement 15 ms**. Aggregate medians: before 369 ms, after 343 ms. Do not confuse
+aggregate median difference 26 ms with paired effect 15 ms. The private 1280×720
+compositor and exact reviewed references are used for both binaries; this result
+is machine/fixture-specific and does not promise instantaneous GTK/WebKit startup.
+Raw reproducible evidence: `bench/results/paired-lazy-settings-medium.txt`.
+
+```sh
+XDG_CONFIG_HOME=/tmp/scrivo-settings-bench-config \
+XDG_DATA_HOME=/tmp/scrivo-settings-bench-data \
+node bench/ab.mjs bench/fixtures/medium.md 8 \
+  /tmp/scrivo-before-lazy-settings /tmp/scrivo-after-lazy-settings
+```
+
+Final behavior gates: full Chromium 148 passed before the late startup optimization;
+affected suites 25 passed, then 22 passed after cancellation and palette fixes, then
+12 Settings contracts passed including stale packaged CSS. Native four affected
+specs passed after the optimization; earlier editor settings, tables and properties
+specs also passed. Unit 474 and app/native TypeScript pass. The added resource
+assertion verifies both Settings and substitution/regex modules stay unrequested
+in normal reading startup; an in-flight module test verifies Escape cancellation.
+Independent reviews covered command state, persistence bounds, input/history,
+native selection paint/copy, large-selection traversal and lazy theme reconciliation.
+
+Final release viewport smoke checks also pass for the large reader and medium
+editor using the reviewed references. Logs: `/tmp/scrivo-lazy-large-smoke.log`,
+`/tmp/scrivo-lazy-editor-smoke.log`. These one-run checks are correctness gates,
+not additional performance claims. Final reading resource/theme checks: 2 passed
+in `/tmp/scrivo-lazy-resource-proof.log`.
+
+The installed release preserves the concurrent appearance catalog and external-link
+color commits. This checkpoint contains the complete requested work; no required
+implementation remains. Future native Windows/macOS checks are optional platform
+coverage, not a blocked Linux task. Local browser/preview owned by this pass were
+closed; benchmark artifacts/baseline binaries remain in `/tmp` and the repo results.
+
+### Resume boundaries
+
+- Never automate the user's live desktop or restart/close their windows. Install
+  atomically for the next launch. Default Markdown associations were set previously.
+- Native fixtures isolate XDG_DATA_HOME **and** XDG_CONFIG_HOME, preventing the user's
+  desktop theme catalog from overriding appearance fixtures. Benchmarks need this
+  isolation too. Bundle assets must not be rebuilt during browser suites.
+- Existing desktop-theme work is preserved. Concurrent external-link theme work
+  was separately committed as `923827d`; this checkpoint follows it. The only
+  remaining live-preview index change in this pass is table typing history.
+- Follow historical sections only for unchanged infrastructure and earlier findings.
+  This top section records the current installation, contracts and verification.
+
+
 ## 2026-10-03: commands, bundled themes and comprehensive UI sweep
 
 This work follows `ce3389a`. The active requests were built-in selectable themes,

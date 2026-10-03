@@ -29,7 +29,7 @@ body[data-mode='edit'] .mode-toggle { position: absolute; right: 4px; }
 body .outline-toggle { left: 4px; }
 .properties-toggle svg, .editor-settings-toggle svg, .outline-toggle svg { display: block; width: 18px; height: 18px; }
 .document-session .properties-panel, .document-session .editor-settings-panel {
-  top: calc(var(--tab-bar-height) + 44px); background: var(--bg); border-radius: 8px; box-shadow: var(--shadow);
+  top: calc(var(--tab-bar-height) + 4px); background: var(--bg); border-radius: 8px; box-shadow: var(--shadow);
 }
 .document-session .properties-panel, .document-session .editor-settings-panel { padding: 20px; }
 .document-session .properties-panel :is(input:not([type=checkbox]), button), .document-session .editor-settings-panel select { min-height: 36px; border-radius: 6px; }
@@ -86,7 +86,7 @@ dialog::backdrop { background: var(--overlay); }
 .app-menu button:hover, .app-menu button:focus-visible { background: var(--code-bg); }
 .app-menu kbd { font-size: 10px; }
 .status-bar { font-variant-numeric: tabular-nums; }
-.find-bar { max-width: calc(100vw - 24px); top: calc(var(--tab-bar-height) + 44px); }
+.find-bar { max-width: calc(100vw - 24px); top: calc(var(--tab-bar-height) + 4px); }
 .find-bar input { min-width: 40px; flex: 1; }
 .find-bar button { min-width: 28px; }
 @media (max-width: 600px) {
@@ -102,7 +102,7 @@ dialog::backdrop { background: var(--overlay); }
 }
 
 @media (max-width: 600px) {
-  body[data-native=true] .tab-select { min-width: 48px; max-width: calc(100vw - 312px); }
+  body[data-native=true] .tab-select { min-width: 48px; max-width: calc(100vw - 272px); }
   .tab-close { width: 40px; }
 }
 
@@ -125,3 +125,6 @@ dialog::backdrop { background: var(--overlay); }
 
 .app-menu button svg { width: 16px; height: 16px; color: var(--fg-muted); }
 .app-menu .menu-back { color: var(--fg-muted); }
+
+html.scrivo-text-selection .markdown-body *::selection { background: transparent !important; color: inherit !important; }
+::highlight(scrivo-selection) { background: var(--selection); color: inherit; }

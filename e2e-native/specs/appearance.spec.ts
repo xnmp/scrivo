@@ -1,3 +1,4 @@
+import { openSettings, runCommand } from '../commands';
 import { $, browser, expect } from '@wdio/globals';
 import { readFileSync } from 'node:fs';
 import { state } from '../state';
@@ -6,7 +7,7 @@ describe('native appearance', () => {
   it('imports Obsidian variables and persists appearance across native relaunch without editing the file', async () => {
     const original = readFileSync(state.fixture!.docPath);
     await $('#document h1').waitForDisplayed();
-    await $('.appearance-toggle').click();
+    await openSettings();
     await $('[aria-label="Color scheme"]').selectByAttribute('value', 'dark');
     // Exercise the browser File API/import change event without automating a host file chooser.
     await browser.execute(() => {
@@ -27,7 +28,7 @@ describe('native appearance', () => {
     await $('#document h1').waitForDisplayed();
     expect(await browser.execute(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(18, 52, 86)');
     expect(await browser.execute(() => getComputedStyle(document.querySelector('#document h1')!).color)).toBe('rgb(171, 205, 239)');
-    await $('.appearance-toggle').click();
+    await openSettings();
     await $('//dialog//button[normalize-space(.)="Reset appearance"]').click();
     expect(await $('[aria-label="Theme"]').getValue()).toBe('');
     expect(readFileSync(state.fixture!.docPath).equals(original)).toBe(true);

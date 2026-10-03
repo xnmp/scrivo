@@ -1,13 +1,13 @@
 import '../styles/chrome.css';
 import type { WindowPort } from '../app/ports';
 import { bindings, commands, displayChord } from '../domain/commands';
-import { displayName } from '../domain/document';
 import type { createCommandPreferences } from '../platform/command-preferences';
-import { createAppearanceSettings } from './appearance-settings';
+import { appearanceStore } from '../platform/appearance';
+import { builtinThemes } from './builtin-themes';
 import { createAppMenu } from './app-menu';
 import { createCommandPicker } from './command-picker';
-import { createHotkeySettings } from './hotkey-settings';
-import { icon, iconButton } from './icons';
+import type { SettingsSection } from './settings';
+import { iconButton } from './icons';
 export function createWindowChrome(header: HTMLElement, toolbar: HTMLElement, actions: {
   readonly window: WindowPort;
   readonly native: boolean;
@@ -17,11 +17,38 @@ export function createWindowChrome(header: HTMLElement, toolbar: HTMLElement, ac
   readonly notify: (message: string) => void;
 }) {
   const { preferences, mac, execute } = actions;
+  // Reconcile packaged palette updates without constructing Settings forms.
+  appearanceStore().registerBuiltins(builtinThemes);
   const hint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / ');
-  const appearance = createAppearanceSettings(header, true), picker = createCommandPicker(), hotkeys = createHotkeySettings(preferences, mac);
+  type Settings = ReturnType<typeof import('./settings').createSettings>;
+  let settingsInstance: Settings | null = null;
+  let settingsLoading: Promise<Settings> | null = null;
+  const loadSettings = () => settingsLoading ??= import('./settings')
+    .then(module => settingsInstance = module.createSettings(preferences, mac))
+    .catch(error => { settingsLoading = null; throw error; });
+  let pendingSettings: AbortController | null = null;
+  const cancelPending = () => {
+    const pending = pendingSettings;
+    pending?.abort(); pendingSettings = null;
+    return pending !== null;
+  };
+  const requestSettings = async (action: (instance: Settings) => void) => {
+    cancelPending();
+    const request = new AbortController(); pendingSettings = request;
+    try {
+      const instance = await loadSettings();
+      if (!request.signal.aborted) action(instance);
+    } catch (error) { if (!request.signal.aborted) throw error; }
+    finally { if (pendingSettings === request) pendingSettings = null; }
+  };
+  const settings = {
+    open: (section?: SettingsSection) => requestSettings(instance => instance.open(section)),
+    resetAppearance: () => requestSettings(instance => instance.resetAppearance()),
+    recording: () => settingsInstance?.recording() ?? false,
+    cancelPending,
+  };
+  const picker = createCommandPicker();
   createAppMenu(header, execute, preferences.hotkeys, mac);
-  const palette = iconButton('palette', 'Command palette', () => execute('palette'));
-  header.insertBefore(palette, header.querySelector('.tab-list'));
   const report = (operation: Promise<void>) => { void operation.catch(error => actions.notify(String(error))); };
   const drag = document.createElement('div'); drag.className = 'window-drag'; drag.setAttribute('aria-hidden', 'true');
   if (actions.native) {
@@ -36,20 +63,11 @@ export function createWindowChrome(header: HTMLElement, toolbar: HTMLElement, ac
       iconButton('close', 'Close window', () => report(actions.window.close())));
     header.append(controls);
   }
-  const breadcrumb = document.createElement('span'); breadcrumb.className = 'document-breadcrumb';
-  const mode = iconButton('edit', 'Toggle reading / editing', () => execute('reading'));
-  mode.classList.add('mode-toggle'); toolbar.append(breadcrumb, mode);
+  toolbar.hidden = true;
   return {
-    appearance, picker, hotkeys,
-    updateDocument(path: string | null, editing: boolean) {
-      breadcrumb.textContent = displayName(path).replace(/\.md$/i, ''); breadcrumb.title = path ?? 'Untitled';
-      mode.replaceChildren(icon(editing ? 'read' : 'edit')); mode.title = `Toggle reading / editing (${hint('reading')})`;
-    },
+    settings, picker,
     refreshControls() {
-      palette.title = `Command palette (${hint('palette')})`;
-      header.querySelector<HTMLButtonElement>('.appearance-toggle')!.title = `Appearance (${hint('appearance')})`;
       header.querySelector<HTMLButtonElement>('.tab-add')!.title = `New tab (${hint('new')})`;
-      mode.title = `Toggle reading / editing (${hint('reading')})`;
     },
   };
 }

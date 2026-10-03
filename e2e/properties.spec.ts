@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { controllerOpen, diskGet, diskPut, docText, openApp } from './helpers';
+import { openSettings, runCommand, controllerOpen, diskGet, diskPut, docText, openApp } from './helpers';
 
 const original = '---\n# Comment before\ntitle: Old  # inline\nscore: 7\ndone: false\nunknown: !custom value\nnested:\n  tags: [one, two]\n---\n# Body\n\nText.\n';
 
 test('property edits preserve unrelated YAML and have independent undo/save/reopen outcomes', async ({ page }) => {
   await openApp(page, { text: original });
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await page.getByRole('textbox', { name: 'Property title', exact: true }).fill('New: 😀');
   await page.getByRole('button', { name: 'Save property title', exact: true }).click();
   const titled = original.replace('title: Old', 'title: "New: 😀"');
@@ -26,7 +26,7 @@ test('property edits preserve unrelated YAML and have independent undo/save/reop
   await expect.poll(() => diskGet(page, '/sample/inline.md')).toBe(done);
   await controllerOpen(page, '/sample/inline.md');
   expect(await docText(page)).toBe(done);
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await expect(page.getByRole('textbox', { name: 'Property title', exact: true })).toHaveValue('New: 😀');
   await expect(page.getByRole('checkbox', { name: 'Property done', exact: true })).toBeChecked();
   await expect(page.locator('.properties-notice')).toContainText('2 complex or unsupported properties');
@@ -34,7 +34,7 @@ test('property edits preserve unrelated YAML and have independent undo/save/reop
 
 test('adding a property preserves the document and is one undo step', async ({ page }) => {
   await openApp(page, { text: '# Body\n' });
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await page.getByRole('textbox', { name: 'New property name' }).fill('author');
   await page.getByRole('textbox', { name: 'New property value' }).fill('Ada');
   await page.getByRole('button', { name: 'Add property', exact: true }).click();
@@ -46,7 +46,7 @@ test('adding a property preserves the document and is one undo step', async ({ p
 test('invalid YAML stays intact and can be edited through source mode', async ({ page }) => {
   const text = '---\ntitle: [bad\n---\n# Body\n';
   await openApp(page, { text });
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await expect(page.locator('.properties-notice')).toContainText('invalid YAML');
   await expect(page.getByRole('button', { name: 'Add property', exact: true })).toHaveCount(0);
   expect(await docText(page)).toBe(text);
@@ -58,7 +58,8 @@ test('invalid YAML stays intact and can be edited through source mode', async ({
 
 test('an open stale property control cannot overwrite a source edit', async ({ page }) => {
   await openApp(page, { text: original });
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
+  await page.getByRole('textbox', { name: 'Property title', exact: true }).focus();
   const replaced = original.replace('title: Old', 'title: External');
   await page.evaluate((text) => (window as any).__scrivo.editor.port.replace(text), replaced);
   await page.getByRole('textbox', { name: 'Property title', exact: true }).fill('Draft');
@@ -70,15 +71,15 @@ test('an open stale property control cannot overwrite a source edit', async ({ p
 test('properties edits stay local to their tab and Escape returns focus', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 700 });
   await openApp(page, { text: original });
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await page.getByRole('textbox', { name: 'Property title', exact: true }).fill('First draft');
   await diskPut(page, '/sample/second.md', '---\ntitle: Second\n---\n# Second\n');
   await page.evaluate(() => (window as any).__scrivo.tabs.open('/sample/second.md'));
   await page.keyboard.press('Control+e');
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   await expect(page.getByRole('textbox', { name: 'Property title', exact: true })).toHaveValue('Second');
   await page.getByRole('textbox', { name: 'Property title', exact: true }).press('Escape');
-  await expect(page.getByRole('button', { name: 'Properties', exact: true })).toBeFocused();
+  await expect(page.locator('.document-session:not([hidden]) .cm-content')).toBeFocused();
   await page.getByRole('tab', { name: 'inline.md', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Property title', exact: true })).toHaveValue('First draft');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
@@ -87,7 +88,7 @@ test('properties edits stay local to their tab and Escape returns focus', async 
 
 test('typing properties and saving from the panel writes the current values', async ({ page }) => {
   await openApp(page, { text: original });
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
+  await runCommand(page, 'Document properties');
   const title = page.getByRole('textbox', { name: 'Property title', exact: true });
   await title.fill('Saved directly');
   await title.press('Control+s');
