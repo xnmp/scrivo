@@ -86,8 +86,8 @@ for the code layout, safety model, and performance decisions.
 ## Commands and hotkeys
 
 Open the command palette with **Ctrl/⌘+P**. Search command names or abbreviations,
-use arrow keys to select, and Enter to run. The main menu groups commands under
-File, Edit, Format, View and Settings. **Customize hotkeys** in Settings or the
+use arrow keys to select, and Enter to run. Right-click the tab strip to open it
+with the mouse. **Customize hotkeys** in Settings or the
 palette lets you remove bindings, record up to four shortcuts per command, and
 restore defaults. Conflicting bindings show the existing command; remove that
 binding before reassigning it. Preferences persist across launches.
@@ -96,12 +96,14 @@ binding before reassigning it. Preferences persist across launches.
 **Ctrl/⌘+Shift+T**. Standard select/copy/cut/paste shortcuts stay available, and
 form fields retain native text undo. **Ctrl/⌘+D** selects the current word, then
 adds its next occurrence on each press; typing edits all selections together.
-Menus and palette show the current bindings. Escape dismisses menus and panels.
-Contents, Properties and reading/editing are available through the menu or palette.
+The palette shows the current bindings. Escape dismisses menus and panels.
+Contents, Properties and reading/editing are available through the palette.
 
 Linux and Windows use an integrated tab/title row with window controls and a
 blank area for dragging; double-click the blank area to maximize or restore.
-macOS retains its native title bar.
+macOS retains its native title bar. Active tabs use a subtle rounded outline;
+inactive close controls appear on hover or keyboard focus. Resizing keeps the
+selected tab visible.
 
 ## Appearance
 

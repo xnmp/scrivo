@@ -8,6 +8,14 @@ describe('native commands and integrated chrome', () => {
     await $('#document h1').waitForDisplayed({ timeout: 15_000 });
     const original = readFileSync(state.fixture!.docPath, 'utf8');
     await browser.saveScreenshot('/tmp/scrivo-native-chrome.png');
+    await $('#tab-bar').click({ button: 'right' });
+    await $('[aria-label="Search commands"]').setValue('Toggle reading');
+    await $('[role="option"]').click();
+    await $('.document-session:not([hidden]) .cm-content').waitForDisplayed();
+    await $('#tab-bar').click({ button: 'right' });
+    await $('[aria-label="Search commands"]').setValue('Toggle reading');
+    await $('[role="option"]').click();
+    await $('#document h1').waitForDisplayed();
     const position = await browser.execute(async () => (window as any).__TAURI_INTERNALS__.invoke('plugin:window|outer_position', { label: 'main' }));
     const drag = await browser.execute(() => { const rect = document.querySelector('.window-drag')!.getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; });
     // WebDriver DOM actions do not move the X pointer used by native window moves.

@@ -1,0 +1,21 @@
+round 1 scrivo-before-font-warm: window=217 content=402 complete=402
+round 1 scrivo-after-font-warm: window=230 content=396 complete=396
+round 2 scrivo-after-font-warm: window=229 content=424 complete=424
+round 2 scrivo-before-font-warm: window=245 content=441 complete=441
+round 3 scrivo-before-font-warm: window=236 content=399 complete=399
+round 3 scrivo-after-font-warm: window=208 content=386 complete=386
+round 4 scrivo-after-font-warm: window=233 content=420 complete=420
+round 4 scrivo-before-font-warm: window=231 content=424 complete=424
+round 5 scrivo-before-font-warm: window=207 content=385 complete=385
+round 5 scrivo-after-font-warm: window=221 content=395 complete=395
+round 6 scrivo-after-font-warm: window=195 content=409 complete=409
+round 6 scrivo-before-font-warm: window=239 content=438 complete=438
+round 7 scrivo-before-font-warm: window=234 content=441 complete=441
+round 7 scrivo-after-font-warm: window=258 content=490 complete=490
+round 8 scrivo-after-font-warm: window=251 content=489 complete=489
+round 8 scrivo-before-font-warm: window=230 content=416 complete=416
+
+medium.md, 8 rounds
+  scrivo-before-font-warm n=8  window med=233  content med=420  complete med=420
+  scrivo-after-font-warm n=8  window med=230  content med=415  complete med=415
+  scrivo-after-font-warm vs scrivo-before-font-warm: content -5 ms (paired median), faster in 5/8 rounds

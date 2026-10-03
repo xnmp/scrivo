@@ -1,5 +1,136 @@
 # Handover — 2026-10-03
 
+## 2026-10-03 follow-up: minimal tab strip, list Enter, prewarming audit
+
+This section supersedes older instructions about the hamburger/main menu. Parent
+checkpoint is `4137a2e`; this pass preserves all its editing, Settings, Save,
+selection, startup and default-file-association behavior.
+
+### Requests and delivered behavior
+
+- Remove the three-line menu control. The trigger, grouped menu module, icon and
+  unused menu CSS are removed. Ctrl/⌘+P opens the palette; Ctrl/⌘+, opens Settings.
+  **Right-click the tab strip opens the palette** and its commands are clickable.
+  The strip has a tooltip with the pointer route and current palette shortcut.
+- Refine tabs against the user's Obsidian reference: secondary strip surface,
+  rounded outlined selected tab, normal-weight title, muted inactive labels and
+  slim dividers. Existing native minimize/maximize/close and drag area remain.
+  Colors/radius use compatible Obsidian `--tab-*` variables with app fallbacks.
+- Inactive close controls reveal on real hover or keyboard focus; selected close
+  remains visible. Close overlays the tab's full-width select button. While hidden,
+  it has no pointer events, so the first touch selects the tab. Hover reveal is
+  gated on `(hover: hover)`; keyboard reveal uses `:focus-visible`, avoiding
+  mid-tap target changes from ordinary pointer focus. The second tap on the now
+  visible selected close closes the tab.
+- The selected tab stays visible after resizing, including its close control.
+  `ui/tabs.ts` shares `revealActive` between rendering and a ResizeObserver on the
+  scrollport. Absolute close height follows its parent, avoiding a clipped bottom.
+- Enter continues Markdown `-`, `*`, and `+` bullets. Repeating Enter on an empty
+  item exits the list. Existing ordered/task/nested-list and multicursor behavior
+  remains implemented by CodeMirror, including source and live-preview modes.
+
+### List Enter diagnosis and contract
+
+Reproduced with `paragraph\n\n` repeated 20,000 times, followed by `- last`, then
+immediately moving the caret to the tail. The old command inserted a plain newline:
+CodeMirror's published syntax tree had not reached that position. Short lists
+already worked; the existing tests only covered the short parsed case.
+
+`editor/editing.ts` now asks `forceParsing(view, furthestEmptyCursor, 100)` to
+publish additional syntax before the built-in markup command runs, only when the
+published tree is behind. Read-only state and nonempty selections skip this work.
+The 100ms cap matches [CodeMirror's forceParsing default](https://codemirror.net/docs/ref/#language.forceParsing). Keep the existing
+mixed-context adapter: list/plain/fence cursors compose into one undoable edit.
+Do not substitute a line-regex parser: text resembling a list inside code must
+remain code. Do not switch the guard blindly to syntaxTreeAvailable: lazy embedded
+code grammars can be unavailable while the outer Markdown context is sufficient.
+
+A huge cold document can exceed the bounded parse budget and receive ordinary
+newline instead of continued markup. Exact behavior for arbitrary sizes would
+require incremental parsing before editability or a designed asynchronous input
+queue; do not replace the cap with an unbounded synchronous parse. Unit cases use
+22KB cold documents to avoid timing-dependent assertions under concurrent suites;
+the browser outcome test additionally exercises the real 220KB tail jump.
+Independent debug reviewer reproduced the cause and verified list/plain/fence
+mixed-cursor outcomes and the budget tradeoff.
+
+### Prewarming audit and measured rejected experiment
+
+Existing Linux startup already overlaps EGL vendor initialization and SVG/image
+loader startup with GTK, and reads/renders the initial document on another worker.
+This pass tried an additional best-effort `FcInit` worker via dlopen of
+`libfontconfig.so.1`, using the [Fontconfig initialization API](https://fontconfig.pages.freedesktop.org/fontconfig/fontconfig-devel/), with no persistent process or changes to font preferences.
+
+Eight alternating release pairs on `medium.md`, same tab UI and fresh private
+compositors: **−5ms paired median, faster in 5/8**. Aggregate content medians were
+420ms baseline / 415ms candidate. Later pairs regressed by 49ms and 73ms; this
+sample does not justify another thread/FFI call. The experiment was reverted.
+Raw output: `bench/results/paired-font-prewarm-medium.txt`.
+
+Immutable experiment binaries (temporary, not the final installed build):
+
+- `/tmp/scrivo-before-font-warm`: `4c18a7b348d3b984b8b671730f28e4c6426a867156917b0aa2e2908fbbfb03cf`
+- `/tmp/scrivo-after-font-warm`: `3792ad531fb3876b61476fba4862b51176baadefd7f6b72b55a3203317a517d8`
+
+Reference capture and benchmark use isolated config/data directories
+`/tmp/scrivo-font-bench-{config,data}`. The existing previous pass's 15ms startup
+claim still refers to its original paired lazy-Settings run, not this experiment.
+This pass makes no additional reliable startup-speed claim.
+
+The optional preference question about keeping an engine resident in the background
+has **no answer yet**. No background service, tray mode or desktop autostart has
+been installed; normal final-tab Ctrl+W still fully closes the app. If the user
+chooses a resident mode, design it as opt-in, with single-instance launch forwarding,
+visible exit/disable behavior, correct relative-path handling and dirty-document
+close guards. Benchmark both warm launch and steady-state memory before claiming
+an improvement. Never silently change full-shutdown semantics.
+
+### Verification / installation
+
+- Unit suite: **476 passed** across 34 files (`/tmp/scrivo-tabs-final-unit.log`).
+- App and native-spec TypeScript checks pass; `git diff --check` passes.
+- Chromium affected suites: 22 outcomes passed in the broad final run; two new
+  resize/touch failures were then fixed and both pass in the final targeted run
+  (`/tmp/scrivo-tabs-final-e2e.log`, `/tmp/scrivo-tabs-pointer-e2e.log`). The latter
+  supersedes those two failures. These are 24 distinct covered outcomes, not a
+  claim that all 24 ran in one successful final invocation.
+- Actual native WebKitGTK: **4 tests / 2 specs passed**. Includes live/source list
+  continuation and saved exact Markdown, right-click reader→editor→reader, dirty
+  close, recents, hotkey/theme persistence, drag/maximize/minimize and palette
+  formatting (`/tmp/scrivo-tabs-final-native.log`).
+- Final release builds; bundle gate **38/41KiB startup, 52/56KiB known prepaint**,
+  deferred graph 3278KiB. No new runtime library remains.
+- Manually reviewed final medium/large reader and medium editor 1280×720 captures;
+  all three refreshed PNG/JSON reference pairs are committed. One verified final
+  smoke for each passes its reviewed first/final viewport. These concurrent smoke
+  runs establish visual readiness, not comparative speed.
+- Browser visual checks also cover light/dark/Ember multiple tabs and a narrow
+  viewport. No preview console errors. Native chrome screenshot reviewed at
+  `/tmp/scrivo-native-chrome.png`.
+- Independent adversarial reviewer's final Linux desktop keyboard/mouse check:
+  no remaining concrete defect. UI verdict **Approve within that scope**; touch-only
+  command-entry gesture remains unverified as detailed below. No new motion.
+- Installed atomically to `/home/chong/.local/bin/scrivo`; SHA-256 matches release:
+  `4a23c5db7b879972333ca5c1a69a50c1ccab55bf83735ae304d51e5fb02447f2`.
+  Both `text/markdown` and `text/x-markdown` still use `dev.scrivo.editor.desktop`.
+  Existing user app windows were left running; relaunch applies this release.
+- Current checkpoint commit contains this completed follow-up (parent `4137a2e`).
+
+### Review boundary and next-agent notes
+
+- Adversarial review caught unnecessary parse work on nonempty selections, hidden
+  close hit testing, and lost mouse command entry. These were addressed, with
+  actual outcome tests for pointer editing, touch activation and resizing.
+- The target is a Linux desktop editor with keyboard/right-click command access,
+  as requested. Touch-only palette entry relies on the platform's context-menu
+  gesture; long-press delivery is **not verified**. Do not reintroduce permanent
+  menu buttons contrary to the user preference without discussing that constraint.
+- `docs/UI_SWEEP.md` records the bounded tab-strip polish review and rejected UI
+  alternatives. Existing Escape/Save/Settings behavior and guards remain owned by
+  their existing modules, not by the new context-menu handler.
+- Do not automate or restart the user's live app windows. Native tests use private
+  Xvfb/D-Bus/Openbox; release references and timing use private headless cage.
+
 ## 2026-10-03: unified settings, substitutions, minimal chrome and text selection
 
 This pass follows `d5e24cf` (desktop appearance catalog) and preserves that work

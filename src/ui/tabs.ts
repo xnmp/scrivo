@@ -25,6 +25,11 @@ export function createTabBar(host: HTMLElement, actions: {
   add.addEventListener('click', actions.create);
   host.append(list, add);
 
+  const revealActive = () => list.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  // The native controls and window width can change independently of tab state.
+  // Keep the selected tab (including its close button) within the scrollport.
+  new ResizeObserver(revealActive).observe(list);
+
   const render = (tabs: readonly TabLabel[], activeId: string | null) => {
     const focused = document.activeElement?.getAttribute('data-tab-id');
     list.replaceChildren(...tabs.map((tab) => {
@@ -69,7 +74,7 @@ export function createTabBar(host: HTMLElement, actions: {
       item.append(select, close);
       return item;
     }));
-    list.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    revealActive();
     if (focused) list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(focused)}"]`)?.focus();
   };
 

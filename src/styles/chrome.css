@@ -77,14 +77,6 @@ kbd { font: 11px var(--font-body); color: var(--fg-muted); white-space: nowrap; 
 .picker-empty { text-align: center; padding: 12px 20px; color: var(--fg-muted); }
 .picker-empty:empty { display: none; }
 dialog::backdrop { background: var(--overlay); }
-.app-menu { position: fixed; inset: 44px auto auto 8px; margin: 0; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 56px); overflow: auto;
-  padding: 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); font: 13px var(--font-body); }
-.menu-group { font-size: 11px; color: var(--fg-muted); padding: 12px 12px 6px; border-top: 1px solid var(--border); margin-top: 4px; }
-.menu-group:first-child { border: 0; margin: 0; padding-top: 4px; }
-.app-menu button { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; padding: 8px 12px;
-  border: 0; border-radius: 4px; color: var(--fg); background: transparent; cursor: pointer; font: inherit; }
-.app-menu button:hover, .app-menu button:focus-visible { background: var(--code-bg); }
-.app-menu kbd { font-size: 10px; }
 .status-bar { font-variant-numeric: tabular-nums; }
 .find-bar { max-width: calc(100vw - 24px); top: calc(var(--tab-bar-height) + 4px); }
 .find-bar input { min-width: 40px; flex: 1; }
@@ -92,7 +84,6 @@ dialog::backdrop { background: var(--overlay); }
 @media (max-width: 600px) {
   .tab-select { min-width: 64px; max-width: 160px; }
   .window-drag { min-width: 12px; }
-  #tab-bar > .icon-button:nth-child(2) { display: none; }
   .hotkey-row { align-items: flex-start; flex-direction: column; gap: 8px; }
   .hotkey-bindings { max-width: 100%; justify-content: flex-start; }
   .picker-option { gap: 8px; }
@@ -102,7 +93,7 @@ dialog::backdrop { background: var(--overlay); }
 }
 
 @media (max-width: 600px) {
-  body[data-native=true] .tab-select { min-width: 48px; max-width: calc(100vw - 272px); }
+  body[data-native=true] .tab-select { min-width: 64px; max-width: calc(100vw - 240px); }
   .tab-close { width: 40px; }
 }
 
@@ -123,8 +114,6 @@ dialog::backdrop { background: var(--overlay); }
 .command-picker h2 { height: 48px; padding-right: 72px; }
 .command-picker .picker-close { top: 4px; min-height: 40px; }
 
-.app-menu button svg { width: 16px; height: 16px; color: var(--fg-muted); }
-.app-menu .menu-back { color: var(--fg-muted); }
 
 html.scrivo-text-selection .markdown-body *::selection { background: transparent !important; color: inherit !important; }
 ::highlight(scrivo-selection) { background: var(--selection); color: inherit; }

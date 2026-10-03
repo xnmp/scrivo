@@ -29,4 +29,20 @@ describe('native list editing', () => {
       timeoutMsg: 'source-mode list continuation did not save the expected Markdown',
     });
   });
+
+  it('continues visible bullets in live preview and exits an empty bullet', async () => {
+    const fixture = state.fixture!;
+    await browser.keys(['Control', '/']);
+    await $('.cm-source-mode').waitForExist({ reverse: true, timeout: 5_000 });
+    await browser.keys('third');
+    await browser.keys(['Enter']);
+    await browser.keys('fourth');
+    await browser.keys(['Enter']);
+    await browser.keys(['Enter']);
+    await browser.keys(['Control', 's']);
+    await browser.waitUntil(() => readFileSync(fixture.docPath, 'utf8') === '- first\n- second\n- third\n- fourth\n', {
+      timeout: 10_000,
+      timeoutMsg: 'live-preview Enter did not continue and then exit the bulleted list',
+    });
+  });
 });

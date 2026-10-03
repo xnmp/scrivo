@@ -2,7 +2,7 @@
 // numbering and nested container markers follow the installed parser.
 import { deleteCharBackward, indentLess, indentMore, insertNewlineAndIndent } from '@codemirror/commands';
 import { deleteMarkupBackward, insertNewlineContinueMarkupCommand } from '@codemirror/lang-markdown';
-import { foldCode, unfoldCode } from '@codemirror/language';
+import { foldCode, forceParsing, syntaxTree, unfoldCode } from '@codemirror/language';
 import { EditorSelection, type EditorState, type SelectionRange, type Transaction } from '@codemirror/state';
 import type { Command, EditorView, KeyBinding } from '@codemirror/view';
 
@@ -57,10 +57,20 @@ function withMixedContexts(primary: Command, fallback: Command, userEvent: strin
   };
 }
 
-const continueList = withMixedContexts(
+const continueParsedList = withMixedContexts(
   insertNewlineContinueMarkupCommand({ nonTightLists: false }), insertNewlineAndIndent, 'input',
 );
 const smartBackspace = withMixedContexts(deleteMarkupBackward, deleteCharBackward, 'delete');
+
+const continueList: Command = view => {
+  if (view.state.readOnly) return false;
+  const upto = view.state.selection.ranges.reduce((furthest, range) => range.empty ? Math.max(furthest, range.to) : furthest, 0);
+  // A newly focused position can be beyond the background parser's viewport.
+  // Publish a bounded parse before the syntax-aware command reads its context;
+  // guessing from line text would turn markers inside code into real lists.
+  if (syntaxTree(view.state).length < upto) forceParsing(view, upto, 100);
+  return continueParsedList(view);
+};
 
 export const markdownEditingKeymap: readonly KeyBinding[] = [
   // An empty list item exits one nesting level instead of creating a loose

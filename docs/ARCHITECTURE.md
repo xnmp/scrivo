@@ -331,6 +331,7 @@ Rejected (measured, then reverted):
 | Streaming a 5 MB code block into one `<pre>` in idle slices | cumulative layout grew and a full-suite run still had a 383 ms frame gap |
 | First blocks prerendered into `index.html` (via `on_web_resource_request`) | +58 ms: WebKitGTK doesn't paint parser-inserted content before the first script-driven layout, and parsing it first delays the script |
 | Not preloading the editor chunk | no measurable change to first paint |
+| Warm Fontconfig with a concurrent `FcInit` worker | Eight alternating release pairs: −5 ms paired median, faster in 5/8 rounds; extra thread/FFI rejected as an inconclusive gain (`bench/results/paired-font-prewarm-medium.txt`) |
 | `NO_AT_BRIDGE`, `WEBKIT_DISABLE_COMPOSITING_MODE` | no measurable change (and a11y must stay) |
 
 Known costs we don't control: the WebKit web process start (~100 ms: launch, EGL,

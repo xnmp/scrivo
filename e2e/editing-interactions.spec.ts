@@ -1,7 +1,31 @@
 import { expect, test } from '@playwright/test';
-import { ControlOrMeta, controllerOpen, diskGet, docText, openApp, setCaret } from './helpers';
+import { ControlOrMeta, controllerOpen, diskGet, docText, openApp, resetDoc, setCaret } from './helpers';
 
 test.describe('Markdown editing interactions', () => {
+  for (const marker of ['-', '*', '+']) {
+    test(`Enter continues a ${marker} bullet, then exits the empty item`, async ({ page }) => {
+      await openApp(page, { doc: 'none' });
+      await page.locator('.cm-content').click();
+      await page.keyboard.type(`${marker} first`);
+      await page.keyboard.press('Enter');
+      expect(await docText(page)).toBe(`${marker} first\n${marker} `);
+      await page.keyboard.type('second');
+      await page.keyboard.press('Enter');
+      expect(await docText(page)).toBe(`${marker} first\n${marker} second\n${marker} `);
+      await page.keyboard.press('Enter');
+      expect(await docText(page)).toBe(`${marker} first\n${marker} second\n`);
+    });
+  }
+
+  test('Enter continues a bullet immediately after jumping to a long document tail', async ({ page }) => {
+    const text = 'paragraph\n\n'.repeat(20000) + '- last';
+    await openApp(page, { doc: 'none' });
+    await resetDoc(page, text);
+    await setCaret(page, text.length);
+    await page.keyboard.press('Enter');
+    expect(await docText(page)).toBe(text + '\n- ');
+  });
+
   test('Enter exits an empty list and the saved source survives reopening', async ({ page }) => {
     const initial = '- first\n- ';
     await openApp(page, { text: initial });

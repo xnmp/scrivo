@@ -32,6 +32,10 @@ const FIND_REFRESH_MS = 250;
 const preferences = commandPreferences();
 const mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 const commandHint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / ');
+const readingHint = () => {
+  const shortcut = commandHint('reading');
+  return `Reading · ${shortcut ? `${shortcut} to edit` : 'Right-click tab bar for commands'}`;
+};
 const panels = document.getElementById('tab-panels')!;
 let tabs: TabRegistry = emptyTabs();
 let outline: Outline | null = null;
@@ -104,12 +108,18 @@ const tabBar = createTabBar(document.getElementById('tab-bar')!, {
 const renderTabs = () => { tabBar.render(tabLabels(), tabs.activeId); };
 const { settings, picker, refreshControls } = createWindowChrome(
   document.getElementById('tab-bar')!, document.getElementById('document-toolbar')!, {
-    window: platform.window, native: tauri, mac, preferences, execute: id => void execute(id), notify: prompter.notify,
+    window: platform.window, native: tauri, mac, preferences, notify: prompter.notify,
   });
+const header = document.getElementById('tab-bar')!;
+header.addEventListener('contextmenu', event => {
+  if (event.target instanceof Element && event.target.closest('.window-controls')) return;
+  event.preventDefault(); void execute('palette');
+});
 const refreshHints = () => {
   refreshControls();
+  header.title = `Right-click for commands${commandHint('palette') ? ` · ${commandHint('palette')}` : ''}`;
   const session = activeSession();
-  if (session?.workspace.mode() === 'view') session.status.set(`Reading · ${commandHint('reading') || 'Use menu'} to edit`);
+  if (session?.workspace.mode() === 'view') session.status.set(readingHint());
 };
 preferences.subscribe(refreshHints);
 
@@ -292,7 +302,7 @@ function makeSession(id: string, path: string | null, initial = false): Session 
       host.dataset.mode = mode;
       if (tabs.activeId === id) document.body.dataset.mode = mode;
       if (mode === 'view') {
-        status.set(`Reading · ${commandHint('reading') || 'Use menu'} to edit`);
+        status.set(readingHint());
         if (tabs.activeId === id) viewer.focus();
       } else {
         findBar?.close();
@@ -493,7 +503,7 @@ window.addEventListener('keydown', event => {
   }
   if (event.key === 'Escape') {
     if (settings.cancelPending()) { event.preventDefault(); return; }
-    if (document.querySelector('.app-menu:popover-open, .cm-lp-table-menu')) return;
+    if (document.querySelector('.cm-lp-table-menu')) return;
     const session = activeSession();
     if (session?.editorApp()?.dismissPanels() || outline?.dismiss()) event.preventDefault();
     else if (session?.workspace.mode() === 'view') session.findBar().dismiss();

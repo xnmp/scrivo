@@ -4,7 +4,6 @@ import { bindings, commands, displayChord } from '../domain/commands';
 import type { createCommandPreferences } from '../platform/command-preferences';
 import { appearanceStore } from '../platform/appearance';
 import { builtinThemes } from './builtin-themes';
-import { createAppMenu } from './app-menu';
 import { createCommandPicker } from './command-picker';
 import type { SettingsSection } from './settings';
 import { iconButton } from './icons';
@@ -13,10 +12,9 @@ export function createWindowChrome(header: HTMLElement, toolbar: HTMLElement, ac
   readonly native: boolean;
   readonly mac: boolean;
   readonly preferences: ReturnType<typeof createCommandPreferences>;
-  readonly execute: (id: string) => void;
   readonly notify: (message: string) => void;
 }) {
-  const { preferences, mac, execute } = actions;
+  const { preferences, mac } = actions;
   // Reconcile packaged palette updates without constructing Settings forms.
   appearanceStore().registerBuiltins(builtinThemes);
   const hint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / ');
@@ -48,7 +46,6 @@ export function createWindowChrome(header: HTMLElement, toolbar: HTMLElement, ac
     cancelPending,
   };
   const picker = createCommandPicker();
-  createAppMenu(header, execute, preferences.hotkeys, mac);
   const report = (operation: Promise<void>) => { void operation.catch(error => actions.notify(String(error))); };
   const drag = document.createElement('div'); drag.className = 'window-drag'; drag.setAttribute('aria-hidden', 'true');
   if (actions.native) {

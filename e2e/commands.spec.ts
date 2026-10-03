@@ -78,15 +78,16 @@ test('unassigning source and code-block hotkeys leaves Markdown and properties u
   await page.keyboard.press('Control+s'); expect(await docText(page)).toBe(text);
 });
 
-test('grouped menus support keyboard navigation and execute the selected command', async ({ page }) => {
+test('minimal header keeps commands available through the palette', async ({ page }) => {
   await openApp(page, { text: '# Menu', mode: 'view' });
-  await page.getByRole('button', { name: 'Main menu', exact: true }).click();
-  await expect(page.getByRole('menuitem', { name: 'File', exact: true })).toBeFocused();
-  await page.keyboard.press('ArrowRight'); await page.getByRole('menuitem', { name: 'New tab', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'Main menu', exact: true })).toHaveCount(0);
+  await page.locator('#tab-bar').click({ button: 'right' });
+  await page.getByRole('combobox', { name: 'Search commands' }).fill('Toggle reading');
+  await page.getByRole('option', { name: /Toggle reading/ }).click();
+  await expect(page.locator('.document-session:not([hidden]) .cm-content')).toBeFocused();
+  await runCommand(page, 'New tab');
   await expect(page.locator('.document-session:not([hidden]) .cm-content')).toBeFocused();
   await expect(page.getByRole('tab')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Main menu', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Appearance…', exact: false }).first().click();
+  await runCommand(page, 'Appearance…');
   await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
 });

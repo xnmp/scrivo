@@ -170,3 +170,35 @@ test('two large editing tabs switch with their own visible content', async ({ pa
   const median = [...times].sort((a, b) => a - b)[Math.floor(times.length / 2)]!;
   console.log(`two 443 KiB editing tabs: median two-frame switch ${median.toFixed(1)} ms; max ${Math.max(...times).toFixed(1)} ms`);
 });
+
+test('resizing keeps the active tab and its close control visible', async ({ page }) => {
+  await openApp(page, { text: 'Original', mode: 'view' });
+  await page.keyboard.press('Control+t');
+  await page.keyboard.press('Control+t');
+  await page.keyboard.press('Control+t');
+  await page.setViewportSize({ width: 320, height: 720 });
+  const activeClose = page.locator('.tab-item:has([aria-selected=true]) .tab-close');
+  await expect(activeClose).toBeInViewport({ ratio: 1 });
+  await activeClose.click();
+  await expect(page.getByRole('tab')).toHaveCount(3);
+  await expect(activeClose).toBeInViewport({ ratio: 1 });
+  await page.getByRole('tab', { selected: true }).focus();
+  await page.keyboard.press('Home');
+  await expect(page.getByRole('tab', { name: 'inline.md', exact: true })).toBeInViewport({ ratio: 1 });
+});
+
+test.describe('touch tab controls', () => {
+  test.use({ hasTouch: true });
+  test('tapping an invisible close area activates its tab before it can be closed', async ({ page }) => {
+    await openApp(page, { text: 'Original', mode: 'view' });
+    await page.keyboard.press('Control+t');
+    const first = page.locator('.tab-item').first();
+    const bounds = (await first.boundingBox())!;
+    await page.touchscreen.tap(bounds.x + bounds.width - 16, bounds.y + bounds.height / 2);
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.getByRole('tab', { name: 'inline.md', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await page.touchscreen.tap(bounds.x + bounds.width - 16, bounds.y + bounds.height / 2);
+    await expect(page.getByRole('tab')).toHaveCount(1);
+    await expect(page.getByRole('tab', { name: 'Untitled', exact: true })).toHaveAttribute('aria-selected', 'true');
+  });
+});

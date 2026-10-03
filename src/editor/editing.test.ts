@@ -1,21 +1,21 @@
 import { history, undo } from '@codemirror/commands';
 import { codeFolding, ensureSyntaxTree, foldEffect, foldable, foldedRanges, syntaxTree } from '@codemirror/language';
-import { EditorSelection, EditorState, type Transaction } from '@codemirror/state';
+import { EditorSelection, EditorState, Transaction, type TransactionSpec } from '@codemirror/state';
 import { type EditorView } from '@codemirror/view';
 import { describe, expect, it } from 'vitest';
 import { markdownEditingKeymap } from './editing';
 import { markdownSupport } from './syntax';
 
-function editor(doc: string, ranges: readonly number[] = [doc.length]) {
+function editor(doc: string, ranges: readonly number[] = [doc.length], parse = true) {
   let state = EditorState.create({
     doc,
     selection: EditorSelection.create(ranges.map((pos) => EditorSelection.cursor(pos))),
     extensions: [markdownSupport(), history(), codeFolding(), EditorState.allowMultipleSelections.of(true)],
   });
-  ensureSyntaxTree(state, state.doc.length, 5000);
+  if (parse) ensureSyntaxTree(state, state.doc.length, 5000);
   const target = {
     get state() { return state; },
-    dispatch(tr: Transaction) { state = tr.state; },
+    dispatch(tr: Transaction | TransactionSpec) { state = (tr instanceof Transaction ? tr : state.update(tr)).state; },
   } as EditorView;
   const press = (key: string, shifted = false) => {
     const binding = markdownEditingKeymap.find((item) => item.key === key);
@@ -26,6 +26,20 @@ function editor(doc: string, ranges: readonly number[] = [doc.length]) {
 }
 
 describe('Markdown list editing', () => {
+  it('continues a bullet beyond the initial parser viewport', () => {
+    const before = 'paragraph\n\n'.repeat(2000) + '- last';
+    const e = editor(before, [before.length], false);
+    expect(e.press('Enter')).toBe(true);
+    expect(e.text()).toBe(before + '\n- ');
+  });
+
+  it('does not continue a code-fenced marker beyond the initial parser viewport', () => {
+    const before = 'paragraph\n\n'.repeat(2000) + '```\n- code\n```';
+    const at = before.indexOf('- code') + 6;
+    const e = editor(before, [at], false);
+    expect(e.press('Enter')).toBe(false);
+    expect(e.text()).toBe(before);
+  });
   it.each([
     ['- first', '- first\n- '],
     ['+ first', '+ first\n+ '],

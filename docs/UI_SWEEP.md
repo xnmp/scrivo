@@ -119,3 +119,38 @@ Final native drag result and release measurements are recorded in HANDOVER.
 Approved for the verified Linux release. All findings above are resolved, and
 the release is installed. Reviewed native reader/editor startup references pass
 all nine smoke launches. Windows and macOS remain unverified platform boundaries.
+
+## 2026-10-03 tab-strip follow-up
+
+Full review; scope is the tab strip and removal of the main-menu trigger. Plain CSS
+in the existing theme-variable system. The rest of the editor retains the earlier
+sweep's acceptance coverage.
+
+| Category | Evidence inspected | Result |
+|---|---|---|
+| Typography | Light/dark multi-tab captures; active/inactive titles | Normal-weight active title and theme text variables |
+| Surfaces | Native 1280×720 reader, browser multi-tab strip | Rounded outlined active tab; secondary header surface; slim dividers |
+| Animations | CSS declarations and tab switching | No added motion on frequent tab actions |
+| Icons | Close/add controls in active, hover and focus states | Existing currentColor set; inactive close revealed without layout shift |
+| Performance | Production bundle gate | Menu code removed; no new runtime dependency; gate passes |
+
+| Severity | Location | Before | After | Why |
+|---|---|---|---|---|
+| Medium | src/ui/window-chrome.ts | Persistent hamburger and grouped menu | Remove trigger and menu; palette and Settings shortcuts retain commands | User requested minimal chrome |
+| Low | src/styles/base.css | Flat active tab with heavier title | Rounded outline, normal title, shared Obsidian tab tokens | Structural selection cue matches reference |
+| Low | src/styles/base.css | Always-visible inactive close icons | Reveal on real hover/keyboard focus; keep selected close visible | Reduces visual clutter without shifting titles |
+| Medium | src/styles/base.css | Hidden close still hit-tested on touch | Overlay close on full-width select; disable hidden pointer events and ignore synthetic hover | First tap activates inactive tab; second tap can close it |
+| Medium | src/ui/tabs.ts | Resize can clip selected tab | Observe scrollport size and reveal selected item | Keeps active title/close within the available width |
+| Medium | src/tab-window.ts | Removing menu removes mouse command access | Right-click strip opens command palette | Preserves desktop pointer editing and Settings without persistent buttons |
+| Low | src/styles/base.css | Code-block surface used for window strip | Secondary surface and slim inactive dividers | Separates window controls from document content |
+| Medium | src/styles/chrome.css | Narrow native width assumed removed menu controls | Recalculate available tab width | Retains space for tab, add and native window buttons |
+
+Considered but rejected:
+
+| Location | Candidate | Rejected because |
+|---|---|---|
+| Tab strip | Add a replacement command-palette icon | User explicitly requested removal of permanent command controls |
+| Tab strip | Animate tab entrance/selection | Tab switching is frequent and should respond immediately |
+| Active tab | Accent underline | Reference uses a subtle outlined surface; themes already control colors |
+
+Verification: 476 unit contracts, 24 distinct affected browser outcomes, 4 native tests, TypeScript/bundle checks and reviewed final release captures pass. Final adversarial desktop check has no remaining concrete defect. Verdict: **Approve** for Linux desktop keyboard/mouse scope. Touch-only palette long-press entry is not verified; see the latest HANDOVER section.
