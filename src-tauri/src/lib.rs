@@ -1,4 +1,5 @@
 mod commands;
+mod desktop_appearance;
 mod attachment_io;
 mod file_drops;
 mod document_io;
@@ -81,6 +82,14 @@ pub fn run() {
                 .decorations(cfg!(target_os = "macos"))
                 .inner_size(1100.0, 800.0)
                 .min_inner_size(360.0, 240.0);
+            if let Ok(directory) = app.path().app_config_dir() {
+                if let Some(appearance) = desktop_appearance::load(&directory) {
+                    window = window.initialization_script(format!(
+                        "window.__SCRIVO_DESKTOP_APPEARANCE__ = {};",
+                        serde_json::to_string(&appearance)?
+                    ));
+                }
+            }
             if trace::enabled() {
                 window = window.initialization_script("window.__SCRIVO_TRACE__ = true;");
             }

@@ -94,3 +94,29 @@ it('bundled palettes persist without import and reconcile updated packaged CSS',
   expect(next.css()).toContain('blue'); next.remove(theme.id); expect(next.get().theme).toBe(theme.id);
   expect(createAppearanceStore(disk).css()).toContain('blue');
 });
+
+
+describe('desktop theme catalog', () => {
+  const nord = { id: 'builtin:desktop:nord', name: 'Nord', css: ':root{--text-normal:#eceff4}' };
+  const mint = { id: 'builtin:desktop:mint-light', name: 'Mint Light', css: ':root{--text-normal:#123456}' };
+  it('applies external selection before settings open and preserves typography and imports', () => {
+    const disk = storage(); const original = createAppearanceStore(disk);
+    original.import(importedTheme('Custom', 'body{color:red}', 'custom'));
+    original.set({ ...original.get(), mode: 'light', accent: '#ff0000', fontSize: 20, textFont: 'Georgia' });
+    const next = createAppearanceStore(disk, { themes: [nord, mint], theme: nord.id, mode: 'dark' });
+    expect(next.get()).toMatchObject({ theme: nord.id, mode: 'dark', accent: '', fontSize: 20, textFont: 'Georgia' });
+    expect(next.css()).toBe(nord.css);
+    next.registerBuiltins([{ id: 'builtin:paper', name: 'Paper', css: 'body{color:green}' }]);
+    expect(next.themes().map(theme => theme.name).sort()).toEqual(['Custom', 'Mint Light', 'Nord', 'Paper']);
+    next.set({ ...next.get(), theme: mint.id });
+    expect(next.css()).toBe(mint.css);
+    next.remove(mint.id); expect(next.css()).toBe(mint.css);
+    const relaunched = createAppearanceStore(disk, { themes: [nord, mint], theme: nord.id, mode: 'dark' });
+    expect(relaunched.css()).toBe(nord.css);
+  });
+  it('keeps the selected palette usable without browser storage', () => {
+    const next = createAppearanceStore(undefined, { themes: [nord], theme: nord.id, mode: 'dark' });
+    expect(next.css()).toBe(nord.css);
+    expect(next.get().mode).toBe('dark');
+  });
+});

@@ -1,9 +1,16 @@
 import { defaultAppearance, readAppearance, readThemes, MAX_THEME_SIZE, type Appearance, type Theme } from '../domain/appearance';
 
+export interface DesktopAppearance {
+  readonly themes: readonly Theme[];
+  readonly theme: string;
+  readonly mode: 'light' | 'dark';
+}
+declare global { interface Window { __SCRIVO_DESKTOP_APPEARANCE__?: DesktopAppearance } }
+
 export const APPEARANCE_KEY = 'scrivo.appearance.v1';
 const THEMES_KEY = 'scrivo.themes.v1';
 const ACTIVE_CSS_KEY = 'scrivo.active-theme.v1';
-export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setItem'> | undefined) {
+export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setItem'> | undefined, desktop?: DesktopAppearance) {
   const read = (key: string) => { try { return storage?.getItem(key) ?? null; } catch { return null; } };
   let preferences = readAppearance(read(APPEARANCE_KEY));
   const activeTheme = (): Theme | null => {
@@ -21,7 +28,13 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
   let active = activeTheme();
   preferences = { ...preferences, theme: active?.id ?? '' };
   let themes: readonly Theme[] | undefined;
-  let builtins: readonly Theme[] = [];
+  const desktopThemes = desktop?.themes ?? [];
+  let builtins: readonly Theme[] = desktopThemes;
+  const selected = desktopThemes.find(theme => theme.id === desktop?.theme);
+  if (selected) {
+    active = selected;
+    preferences = { ...preferences, theme: selected.id, mode: desktop!.mode, accent: '' };
+  }
   const subscribers = new Set<() => void>();
   const publish = () => { for (const subscriber of subscribers) subscriber(); };
   const library = () => {
@@ -42,11 +55,12 @@ export function createAppearanceStore(storage: Pick<Storage, 'getItem' | 'setIte
       return true;
     } catch { return false; }
   };
+  if (selected) persist(undefined, active);
   return {
     registerBuiltins(catalog: readonly Theme[]) {
-      builtins = catalog;
+      builtins = [...desktopThemes, ...catalog];
       if (active?.id.startsWith('builtin:')) {
-        const packaged = catalog.find(theme => theme.id === active!.id);
+        const packaged = builtins.find(theme => theme.id === active!.id);
         if (packaged && packaged.css !== active.css) { active = packaged; publish(); persist(undefined, active); }
       }
     },
@@ -93,7 +107,7 @@ export function appearanceStore() {
   if (!shared) {
     let storage: Storage | undefined;
     try { storage = window.localStorage; } catch { /* session settings remain usable */ }
-    shared = createAppearanceStore(storage);
+    shared = createAppearanceStore(storage, window.__SCRIVO_DESKTOP_APPEARANCE__);
     window.addEventListener('storage', (event) => {
       if (event.key === APPEARANCE_KEY || event.key === ACTIVE_CSS_KEY || event.key === THEMES_KEY || event.key === null) shared?.receive();
     });

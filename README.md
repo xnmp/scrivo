@@ -196,3 +196,20 @@ node bench/ab.mjs bench/fixtures/large.md 12 typora src-tauri/target/release/scr
 ```
 
 Scrivo is dual-licensed under MIT or Apache-2.0.
+
+
+## Desktop themes
+
+Native launches optionally read `desktop-theme.json` from Tauri's app config directory
+(`$XDG_CONFIG_HOME/dev.scrivo.editor`, default `~/.config/dev.scrivo.editor` on Linux).
+The catalog has `{ "theme": "builtin:desktop:nord", "mode": "dark", "themes": [...] }`;
+each theme contains `id`, `name`, and self-contained `css` using Obsidian variables.
+The desktop selection applies before first paint and clears the accent override while
+preserving fonts, font size, and imported themes. Catalog themes appear in Appearance
+alongside the bundled palettes. In-app changes work until the next native launch,
+when the desktop selection applies again. Missing or invalid catalogs leave the app's
+saved appearance intact. Web builds continue to use browser preferences.
+
+The chezmoi `scripts/set-theme.sh` command installs missing stylesheets from desktop
+palettes into the config directory's `themes/` folder and atomically publishes this
+catalog. Relaunch Scrivo after switching themes.
