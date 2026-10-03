@@ -102,6 +102,10 @@ edit requests still take focus as intended.
   ancestor of this branch). Added origin, fetched and verified ancestry; use a
   normal fast-forward push, never force. Review found no actual secret in the
   public delta.
+- **Feature checkpoint `f7bbf78` pushed successfully**: remote main advanced
+  normally from `1a76308`, and local main now tracks origin/main. The handover
+  shipping-record commit follows that feature checkpoint and is pushed normally.
+  The public repository is `https://github.com/xnmp/scrivo`.
 - Installed release matches `/home/chong/.local/bin/scrivo`:
   `8d9a6a1b80ec47bdaf68d4db53af251dfb48a8b6c53e207be8315f9824d5ad66`.
   Release log `/tmp/scrivo-polish-release.log`; this supersedes the zoom-pass hash.
@@ -109,6 +113,9 @@ edit requests still take focus as intended.
 - Platform boundary: real native Linux and Chromium inspected. Windows/macOS and
   physical touch devices were not run. Existing simulated touch/resize outcomes
   pass; touch-only long-press palette entry remains the prior unverified boundary.
+- No requested implementation work remains pending. Preserve the clean checkpoint
+  and installed binary; do not restart the user's live windows. Further polish
+  should start from actual new user feedback and the review boundaries above.
 
 
 ## 2026-10-03 follow-up: customizable interface zoom
