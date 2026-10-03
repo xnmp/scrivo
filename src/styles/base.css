@@ -175,8 +175,10 @@ body { display: flex; flex-direction: column; }
 }
 .tab-list { display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none; min-width: 64px; flex: 0 1 auto; height: 100%; }
 .tab-item { position: relative; display: flex; align-items: stretch; flex: none; margin: 4px 0 0; height: 36px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--tab-radius, 6px) var(--tab-radius, 6px) 0 0; background: var(--tab-background-inactive, transparent); }
+.tab-moving { overflow: hidden; min-width: 0; }
+.tab-item[inert] { pointer-events: none; }
 .tab-item::after { content: ''; position: absolute; right: -1px; top: 8px; bottom: 8px; width: 1px; background: var(--tab-divider-color, var(--border)); pointer-events: none; }
-.tab-item:has([aria-selected=true]) { border-color: var(--tab-outline-color, var(--border)); background: var(--tab-background-active, var(--bg)); }
+.tab-item:has([aria-selected=true]), .tab-item.tab-was-active { border-color: var(--tab-outline-color, var(--border)); background: var(--tab-background-active, var(--bg)); }
 .tab-item:has([aria-selected=true])::after, .tab-item:has(+ .tab-item [aria-selected=true])::after { display: none; }
 .tab-select, .tab-close, .tab-add { border: 0; background: transparent; color: var(--fg-muted); font: 13px var(--font-body); cursor: pointer; }
 .tab-select { max-width: 252px; min-width: 112px; padding: 0 40px 0 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tab-text-color, var(--fg-muted)); border-radius: inherit; }

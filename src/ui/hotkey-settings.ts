@@ -1,5 +1,6 @@
 import { bindings, commands, conflict, displayChord, eventChord, validChord } from '../domain/commands';
 import type { createCommandPreferences } from '../platform/command-preferences';
+import { icon } from './icons';
 export function createHotkeySettings(host: HTMLElement, store: ReturnType<typeof createCommandPreferences>, mac: boolean) {
   const dialog = document.createElement('section'); dialog.className = 'hotkeys-dialog settings-page'; dialog.setAttribute('aria-label', 'Hotkeys');
   const heading = document.createElement('h2'); heading.textContent = 'Hotkeys';
@@ -13,21 +14,34 @@ export function createHotkeySettings(host: HTMLElement, store: ReturnType<typeof
   };
   let recording: string | null = null;
   const render = () => {
-    list.replaceChildren(...commands.filter(command => `${command.group} ${command.label}`.toLowerCase().includes(search.value.toLowerCase())).map(command => {
+    const visible = commands.filter(command => `${command.group} ${command.label}`.toLowerCase().includes(search.value.toLowerCase()));
+    const groups = [...new Set(visible.map(command => command.group))];
+    const rows: HTMLElement[] = [];
+    let group = '';
+    for (const command of groups.flatMap(group => visible.filter(command => command.group === group))) {
+      if (group !== command.group) {
+        group = command.group;
+        const heading = document.createElement('h3'); heading.className = 'hotkey-group'; heading.textContent = group; rows.push(heading);
+      }
       const row = document.createElement('div'); row.className = 'hotkey-row';
       const label = document.createElement('span'); label.textContent = command.label;
       const keys = document.createElement('div'); keys.className = 'hotkey-bindings';
       bindings(command, store.hotkeys(), mac).forEach(key => {
-        const remove = document.createElement('button'); remove.className = 'hotkey-chip'; remove.textContent = `${displayChord(key, mac)} ×`;
+        const remove = document.createElement('button'); remove.className = 'hotkey-chip';
+        const shortcut = document.createElement('kbd'); shortcut.textContent = displayChord(key, mac); remove.append(shortcut, icon('close'));
         remove.setAttribute('aria-label', `Remove ${displayChord(key, mac)} from ${command.label}`);
         remove.addEventListener('click', () => save({ ...store.hotkeys(), [command.id]: bindings(command, store.hotkeys(), mac).filter(value => value !== key) })); keys.append(remove);
       });
-      const add = document.createElement('button'); add.textContent = recording === command.id ? 'Press shortcut…' : '+';
+      const add = document.createElement('button'); add.className = 'hotkey-add';
+      if (recording === command.id) { add.textContent = 'Press shortcut…'; add.classList.add('recording'); }
+      else add.append(icon('plus'));
       add.setAttribute('aria-label', `Add hotkey for ${command.label}`);
       add.disabled = bindings(command, store.hotkeys(), mac).length >= 4;
       add.addEventListener('click', () => { recording = command.id; notice.textContent = 'Press a shortcut with Ctrl, ⌘, or Alt, or a function key. Esc cancels.'; render(); list.querySelector<HTMLButtonElement>(`[aria-label="${CSS.escape(add.getAttribute('aria-label')!)}"]`)?.focus(); });
-      keys.append(add); row.append(label, keys); return row;
-    }));
+      keys.append(add); row.append(label, keys); rows.push(row);
+    }
+    if (!visible.length) { const empty = document.createElement('p'); empty.textContent = 'No matching commands.'; rows.push(empty); }
+    list.replaceChildren(...rows);
   };
   dialog.addEventListener('keydown', event => {
     if (!recording) return;

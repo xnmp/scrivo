@@ -67,7 +67,9 @@ export interface WorkspaceDeps {
   /** Loads and creates the editor; called at most once. */
   readonly loadEditor: () => Promise<EditorHandle>;
   /** Make the given surface the visible one. */
-  readonly showSurface: (mode: Mode) => void;
+  readonly showSurface: (mode: Mode, focus: boolean) => void;
+  /** Capture whether this request may still move focus after its asynchronous work. */
+  readonly captureFocus?: () => () => boolean;
   /** Give the reader a measurable, nonvisible viewport while replacing the editor. */
   readonly prepareView: () => () => void;
   readonly notify: (message: string) => void;
@@ -103,17 +105,22 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
   let loading: Promise<EditorHandle> | null = null;
   let reportedPath: string | null | undefined;
 
-  const serial = <T>(op: () => Promise<T>): Promise<T> => enqueue(async () => {
-    try {
-      return await op();
-    } finally {
-      const path = editor ? editor.controller.info().path : shown?.path ?? null;
-      if (path !== reportedPath) {
-        reportedPath = path;
-        deps.onPathChanged?.(path);
+  let canFocus = () => true;
+  const serial = <T>(op: () => Promise<T>): Promise<T> => {
+    const permission = deps.captureFocus?.() ?? (() => true);
+    return enqueue(async () => {
+      canFocus = permission;
+      try {
+        return await op();
+      } finally {
+        const path = editor ? editor.controller.info().path : shown?.path ?? null;
+        if (path !== reportedPath) {
+          reportedPath = path;
+          deps.onPathChanged?.(path);
+        }
       }
-    }
-  });
+    });
+  };
 
   const ensureEditor = (): Promise<EditorHandle> => {
     loading ??= deps.loadEditor();
@@ -123,8 +130,10 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
   };
 
   const setMode = (next: Mode) => {
+    const focus = canFocus();
     mode = next;
-    showSurface(next);
+    showSurface(next, focus);
+    return focus;
   };
 
   const display = async (doc: ViewDocument, at?: Position, loadTail?: () => Promise<ViewDocument>) => {
@@ -181,9 +190,9 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       if (!(await e.controller.open(path))) return;
     }
     editor = e;
-    setMode('edit');
+    const focus = setMode('edit');
     e.revealLine(target);
-    e.focus();
+    if (focus) e.focus();
   };
 
   const viewNow = async () => {
@@ -227,8 +236,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
       if (mode === 'view' && opened && !(await renderEditor(editor, at))) {
         // The new buffer is already owned by the controller. If rendering it
         // fails, show that editor rather than an obsolete reading view.
-        setMode('edit');
-        editor.focus();
+        if (setMode('edit')) editor.focus();
       }
       return;
     }
@@ -294,8 +302,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         const e = await ensureEditor();
         await e.controller.start(await platform.startupDocument());
         editor = e;
-        setMode('edit');
-        e.focus();
+        if (setMode('edit')) e.focus();
       }),
     mode: () => mode,
     documentPath: () => (mode === 'view' ? shown?.path : editor?.controller.info().path) ?? null,
@@ -309,8 +316,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         await e.controller.newDocument();
         if (e.controller.info().path === null && !e.controller.info().dirty) {
           editor = e;
-          setMode('edit');
-          e.focus();
+          if (setMode('edit')) e.focus();
         }
       }),
     save: () =>
@@ -319,8 +325,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         await editor.controller.save();
         if (mode === 'view' && editor.controller.info().path !== shown?.path) {
           if (!(await renderEditor(editor, { line: viewer.topLine() }))) {
-            setMode('edit');
-            editor.focus();
+            if (setMode('edit')) editor.focus();
           }
         }
       }),
@@ -330,8 +335,7 @@ export function createWorkspace(deps: WorkspaceDeps): Workspace {
         await editor.controller.saveAs();
         if (mode === 'view' && editor.controller.info().path !== shown?.path) {
           if (!(await renderEditor(editor, { line: viewer.topLine() }))) {
-            setMode('edit');
-            editor.focus();
+            if (setMode('edit')) editor.focus();
           }
         }
       }),

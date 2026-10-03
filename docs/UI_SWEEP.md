@@ -154,3 +154,50 @@ Considered but rejected:
 | Active tab | Accent underline | Reference uses a subtle outlined surface; themes already control colors |
 
 Verification: 476 unit contracts, 24 distinct affected browser outcomes, 4 native tests, TypeScript/bundle checks and reviewed final release captures pass. Final adversarial desktop check has no remaining concrete defect. Verdict: **Approve** for Linux desktop keyboard/mouse scope. Touch-only palette long-press entry is not verified; see the latest HANDOVER section.
+
+## 2026-10-03 motion and Settings follow-up
+
+Full review. Scope: tab open/close motion, shared control/panel feedback, Settings
+and Hotkeys, reader text selection and asynchronous focus handoff. Framework:
+existing TypeScript DOM components and plain CSS with Obsidian-compatible theme
+variables. The user's explicit motion request supersedes earlier rejection of tab
+entrances; switching tabs and typing still have immediate feedback.
+
+| Category | Evidence inspected | Result |
+|---|---|---|
+| Typography | Paper/Charcoal Hotkeys, 360px layout, shortcut labels | 22px headings, 14px content, muted category labels and tabular shortcut/count numerals |
+| Surfaces | Sidebar, fields, chips, modal, selected tabs | Softer theme dividers, quieter chips, layered Settings elevation |
+| Animations | Open/close at 10% playback, rapid interruption, reduced-motion mid-flight | 180/140ms strip slides; immediate semantic changes; departing controls inert |
+| Icons | Hover, press, shortcut removal and add controls | Shared currentColor SVGs, understated press feedback; accessible names retained |
+| Performance | Bundle gate, stable tab nodes, motion implementation | No dependency; no first-tab animation; bounded strip layout; no per-frame JS |
+
+| Severity | Location | Before | After | Why |
+|---|---|---|---|---|
+| Medium | src/ui/tabs.ts | Entire control tree replaced on label/selection updates | Stable keyed controls and linear reconciliation | Preserve focus/pointer identity during frequent updates |
+| Low | src/ui/tab-motion.ts | Add/remove snaps strip positions | Width/opacity interpolation moves adjacent tabs and plus control | Requested spatial continuity; shorter exit than entry |
+| Medium | src/ui/tab-motion.ts, src/styles/base.css | Immediate removal cannot support a visible exit | Departing nodes become inert/aria-hidden/unselected and settle with animation completion | Removed tabs cannot intercept keys/pointers or appear selected to accessibility tools |
+| Medium | src/ui/tab-motion.ts, shared CSS | Motion has no preference policy | Skip slides and settle in-flight effects on reduced-motion changes | Accessible motion without lingering departing controls |
+| Low | src/styles/chrome.css | Abrupt hover and panel entrances | Explicit 100ms feedback and modest 100–140ms entrances; immediate exits | Cohesive response without slowing commands |
+| Low | src/styles/settings.css | Small flat hierarchy, heavy repeated borders | Larger title/content hierarchy, softer dividers and themed surfaces | Settings feels deliberate and easier to scan |
+| Low | src/ui/hotkey-settings.ts, src/styles/settings.css | Flat command list and textual ×/+ form buttons | Category headings, compact kbd chips, SVG actions, empty search state | Scannable commands and consistent icon weight |
+| Low | src/styles/editor.css | Table extension controls appear abruptly | Brief opacity/color feedback | Clear contextual affordance without table layout motion |
+| Medium | src/viewer/text-selection.ts | Blue selection persists on tab control or after focus collapse | Scoped primary outside-reader dismissal and focus-triggered repaint | Native selection and displayed highlight agree; dragging/Shift/right clicks preserved |
+| Medium | src/app/workspace.ts, src/tab-window.ts | Async completion can steal focus from tabs or a different tab's prompt | Capture focus permission, check active session/modals, normalize closing-dialog owner | Newer user intent and modal keyboard ownership are respected |
+
+Considered but rejected:
+
+| Location | Candidate | Rejected because |
+|---|---|---|
+| Tab strip | Add a motion library or continuous JS interpolation | Native Web Animations API gives interruption and completion signals without startup/library cost |
+| Dialog dismissal | Delay native close for an exit fade | Escape, command execution and focus restoration must remain immediate |
+| Document/editor | Animate tab selection, editor content or typed changes | Frequent keyboard actions need stable text and immediate response |
+| Settings | Stagger every row or animate search results | Repeated filtering would replay distracting motion |
+
+Verification: 485 unit contracts, app/native TypeScript, 34 broad Chromium outcomes
+plus 3 focused motion outcomes (35 distinct), 4 actual WebKitGTK outcomes, bundle
+checks, reviewed light/Paper/dark/narrow captures and 10%-speed enter/exit captures.
+Independent final review found no remaining concrete defect. No browser errors.
+
+Verdict: **Approve** for verified Linux desktop/Chromium scope. Windows/macOS and
+physical touch are **Not verified**; touch-only long-press palette entry remains
+unverified. No startup improvement is claimed by this interaction-polish pass.

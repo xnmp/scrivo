@@ -3,7 +3,7 @@ import { diskGet, docText, openApp, openSettings, runCommand, setCaret } from '.
 
 test('minimal chrome and Escape dismiss settings, palette and command-opened document panels', async ({ page }) => {
   await openApp(page, { text: '# Note\n\nText' });
-  await expect(page.locator('#tab-bar .icon-button')).toHaveCount(1);
+  await expect(page.locator('#tab-bar .icon-button')).toHaveCount(0);
   await expect(page.locator('#document-toolbar')).toBeHidden();
   await expect(page.locator('.outline-toggle, .properties-toggle, .editor-settings-toggle')).toHaveCount(0);
   await page.keyboard.press('Control+p'); await page.keyboard.press('Escape');

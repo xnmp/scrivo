@@ -1,5 +1,116 @@
 # Handover — 2026-10-03
 
+## 2026-10-03 follow-up: tab motion, Settings polish, reader selection, public remote
+
+Parent checkpoint: `f04a792`. Latest requests: Chrome-like opening/closing tab
+slides, broader interaction polish, a less cheap-looking Settings page, reader
+selection dismissal, and a public remote/push. This section supersedes earlier
+decisions rejecting tab animations; the user explicitly requested this motion.
+
+### Delivered behavior and architecture
+
+- `ui/tabs.ts` now reconciles controls by stable tab ID instead of rebuilding the
+  strip on each selection/dirty/title update. Handlers use the current label list;
+  arrow/Home/End navigation and button focus survive updates. Reconciliation is
+  linear; departing inert nodes keep their former slots until motion completes.
+- `ui/tab-motion.ts` owns native Web Animations API effects: 180ms opening,
+  140ms closing, `cubic-bezier(.2,0,0,1)`. Width/opacity interpolation makes the
+  neighboring tabs and plus control slide. Width causes layout inside the small
+  fixed-height strip; this is intentional, not a claim of compositor-only motion.
+  No animation library, timer-based cleanup, per-frame JS loop or will-change
+  hint was added. Initial tabs never animate; dirty/title/selection updates do
+  not restart effects. Closing a still-opening tab samples its visible state.
+- Application tab state and document switching happen immediately. Departing
+  controls are inert, aria-hidden and lose aria-selected before animating; their
+  former active surface is preserved visually with `tab-was-active`. Effect
+  completion removes them. Reduced-motion skips slides; changing the preference
+  during motion cancels/settles every effect and removes departing nodes.
+- Hover/press feedback across close/add/icon controls, palette options, find,
+  outline and modal actions shares short explicit color/opacity transitions.
+  Dialogs, prompts, toasts and the reader Find panel have modest 100–140ms entry
+  fades with a four-pixel vertical offset. Dismissal and focus restoration remain
+  immediate. Switch thumbs interpolate their position; table extension controls
+  fade in. Reduced-motion removes movement and transitions. No document editing,
+  tab-selection or settings-search animation was added.
+- Settings now has a clearer 22px title / 14px content hierarchy, softer themed
+  dividers, input surfaces, sidebar separation and layered shadow. Hotkeys group
+  commands by category; shortcut chips use small kbd labels and shared SVG remove
+  controls; plus controls stay quiet until hover/recording. Filtering has a useful
+  empty state. Existing accessible button names and recording/conflict behavior
+  remain compatible. All styling stays plain CSS and uses the existing theme
+  variables; Paper/Charcoal and narrow captures were inspected.
+
+### Reader selection diagnosis and fix
+
+Private native pointer reproduction showed ordinary heading/viewer/padding clicks
+already clear both native Selection and Custom Highlight. Clicking the active tab
+retained the native Range, including Ctrl+A spanning chrome/document. Opening
+Settings could collapse native Selection without firing selectionchange, leaving
+the blue Custom Highlight temporarily stale. Find's orange highlights are separate
+and intentionally remain while Find is open.
+
+`viewer/text-selection.ts` adds a scoped primary-pointer dismissal: clear only a
+Range intersecting the visible reader when clicking outside that article. Inside
+the reader, native dragging/caret placement remain authoritative; Shift and right
+click are excluded. The small dismissal installer runs in the browser adapter too;
+native text-only painting still runs only in Tauri. `focusin` schedules repaint
+because WebKit can collapse Selection without selectionchange. Actual native drag
+tests prove selection can be created again after dismissal. Do not clear on click
+or pointerup: those events also finish drag selection.
+
+### Focus ownership regression found during motion testing
+
+Rapid opens/closes plus End navigation exposed async editor startup stealing focus
+from a tab button. `WorkspaceDeps.captureFocus` now captures request permission;
+the workspace queue evaluates it before changing surfaces hides the old owner.
+The DOM adapter checks the active session and focused element, and denies focus
+when a custom/native modal was open at enqueue or is open at completion.
+
+A native dialog can remain active during its close event then yield focus to body.
+Targeted combined diagnostics reproduced the pointer-palette focus regression;
+normalizing closed-dialog focus to the vacant body owner preserves command focus
+handoff. Diagnostics were removed. An independent reviewer caught the cross-tab
+unsaved-prompt boundary; a delayed reader file read now verifies its Save button
+keeps focus while an editor finishes loading. Cached editors and later explicit
+edit requests still take focus as intended.
+
+### Verification, shipping and remote
+
+- Full unit suite: **485 contracts passed**, including delayed-load focus behavior.
+  App and native-spec TypeScript checks and `git diff --check` pass.
+- Chromium broad run: **34 outcomes passed** across reader selection, tab motion,
+  tabs, commands, Settings/substitutions and zoom. A final targeted motion run adds
+  the cross-tab modal boundary: **3 passed**. These cover **35 distinct outcomes**,
+  not one invocation of all 35. Logs `/tmp/scrivo-polish-e2e.log` and
+  `/tmp/scrivo-polish-focus.log`. Stale prior hamburger count was corrected to zero.
+- Private native WebKitGTK: **4 tests / 4 specs passed** for real drag-selection
+  dismissal, commands/chrome/dirty guards, Settings/substitutions/final app close,
+  and actual viewport zoom (`/tmp/scrivo-polish-native.log`). Intentional final app
+  close produces a WebDriver session-ended warning but passes the process-exit
+  outcome; private D-Bus portal teardown warnings are not app failures.
+- Agent-browser captures reviewed: `/tmp/scrivo-polish-settings-paper.png`,
+  `...-settings-dark.png`, `...-settings-narrow.png`, `...-tab-enter-slow.png`,
+  `...-tab-exit-slow.png`. Opening/closing motion inspected at 10% speed, including
+  fractional strip widths and immediate document/focus changes. No browser errors.
+  Preview/browser and native test sessions were isolated from the user's desktop.
+- Independent review found no remaining concrete issue after the modal fix.
+  `docs/UI_SWEEP.md` records the complete bounded polish review and rejected work.
+- Bundle gate still **38/41KiB startup, 52/56KiB known prepaint**. Deferred graph
+  3288KiB. No startup speed claim or resident background process is introduced.
+  Existing unanswered resident-mode preference and full-shutdown semantics remain.
+- GitHub already had public `https://github.com/xnmp/scrivo` at `1a76308` (an
+  ancestor of this branch). Added origin, fetched and verified ancestry; use a
+  normal fast-forward push, never force. Review found no actual secret in the
+  public delta.
+- Installed release matches `/home/chong/.local/bin/scrivo`:
+  `8d9a6a1b80ec47bdaf68d4db53af251dfb48a8b6c53e207be8315f9824d5ad66`.
+  Release log `/tmp/scrivo-polish-release.log`; this supersedes the zoom-pass hash.
+  Existing app windows were preserved. Relaunch to apply the release.
+- Platform boundary: real native Linux and Chromium inspected. Windows/macOS and
+  physical touch devices were not run. Existing simulated touch/resize outcomes
+  pass; touch-only long-press palette entry remains the prior unverified boundary.
+
+
 ## 2026-10-03 follow-up: customizable interface zoom
 
 Parent checkpoint is `0006ffa` (the tab/list/prewarming pass below). Latest user

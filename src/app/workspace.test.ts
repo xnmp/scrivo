@@ -32,7 +32,7 @@ function fakeViewer() {
 
 async function setup(
   opts: { files?: Record<string, string>; startupPath?: string; startInEditor?: boolean; failEditorLoads?: number; watch?: boolean; render?: RenderFn;
-    recoveryCopy?: RecoveryCopy } = {},
+    recoveryCopy?: RecoveryCopy; beforeEditorLoad?: () => Promise<void>; captureFocus?: () => () => boolean } = {},
 ) {
   const platform: MemoryPlatform = createMemoryPlatform({
     files: opts.files ?? {},
@@ -49,6 +49,7 @@ async function setup(
   const revealed: number[] = [];
   let editorTop = 1;
   let loads = 0;
+  let focused = 0;
   let failuresLeft = opts.failEditorLoads ?? 0;
   let idleTask: (() => void) | undefined;
   let workspace: ReturnType<typeof createWorkspace>;
@@ -56,6 +57,7 @@ async function setup(
   workspace = createWorkspace({
     platform,
     viewer: viewer.port,
+    ...(opts.captureFocus ? { captureFocus: opts.captureFocus } : {}),
     showSurface: (m) => void surfaces.push(m),
     prepareView: () => {
       preparation.push('prepared');
@@ -66,6 +68,7 @@ async function setup(
     ...(opts.watch ? { onPathChanged: (path: string | null) => void platform.fs.watch(path, () => void workspace.checkDisk()) } : {}),
     loadEditor: async () => {
       loads += 1;
+      await opts.beforeEditorLoad?.();
       if (failuresLeft-- > 0) throw new Error('chunk failed to load');
       const controller = createDocumentController({ platform, prompter: p.prompter, editor: editorPort });
       const handle: EditorHandle = {
@@ -73,7 +76,7 @@ async function setup(
         text: () => editorPort.value(),
         topLine: () => editorTop,
         revealLine: (l) => void revealed.push(l),
-        focus: () => {},
+        focus: () => { focused++; },
         importPaths: (paths) => controller.importAttachments(paths.map((path) => ({ kind: 'path', path })), (markdown) => {
           editorPort.type(markdown);
           return true;
@@ -95,6 +98,7 @@ async function setup(
     preparation,
     ...p,
     loads: () => loads,
+    focused: () => focused,
     runIdle: () => idleTask?.(),
     scrollEditorTo: (l: number) => void (editorTop = l),
     typeInEditor(s: string) {
@@ -104,6 +108,18 @@ async function setup(
 }
 
 describe('starting', () => {
+  it('shows a completed editor without stealing newer focus, then honors a new explicit edit request', async () => {
+    let focus = 'reader', release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const t = await setup({ files: { '/d/a.md': 'Body' }, startupPath: '/d/a.md', beforeEditorLoad: () => ready,
+      captureFocus: () => { const previous = focus; return () => previous === focus; } });
+    const editing = t.workspace.edit();
+    await vi.waitFor(() => expect(t.loads()).toBe(1));
+    focus = 'tabs'; release(); await editing;
+    expect(t.workspace.mode()).toBe('edit'); expect(t.editorPort.value()).toBe('Body'); expect(t.focused()).toBe(0);
+    await t.workspace.view(); await t.workspace.edit();
+    expect(t.focused()).toBe(1);
+  });
   it('shows an existing file in the reading view without loading the editor', async () => {
     const t = await setup({ files: { '/d/a.md': '# A\nbody' }, startupPath: '/d/a.md' });
     expect(t.workspace.mode()).toBe('view');

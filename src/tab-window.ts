@@ -27,7 +27,7 @@ export async function startTabWindow(context: {
   readonly setFollowLink: (handler: (href: string) => void) => void;
 }): Promise<void> {
 const { platform, tauri, prompter, preShown } = context;
-if (tauri) void import('./viewer/text-selection').then(module => module.installTextSelection()).catch(() => undefined);
+void import('./viewer/text-selection').then(module => tauri ? module.installTextSelection() : module.installSelectionDismissal()).catch(() => undefined);
 document.body.dataset.native = String(tauri);
 const loadEditorModule = () => import('./editor-app');
 const FIND_REFRESH_MS = 250;
@@ -301,12 +301,20 @@ function makeSession(id: string, path: string | null, initial = false): Session 
     notify: prompter.notify,
     scheduleIdle: (run) => void requestIdleCallback(run),
     onPathChanged: reportPath,
-    showSurface(mode) {
+    captureFocus() {
+      // A closing native dialog can remain active during its close event, then
+      // hand focus to body. Treat both as the same vacant focus owner.
+      const owner = () => document.activeElement?.closest('dialog:not([open])') ? document.body : document.activeElement;
+      const modal = () => document.querySelector('.modal-backdrop, dialog[open]') !== null;
+      const previous = owner(), blocked = modal();
+      return () => !blocked && !modal() && tabs.activeId === id && owner() === previous;
+    },
+    showSurface(mode, focus) {
       host.dataset.mode = mode;
       if (tabs.activeId === id) document.body.dataset.mode = mode;
       if (mode === 'view') {
         status.set(readingHint());
-        if (tabs.activeId === id) viewer.focus();
+        if (tabs.activeId === id && focus) viewer.focus();
       } else {
         findBar?.close();
         if (tabs.activeId === id) outline?.close();

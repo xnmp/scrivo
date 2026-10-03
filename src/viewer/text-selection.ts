@@ -1,5 +1,20 @@
 /** Keep native selection/copy semantics, but highlight text nodes instead of WebKit's block boxes. */
+export function installSelectionDismissal() {
+  document.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.shiftKey || !(event.target instanceof Node)) return;
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    for (const article of document.querySelectorAll('.document-session:not([hidden])[data-mode=view] .markdown-body')) {
+      if (article.contains(event.target)) return; // native dragging and caret placement
+      for (let index = 0; index < selection.rangeCount; index++) {
+        if (selection.getRangeAt(index).intersectsNode(article)) { selection.removeAllRanges(); return; }
+      }
+    }
+  });
+}
+
 export function installTextSelection() {
+  installSelectionDismissal();
   if (typeof Highlight === 'undefined' || !CSS.highlights) return;
   // WebKit also omits Custom Highlight paint for a parent li's bare text above
   // a nested list. Prepare inline wrappers before selection; never replace a
@@ -76,6 +91,8 @@ export function installTextSelection() {
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(paint); };
   document.addEventListener('selectionchange', schedule);
+  // WebKit may collapse Selection on input focus without a selectionchange event.
+  document.addEventListener('focusin', schedule);
   document.addEventListener('scroll', schedule, true);
   window.addEventListener('resize', schedule);
 }

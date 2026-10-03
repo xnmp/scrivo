@@ -111,6 +111,9 @@ blank area for dragging; double-click the blank area to maximize or restore.
 macOS retains its native title bar. Active tabs use a subtle rounded outline;
 inactive close controls appear on hover or keyboard focus. Resizing keeps the
 selected tab visible.
+Opening and closing tabs slides neighboring tabs and the add control; selection
+and document changes are immediate. Motion respects your system's reduced-motion
+preference. Ordinary clicks outside a reader document clear its text selection.
 
 ## Appearance
 

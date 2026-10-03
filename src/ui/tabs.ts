@@ -1,4 +1,5 @@
 import { icon } from './icons';
+import { createTabMotion } from './tab-motion';
 export interface TabLabel {
   readonly id: string;
   readonly name: string;
@@ -25,58 +26,65 @@ export function createTabBar(host: HTMLElement, actions: {
   add.addEventListener('click', actions.create);
   host.append(list, add);
 
-  const revealActive = () => list.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  // The native controls and window width can change independently of tab state.
-  // Keep the selected tab (including its close button) within the scrollport.
+  let labels: readonly TabLabel[] = [], active: string | null = null, initialized = false;
+  const nodes = new Map<string, ReturnType<typeof createItem>>();
+  const revealActive = () => {
+    if (active) nodes.get(active)?.item.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+  const motion = createTabMotion(revealActive);
   new ResizeObserver(revealActive).observe(list);
 
-  const render = (tabs: readonly TabLabel[], activeId: string | null) => {
-    const focused = document.activeElement?.getAttribute('data-tab-id');
-    list.replaceChildren(...tabs.map((tab) => {
-      const item = document.createElement('div');
-      item.className = 'tab-item';
-      const select = document.createElement('button');
-      select.type = 'button';
-      select.className = 'tab-select';
-      select.dataset.tabId = tab.id;
-      select.setAttribute('role', 'tab');
-      select.setAttribute('aria-controls', `session-${tab.id}`);
-      select.setAttribute('aria-selected', String(tab.id === activeId));
-      select.tabIndex = tab.id === activeId ? 0 : -1;
-      select.title = tab.name;
-      select.textContent = tab.name;
-      if (tab.dirty || tab.actionNeeded) {
-        const mark = document.createElement('span');
-        mark.className = 'tab-dirty';
-        mark.textContent = tab.actionNeeded ? '!' : '●';
-        mark.setAttribute('aria-label', tab.actionNeeded ? 'Action needed' : 'Edited');
-        select.appendChild(mark);
-      }
-      select.addEventListener('click', () => actions.activate(tab.id));
-      select.addEventListener('keydown', (event) => {
-        const index = tabs.findIndex((candidate) => candidate.id === tab.id);
-        const target = event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length]
-          : event.key === 'ArrowLeft' ? tabs[(index - 1 + tabs.length) % tabs.length]
-          : event.key === 'Home' ? tabs[0]
-          : event.key === 'End' ? tabs.at(-1) : undefined;
-        if (!target) return;
-        event.preventDefault();
-        actions.activate(target.id);
-        list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(target.id)}"]`)?.focus();
-      });
-      const close = document.createElement('button');
-      close.type = 'button';
-      close.className = 'tab-close';
-      close.append(icon('close'));
-      close.title = `Close ${tab.name}`;
-      close.setAttribute('aria-label', `Close ${tab.name}`);
-      close.addEventListener('click', () => actions.close(tab.id));
-      item.append(select, close);
-      return item;
-    }));
-    revealActive();
-    if (focused) list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(focused)}"]`)?.focus();
-  };
+  function createItem(id: string) {
+    const item = document.createElement('div'); item.className = 'tab-item';
+    const select = document.createElement('button');
+    select.type = 'button'; select.className = 'tab-select'; select.dataset.tabId = id;
+    select.setAttribute('role', 'tab'); select.setAttribute('aria-controls', `session-${id}`);
+    const title = document.createElement('span'), mark = document.createElement('span');
+    mark.className = 'tab-dirty'; select.append(title, mark);
+    select.addEventListener('click', () => actions.activate(id));
+    select.addEventListener('keydown', event => {
+      const index = labels.findIndex(candidate => candidate.id === id);
+      const target = event.key === 'ArrowRight' ? labels[(index + 1) % labels.length]
+        : event.key === 'ArrowLeft' ? labels[(index - 1 + labels.length) % labels.length]
+        : event.key === 'Home' ? labels[0] : event.key === 'End' ? labels.at(-1) : undefined;
+      if (!target) return;
+      event.preventDefault(); actions.activate(target.id); nodes.get(target.id)?.select.focus();
+    });
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'tab-close';
+    close.append(icon('close')); close.addEventListener('click', () => actions.close(id));
+    item.append(select, close);
+    return { item, select, title, mark, close };
+  }
 
+  const render = (tabs: readonly TabLabel[], activeId: string | null) => {
+    labels = tabs; active = activeId;
+    const ids = new Set(tabs.map(tab => tab.id));
+    for (const [id, node] of nodes) {
+      if (!ids.has(id)) { nodes.delete(id); motion.exit(node.item); }
+    }
+    const nextLive = (node: Element | null): Element | null => {
+      while (node instanceof HTMLElement && node.inert) node = node.nextElementSibling;
+      return node;
+    };
+    let current = nextLive(list.firstElementChild);
+    for (const tab of tabs) {
+      let node = nodes.get(tab.id);
+      const added = !node;
+      if (!node) { node = createItem(tab.id); nodes.set(tab.id, node); }
+      const { item, select, title, mark, close } = node;
+      if (title.textContent !== tab.name) title.textContent = tab.name;
+      select.title = tab.name; select.setAttribute('aria-selected', String(tab.id === activeId));
+      select.tabIndex = tab.id === activeId ? 0 : -1;
+      mark.hidden = !(tab.dirty || tab.actionNeeded);
+      mark.textContent = tab.actionNeeded ? '!' : '●';
+      mark.setAttribute('aria-label', tab.actionNeeded ? 'Action needed' : 'Edited');
+      close.title = `Close ${tab.name}`; close.setAttribute('aria-label', close.title);
+      // Preserve live nodes and leave departing nodes in place while they collapse.
+      if (current !== item) list.insertBefore(item, current ?? null);
+      current = nextLive(item.nextElementSibling);
+      if (added && initialized) motion.enter(item);
+    }
+    initialized = true; revealActive();
+  };
   return { render };
 }

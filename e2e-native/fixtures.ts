@@ -262,6 +262,7 @@ export const fixtureBySpec: Record<string, () => Fixture> = {
   'appearance.spec.ts': readingWatchFixture,
   'commands.spec.ts': readingWatchFixture,
   'zoom.spec.ts': readingWatchFixture,
+  'reading-selection.spec.ts': readingWatchFixture,
   'settings-substitutions.spec.ts': readingWatchFixture,
   'save-dialog.spec.ts': readingWatchFixture,
   'editor-find.spec.ts': editorFindFixture,
