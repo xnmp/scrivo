@@ -12,9 +12,11 @@ import { createTabBar } from './ui/tabs';
 import { createFinder } from './viewer/find';
 import { createViewer, type Viewer } from './viewer/viewer';
 import type { Outline } from './ui/outline';
-import { commands, bindings, eventChord, matchCommand, displayChord } from './domain/commands';
+import { commands, bindings, eventChord, matchKeyCommand, displayChord } from './domain/commands';
 import { commandPreferences } from './platform/command-preferences';
 import { createWindowChrome } from './ui/window-chrome';
+import { createZoomControls } from './app/zoom';
+import { isZoomCommand } from './domain/zoom';
 
 export async function startTabWindow(context: {
   readonly platform: Platform;
@@ -30,8 +32,9 @@ document.body.dataset.native = String(tauri);
 const loadEditorModule = () => import('./editor-app');
 const FIND_REFRESH_MS = 250;
 const preferences = commandPreferences();
+const zoom = createZoomControls(scale => platform.window.setZoom(scale));
 const mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
-const commandHint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / ');
+const commandHint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys(), mac).map(key => displayChord(key, mac)).join(' / ');
 const readingHint = () => {
   const shortcut = commandHint('reading');
   return `Reading · ${shortcut ? `${shortcut} to edit` : 'Right-click tab bar for commands'}`;
@@ -444,11 +447,12 @@ async function close(id: string): Promise<void> {
 
 async function execute(id: string): Promise<void> {
   try {
+    if (isZoomCommand(id)) { await zoom.change(id); return; }
     if (!['settings', 'appearance', 'resetAppearance', 'hotkeys', 'editorSettings', 'substitutions'].includes(id)) settings.cancelPending();
     const session = activeSession();
     if (id === 'palette') {
       picker.open('Command palette', commands.map(command => ({ id: command.id, label: command.label, detail: command.group,
-        hint: bindings(command, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / '), run: () => void execute(command.id) })));
+        hint: bindings(command, preferences.hotkeys(), mac).map(key => displayChord(key, mac)).join(' / '), run: () => void execute(command.id) })));
     } else if (id === 'recent') {
       picker.open('Open recent', preferences.recents().map(item => ({ id: item.identity, label: displayName(item.path), detail: item.path, run: () => void openPath(item.path) })),
         { label: 'Clear recent files', run: () => { void execute('clearRecents').then(() => execute('recent')); } });
@@ -492,10 +496,15 @@ async function execute(id: string): Promise<void> {
 // A single capture dispatcher owns application shortcuts, including table widgets.
 // Form text fields retain native text-editing history.
 window.addEventListener('keydown', event => {
-  if (event.defaultPrevented || event.isComposing || document.querySelector('.modal-backdrop')) return;
+  if (event.defaultPrevented || event.isComposing) return;
+  const command = matchKeyCommand(event, preferences.hotkeys(), mac);
+  if (command && isZoomCommand(command.id) && !settings.recording()) {
+    event.preventDefault(); void execute(command.id); return;
+  }
+  if (document.querySelector('.modal-backdrop')) return;
   const modal = document.querySelector('dialog[open]');
   if (modal) {
-    const definition = matchCommand(eventChord(event, mac), preferences.hotkeys(), mac);
+    const definition = command;
     if (modal.id === 'scrivo-settings' && !settings.recording() && ['settings', 'resetAppearance'].includes(definition?.id ?? '')) {
       event.preventDefault(); void execute(definition!.id);
     }
@@ -509,7 +518,6 @@ window.addEventListener('keydown', event => {
     else if (session?.workspace.mode() === 'view') session.findBar().dismiss();
     return;
   }
-  const command = matchCommand(eventChord(event, mac), preferences.hotkeys(), mac);
   if (!command) return;
   const target = event.target;
   if (target instanceof HTMLElement && target.matches('input, textarea, select') && !target.closest('.cm-lp-table')

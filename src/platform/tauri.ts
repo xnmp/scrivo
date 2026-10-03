@@ -67,6 +67,10 @@ export function createTauriPlatform(): Platform {
   // backend sets the initial title. Load it on first use.
   let win: Promise<import('@tauri-apps/api/window').Window> | null = null;
   const currentWindow = () => (win ??= import('@tauri-apps/api/window').then((m) => m.getCurrentWindow()));
+  let webview: Promise<import('@tauri-apps/api/webview').Webview> | null = null;
+  const currentWebview = () => (webview ??= import('@tauri-apps/api/webview')
+    .then(module => module.getCurrentWebview())
+    .catch(error => { webview = null; throw error; }));
   const watched = new Map<string, { path: string; onChange: () => void }>();
   let watchListener: Promise<void> | null = null;
   const ensureWatchListener = () => (watchListener ??= import('@tauri-apps/api/event')
@@ -136,6 +140,7 @@ export function createTauriPlatform(): Platform {
       },
     },
     window: {
+      setZoom: scale => currentWebview().then(view => view.setZoom(scale)),
       minimize: () => currentWindow().then(w => w.minimize()),
       toggleMaximize: () => currentWindow().then(w => w.toggleMaximize()),
       startDragging: () => currentWindow().then(w => w.startDragging()),

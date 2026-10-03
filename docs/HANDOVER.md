@@ -1,5 +1,69 @@
 # Handover — 2026-10-03
 
+## 2026-10-03 follow-up: customizable interface zoom
+
+Parent checkpoint is `0006ffa` (the tab/list/prewarming pass below). Latest user
+request: **Ctrl+Plus/Minus zoom in/out**. This follow-up implements full-interface
+zoom, rather than changing the Appearance font size.
+
+### Behavior and ownership
+
+- Ctrl/⌘+=, Ctrl/⌘+Shift+= and numpad plus zoom in; Ctrl/⌘+Minus,
+  Ctrl/⌘+Shift+Minus and numpad minus zoom out. Default printed `+` and `-`
+  also work on other layouts. Steps are 10 percentage points, bounded 50–200%.
+- Palette **Reset zoom** restores 100%. No default Ctrl+0 is introduced because
+  that shortcut already means Paragraph. All three commands are customizable.
+- Zoom is session-only and starts at 100%; no extra startup preference read or
+  native zoom call is made. Font controls remain independent.
+- Existing heading-level shortcuts move to Ctrl/⌘+Alt+= / Ctrl/⌘+Alt+Minus.
+  Saved explicit custom keys take priority over newly introduced defaults,
+  including physical Ctrl/Meta aliases. Shadowed default bindings disappear from
+  hints and conflict checks; removing the override restores them automatically.
+- Zoom works within Settings and other dialogs. Shortcut recording owns its
+  keys and never applies zoom. Pending Settings loads remain pending through zoom:
+  this is an intentional viewport action, covered by a delayed-import outcome.
+- `domain/zoom.ts` owns pure step/clamp rules. `app/zoom.ts` serializes native
+  requests so rapid keys cannot complete out of order; failed latest requests
+  restore the last successful target and allow retries.
+- `WindowPort.setZoom` is implemented by lazy Tauri `Webview.setZoom`, with the
+  main-only `core:webview:allow-set-webview-zoom` capability. The webview API module
+  is imported on first zoom. Official reference:
+  [Tauri Webview.setZoom](https://v2.tauri.app/reference/javascript/api/namespacewebview/#setzoom).
+- The development adapter uses CSS root zoom; native WebKitGTK viewport scaling
+  is tested separately. Do not mistake the browser emulation for production zoom.
+- `domain/commands.ts` resolves saved physical keys first, then printed zoom
+  signs for untouched defaults. Copy KeyboardEvent modifiers explicitly: they
+  are prototype getters, so spreading a browser event loses them. Browser coverage
+  dispatches real events for non-US signs and asserts unchanged Markdown.
+- Boot captures default and customized zoom shortcuts before the deferred shell
+  mounts and replays them through the single application dispatcher.
+
+### Verification and continuation
+
+- Full unit suite: 484 passing contracts; app/native-spec TypeScript checks pass.
+- Chromium: **10 outcomes passed**. Zoom and command outcomes cover whole-interface scaling, reset,
+  unchanged Markdown, alternate layouts, custom shortcuts, shortcut recording
+  and pending Settings. Logs: `/tmp/scrivo-zoom-e2e.log`.
+- Isolated native WebKitGTK: 2 tests / 2 specs passed, including actual viewport
+  scaling in reader and Settings, reset, unchanged disk content, commands, dirty
+  guards, recents, persistence and formatting. Log: `/tmp/scrivo-zoom-native.log`.
+- Independent adversarial reviewer found no remaining concrete zoom defect after
+  reviewing saved-binding precedence, layout matching, queuing and Settings.
+- Startup bundle remains 38/41KiB; known prepaint remains 52/56KiB. No startup
+  speed improvement is claimed by this zoom addition. The earlier unanswered
+  resident-engine preference and full-shutdown contract still apply.
+- Final release built successfully; installed atomically at
+  `/home/chong/.local/bin/scrivo`, matching `src-tauri/target/release/scrivo`:
+  `e8a331c6af67cccaed27a8309235827133138094970c9bf3bea37948c9f525e7`.
+  Log: `/tmp/scrivo-zoom-release.log`. This supersedes the installed hash below.
+- Agent-browser visual check at 120%: Settings scales with the header, text and
+  controls; remaining settings scroll within the panel. Screenshot reviewed at
+  `/tmp/scrivo-zoom-settings.png`; no browser errors. Isolated preview and browser
+  were stopped after inspection. Existing user windows were preserved; relaunch
+  the installed app to load this update.
+- This follow-up is committed on top of `0006ffa`; no zoom task remains pending.
+
+
 ## 2026-10-03 follow-up: minimal tab strip, list Enter, prewarming audit
 
 This section supersedes older instructions about the hamburger/main menu. Parent

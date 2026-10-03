@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindings, commands, conflict, eventChord, matchCommand, readHotkeys, validChord } from './commands';
+import { bindings, commands, conflict, eventChord, matchCommand, matchKeyCommand, readHotkeys, validChord } from './commands';
 import { createCommandPreferences, readRecents } from '../platform/command-preferences';
 const event = (code: string, shiftKey = false) => ({ code, key: code.startsWith('Key') ? code.slice(3).toLowerCase() : code, ctrlKey: true, metaKey: false, altKey: false, shiftKey });
 describe('command bindings', () => {
@@ -14,10 +14,26 @@ describe('command bindings', () => {
     expect(matchCommand('Mod+Alt+KeyJ', overrides, false)?.id).toBe('new');
     expect(bindings(commands.find(def => def.id === 'save')!, overrides)).toEqual([]);
   });
+  it.each([false, true])('preserves saved shortcuts when defaults add a conflicting binding (mac=%s)', mac => {
+    const physical = mac ? 'Meta' : 'Ctrl';
+    const overrides = readHotkeys(JSON.stringify({ increaseHeading: [`${physical}+Equal`] }));
+    expect(matchCommand('Mod+Equal', overrides, mac)?.id).toBe('increaseHeading');
+    expect(bindings(commands.find(def => def.id === 'zoomIn')!, overrides, mac)).not.toContain('Mod+Equal');
+    expect(matchCommand('Mod+Shift+Equal', overrides, mac)?.id).toBe('zoomIn');
+  });
   it('detects operating system aliases as conflicts', () => {
     expect(conflict('save', 'Ctrl+KeyT', {}, false)?.id).toBe('new');
     expect(conflict('save', 'Meta+KeyT', {}, true)?.id).toBe('new');
     expect(conflict('new', 'Mod+KeyT', {}, false)).toBeUndefined();
+  });
+  it('uses printed zoom signs on other layouts while preserving saved physical shortcuts', () => {
+    const plus = { ...event('BracketRight', true), key: '+' };
+    const minus = { ...event('Slash'), key: '-' };
+    expect(matchKeyCommand(plus, {}, false)?.id).toBe('zoomIn');
+    expect(matchKeyCommand(minus, {}, false)?.id).toBe('zoomOut');
+    expect(matchKeyCommand({ ...minus, shiftKey: true }, {}, false)?.id).toBe('zoomOut');
+    expect(matchKeyCommand(plus, { bulletList: ['Mod+Shift+BracketRight'] }, false)?.id).toBe('bulletList');
+    expect(matchKeyCommand(plus, { zoomIn: [] }, false)?.id).toBe('bulletList');
   });
   it('ignores corrupt, oversized, unsafe typing, and unknown command data', () => {
     for (const raw of [null, 'null', '{', '[]', 'x'.repeat(40000)]) expect(readHotkeys(raw)).toEqual({});

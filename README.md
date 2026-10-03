@@ -99,6 +99,13 @@ adds its next occurrence on each press; typing edits all selections together.
 The palette shows the current bindings. Escape dismisses menus and panels.
 Contents, Properties and reading/editing are available through the palette.
 
+**Ctrl/⌘+Plus** (or **Ctrl/⌘+=**) and **Ctrl/⌘+Minus** zoom the whole interface
+in 10% steps, from 50% to 200%, including Settings. Numpad plus/minus also work.
+Use **Reset zoom** in the palette to return to 100%; zoom resets on relaunch.
+These commands are customizable in Settings → Hotkeys. Saved custom bindings
+take precedence over new defaults. Heading level shortcuts are now
+**Ctrl/⌘+Alt+=** and **Ctrl/⌘+Alt+Minus**.
+
 Linux and Windows use an integrated tab/title row with window controls and a
 blank area for dragging; double-click the blank area to maximize or restore.
 macOS retains its native title bar. Active tabs use a subtle rounded outline;

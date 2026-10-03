@@ -22,8 +22,8 @@ let bootHotkeys: string | null = null;
 try { bootHotkeys = localStorage.getItem('scrivo.hotkeys.v1'); } catch { /* defaults */ }
 const queueShortcut = (event: KeyboardEvent) => {
   const mod = event.ctrlKey || event.metaKey;
-  if (!(mod && ['e', 'o', 'n', 't', 'r', 'p', 's', 'f', 'w', 'tab', 'g', ','].includes(event.key.toLowerCase()))
-    && !(mod && event.code === 'Comma')
+  if (!(mod && ['e', 'o', 'n', 't', 'r', 'p', 's', 'f', 'w', 'tab', 'g', ',', '+', '-', '='].includes(event.key.toLowerCase()))
+    && !(mod && ['Comma', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract'].includes(event.code))
     && event.key !== 'F3' && event.key !== 'Escape'
     && !storedChordMatches(eventChord(event, /Mac|iPhone|iPad/.test(navigator.userAgent)), bootHotkeys, /Mac|iPhone|iPad/.test(navigator.userAgent))) return;
   event.preventDefault();

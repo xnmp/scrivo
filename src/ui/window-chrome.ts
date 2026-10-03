@@ -17,7 +17,7 @@ export function createWindowChrome(header: HTMLElement, toolbar: HTMLElement, ac
   const { preferences, mac } = actions;
   // Reconcile packaged palette updates without constructing Settings forms.
   appearanceStore().registerBuiltins(builtinThemes);
-  const hint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys()).map(key => displayChord(key, mac)).join(' / ');
+  const hint = (id: string) => bindings(commands.find(command => command.id === id)!, preferences.hotkeys(), mac).map(key => displayChord(key, mac)).join(' / ');
   type Settings = ReturnType<typeof import('./settings').createSettings>;
   let settingsInstance: Settings | null = null;
   let settingsLoading: Promise<Settings> | null = null;

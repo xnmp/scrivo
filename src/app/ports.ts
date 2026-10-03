@@ -92,6 +92,7 @@ export interface Dialogs {
 }
 
 export interface WindowPort {
+  setZoom(scale: number): Promise<void>;
   minimize(): Promise<void>;
   toggleMaximize(): Promise<void>;
   startDragging(): Promise<void>;

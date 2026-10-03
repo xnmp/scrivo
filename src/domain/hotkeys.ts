@@ -2,13 +2,14 @@ const modifiers = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift'];
 export function validChord(chord: unknown): chord is string {
   if (typeof chord !== 'string' || chord.length > 80) return false;
   const parts = chord.split('+'), key = parts.pop()!;
-  return /^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-2])|Tab|Enter|Space|Comma|Period|Slash|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Arrow(Left|Right|Up|Down))$/.test(key)
+  return /^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-2])|Tab|Enter|Space|Comma|Period|Slash|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|NumpadAdd|NumpadSubtract|Arrow(Left|Right|Up|Down))$/.test(key)
     && parts.every((part, i) => modifiers.includes(part) && (i === 0 || modifiers.indexOf(part) > modifiers.indexOf(parts[i - 1]!)))
     && !/^(Mod|Ctrl|Meta)\+Key[ACVX]$/.test(chord)
     && (parts.some(part => ['Mod', 'Ctrl', 'Meta', 'Alt'].includes(part)) || /^F\d+$/.test(key));
 }
-export function eventChord(event: Pick<KeyboardEvent, 'code' | 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>, mac: boolean): string {
-  const key = event.code || (/^[a-z]$/i.test(event.key) ? `Key${event.key.toUpperCase()}` : /^\d$/.test(event.key) ? `Digit${event.key}` : ({ ',': 'Comma', '/': 'Slash', '-': 'Minus', '=': 'Equal', '[': 'BracketLeft', ']': 'BracketRight', '`': 'Backquote' } as Record<string, string>)[event.key] ?? event.key);
+export type ShortcutEvent = Pick<KeyboardEvent, 'code' | 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>;
+export function eventChord(event: ShortcutEvent, mac: boolean): string {
+  const key = event.code || (/^[a-z]$/i.test(event.key) ? `Key${event.key.toUpperCase()}` : /^\d$/.test(event.key) ? `Digit${event.key}` : ({ ',': 'Comma', '/': 'Slash', '-': 'Minus', '=': 'Equal', '+': 'Equal', '[': 'BracketLeft', ']': 'BracketRight', '`': 'Backquote' } as Record<string, string>)[event.key] ?? event.key);
   return [...((mac ? event.metaKey : event.ctrlKey) ? ['Mod'] : []), ...((mac ? event.ctrlKey : event.metaKey) ? [mac ? 'Ctrl' : 'Meta'] : []), ...(event.altKey ? ['Alt'] : []), ...(event.shiftKey ? ['Shift'] : []), key].join('+');
 }
 

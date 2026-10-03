@@ -17,14 +17,14 @@ export function createHotkeySettings(host: HTMLElement, store: ReturnType<typeof
       const row = document.createElement('div'); row.className = 'hotkey-row';
       const label = document.createElement('span'); label.textContent = command.label;
       const keys = document.createElement('div'); keys.className = 'hotkey-bindings';
-      bindings(command, store.hotkeys()).forEach(key => {
+      bindings(command, store.hotkeys(), mac).forEach(key => {
         const remove = document.createElement('button'); remove.className = 'hotkey-chip'; remove.textContent = `${displayChord(key, mac)} ×`;
         remove.setAttribute('aria-label', `Remove ${displayChord(key, mac)} from ${command.label}`);
-        remove.addEventListener('click', () => save({ ...store.hotkeys(), [command.id]: bindings(command, store.hotkeys()).filter(value => value !== key) })); keys.append(remove);
+        remove.addEventListener('click', () => save({ ...store.hotkeys(), [command.id]: bindings(command, store.hotkeys(), mac).filter(value => value !== key) })); keys.append(remove);
       });
       const add = document.createElement('button'); add.textContent = recording === command.id ? 'Press shortcut…' : '+';
       add.setAttribute('aria-label', `Add hotkey for ${command.label}`);
-      add.disabled = bindings(command, store.hotkeys()).length >= 4;
+      add.disabled = bindings(command, store.hotkeys(), mac).length >= 4;
       add.addEventListener('click', () => { recording = command.id; notice.textContent = 'Press a shortcut with Ctrl, ⌘, or Alt, or a function key. Esc cancels.'; render(); list.querySelector<HTMLButtonElement>(`[aria-label="${CSS.escape(add.getAttribute('aria-label')!)}"]`)?.focus(); });
       keys.append(add); row.append(label, keys); return row;
     }));
@@ -37,7 +37,7 @@ export function createHotkeySettings(host: HTMLElement, store: ReturnType<typeof
     const other = conflict(recording, chord, store.hotkeys(), mac);
     if (other) { notice.textContent = `${displayChord(chord, mac)} is assigned to “${other.label}”. Remove that binding first.`; return; }
     const command = commands.find(command => command.id === recording)!;
-    const next = [...new Set([...bindings(command, store.hotkeys()), chord])]; recording = null;
+    const next = [...new Set([...bindings(command, store.hotkeys(), mac), chord])]; recording = null;
     save({ ...store.hotkeys(), [command.id]: next });
   });
   search.addEventListener('input', () => { recording = null; render(); });

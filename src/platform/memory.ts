@@ -78,6 +78,7 @@ export function createMemoryPlatform(options: {
   startInEditor?: boolean;
   render?: RenderFn;
   pickSave?: (suggestedPath: string) => Promise<string | null>;
+  setZoom?: (scale: number) => Promise<void>;
 } = {}): MemoryPlatform {
   const renderFn = options.render ?? fakeRender;
   let clock = 1_000;
@@ -196,6 +197,7 @@ export function createMemoryPlatform(options: {
       },
     },
     window: {
+      async setZoom(scale) { await options.setZoom?.(scale); },
       async minimize() {}, async toggleMaximize() {}, async startDragging() {},
       async close() { if (!closeHandler || await closeHandler()) destroyed = true; },
       setTitle: (title) => void titles.push(title),

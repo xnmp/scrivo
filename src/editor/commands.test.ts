@@ -232,21 +232,21 @@ describe('headings', () => {
   });
 
   it('increase heading level: paragraph -> h6', () => {
-    expect(run('Mod-=', 'hel|lo')).toBe('###### hel|lo');
+    expect(run('Mod-Alt-=', 'hel|lo')).toBe('###### hel|lo');
   });
 
   it('increase heading level: h6 -> h5 -> ... -> h1, clamped at h1', () => {
-    expect(run('Mod-=', '# hel|lo')).toBe('# hel|lo');
-    expect(run('Mod-=', '## hel|lo')).toBe('# hel|lo');
+    expect(run('Mod-Alt-=', '# hel|lo')).toBe('# hel|lo');
+    expect(run('Mod-Alt-=', '## hel|lo')).toBe('# hel|lo');
   });
 
   it('decrease heading level: h1 -> h2 -> ... -> h6 -> paragraph', () => {
-    expect(run('Mod--', '# hel|lo')).toBe('## hel|lo');
-    expect(run('Mod--', '###### hel|lo')).toBe('hel|lo');
+    expect(run('Mod-Alt--', '# hel|lo')).toBe('## hel|lo');
+    expect(run('Mod-Alt--', '###### hel|lo')).toBe('hel|lo');
   });
 
   it('decrease heading level on a paragraph is a no-op', () => {
-    expect(run('Mod--', 'hel|lo')).toBe('hel|lo');
+    expect(run('Mod-Alt--', 'hel|lo')).toBe('hel|lo');
   });
 
   it('leaves setext headings alone (treated as plain paragraph text)', () => {
